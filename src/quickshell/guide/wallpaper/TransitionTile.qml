@@ -196,7 +196,7 @@ Rectangle {
 
                     BoundedImage {
                         anchors.fill: parent
-                        source: tile.tab.isWallpaperVideo ? ("file://" + Caching.getCacheDir("wallpaper") + "/current_wallpaper.png?rev=" + tile.tab.wallpaperRevision) : (tile.tab.currentWallpaperPath ? "file://" + tile.tab.currentWallpaperPath : "")
+                        source: tile.tab.isWallpaperVideo ? ("file://" + Caching.getCacheDir("wallpaper") + "/current_wallpaper.png?rev=" + tile.tab.wallpaperRevision) : Caching.fileUrl(tile.tab.currentWallpaperPath)
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         smooth: true

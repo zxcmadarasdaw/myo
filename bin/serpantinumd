@@ -11,8 +11,10 @@ source "$SERPANTINUM_DIR/scripts/caching.sh"
 source "$SERPANTINUM_DIR/scripts/config.sh"
 source "$SERPANTINUM_DIR/scripts/i18n.sh"
 
-if [ -z "$MAIN_QML" ]; then
-    export MAIN_QML="$(find "$SERPANTINUM_DIR/quickshell" -type f \( -name "Shell.qml" -o -name "Bar.qml" \) 2>/dev/null | head -n 1)"
+# caching.sh normally exports MAIN_QML. The entry point is always Shell.qml;
+# never pick a component such as bar/Bar.qml as the shell root.
+if [ -z "$MAIN_QML" ] || [ ! -f "$MAIN_QML" ]; then
+    export MAIN_QML="$SERPANTINUM_DIR/quickshell/Shell.qml"
 fi
 
 is_alive() {
@@ -279,10 +281,70 @@ if [ "$COMMAND" == "start" ]; then
     if [ -d /proc/driver/nvidia ]; then
         export QT_FFMPEG_DECODING_HW_DEVICE_TYPES="${QT_FFMPEG_DECODING_HW_DEVICE_TYPES-$(wallpaper_decoder)}"
     fi
-    setsid quickshell -p "$MAIN_QML" 9>&- &
-    QS_PID=$!
+    # The shell used to be started once with its output discarded: a QML error,
+    # a missing module or a crash left an empty Hyprland desktop and no trace.
+    # Now the output goes to a log, short-lived crashes are retried, and after
+    # repeated failures the user gets a notification and a terminal.
+    SHELL_LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/serpantinum/logs"
+    mkdir -p "$SHELL_LOG_DIR" 2>/dev/null
+    SHELL_LOG="$SHELL_LOG_DIR/shell.log"
 
-    while kill -0 "$QS_PID" 2>/dev/null; do
-        wait "$QS_PID" 2>/dev/null
+    shell_log() {
+        printf '[%s] serpantinumd: %s\n' "$(date '+%F %T')" "$*" >> "$SHELL_LOG" 2>/dev/null
+    }
+
+    emergency_terminal() {
+        local reason="$1" term
+        shell_log "EMERGENCY: $reason"
+        command -v notify-send >/dev/null 2>&1 && notify-send -u critical "Serpantinum" \
+            "$reason
+Log: $SHELL_LOG
+Super+Return opens a terminal; 'serpantinum restart' retries." 9>&- >/dev/null 2>&1 &
+        for term in kitty foot alacritty xterm; do
+            if command -v "$term" >/dev/null 2>&1; then
+                setsid "$term" sh -c 'printf "%s\n\n" "$1"; tail -n 60 "$2"; printf "\nRetry: serpantinum restart\nLog: %s\n" "$2"; exec "${SHELL:-bash}"' \
+                    _ "Serpantinum shell could not start: $reason" "$SHELL_LOG" 9>&- >/dev/null 2>&1 &
+                break
+            fi
+        done
+    }
+
+    if ! command -v quickshell >/dev/null 2>&1; then
+        emergency_terminal "quickshell is not installed or not in PATH ($PATH)"
+        exit 1
+    fi
+    if [ ! -f "$MAIN_QML" ]; then
+        emergency_terminal "shell entry point not found: $MAIN_QML"
+        exit 1
+    fi
+
+    QS_FAILS=0
+    while true; do
+        if [ -f "$SHELL_LOG" ] && [ "$(stat -c %s "$SHELL_LOG" 2>/dev/null || echo 0)" -gt 2097152 ]; then
+            mv -f "$SHELL_LOG" "$SHELL_LOG.1" 2>/dev/null
+        fi
+        shell_log "starting quickshell $(quickshell --version 2>/dev/null | head -n 1) -p $MAIN_QML (SERPANTINUM_DIR=$SERPANTINUM_DIR, WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset})"
+        QS_STARTED=$(date +%s)
+        setsid quickshell -p "$MAIN_QML" 9>&- >> "$SHELL_LOG" 2>&1 &
+        QS_PID=$!
+
+        QS_RC=0
+        while kill -0 "$QS_PID" 2>/dev/null; do
+            wait "$QS_PID" 2>/dev/null
+            QS_RC=$?
+        done
+        shell_log "quickshell (pid $QS_PID) exited with code $QS_RC after $(( $(date +%s) - QS_STARTED ))s"
+
+        # A shell that ran for a while and then crashed is restarted with a fresh
+        # failure budget; three quick failures in a row stop the loop.
+        if [ $(( $(date +%s) - QS_STARTED )) -ge 60 ]; then
+            QS_FAILS=0
+        fi
+        QS_FAILS=$((QS_FAILS + 1))
+        if [ "$QS_FAILS" -ge 3 ]; then
+            emergency_terminal "quickshell failed $QS_FAILS times in a row (last exit code $QS_RC)"
+            break
+        fi
+        sleep 2
     done
 fi

@@ -52,6 +52,7 @@ package() {
 
     install -d "$share"
     cp -a bin src config compositors "$share/"
+    if [ -d themess ]; then cp -a themess "$share/"; fi
     install -Dm644 version.txt "$share/version.txt"
     printf 'pacman\n' | install -Dm644 /dev/stdin "$share/package-managed"
 

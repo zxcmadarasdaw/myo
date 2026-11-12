@@ -24,9 +24,19 @@ check_status() {
         [ -z "$WP_DIR" ] && WP_DIR="$(get_setting "wallpaper_dir" "")"
     fi
 
+    [ -n "$WP_DIR" ] || WP_DIR="${WALLPAPER_DIR:-$HOME/Pictures/Wallpapers}"
+
     RANDOM_WP=""
-    if [ -n "$WP_DIR" ] && [ -d "$WP_DIR" ]; then
-        RANDOM_WP="$(find "$WP_DIR" -maxdepth 1 -type f \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.webp" -o -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.mov" -o -iname "*.webm" \) 2>/dev/null | shuf -n 1)"
+    if [ -d "$WP_DIR" ]; then
+        RANDOM_WP="$(find -L "$WP_DIR" -maxdepth 1 -type f -readable \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.webp" -o -iname "*.gif" -o -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.mov" -o -iname "*.webm" \) 2>/dev/null | shuf -n 1)"
+    fi
+
+    # The wallpaper pack is downloaded from the network during installation.
+    # When that failed the folder is empty; use an image shipped with the
+    # installed package instead of leaving a black desktop.
+    if [ -z "$RANDOM_WP" ]; then
+        RANDOM_WP="$(find -L "$(dirname "$SERPANTINUM_DIR")/themess" -maxdepth 3 -type f -readable \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.gif" \) -path "*/wallpapers/*" 2>/dev/null | sort | head -n 1)"
+        [ -n "$RANDOM_WP" ] && echo "first_launch: wallpaper folder '$WP_DIR' is empty, using bundled $RANDOM_WP" >&2
     fi
 
     START_QML=""

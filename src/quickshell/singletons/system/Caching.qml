@@ -5,7 +5,29 @@ import Quickshell
 QtObject {
     id: root
 
-    readonly property string serpantinumDir: Quickshell.env("SERPANTINUM_DIR")
+    // SERPANTINUM_DIR is exported by serpantinumd. When the shell is started some
+    // other way (plain `quickshell -p .../Shell.qml`, a test copy, a wrapper) the
+    // variable is missing; resolve the install tree from this file's location
+    // instead of the process working directory. This file lives in
+    // <src>/quickshell/singletons/system/.
+    readonly property string serpantinumDir: {
+        const fromEnv = Quickshell.env("SERPANTINUM_DIR");
+        if (fromEnv) return String(fromEnv).replace(/\/+$/, "");
+        const here = decodeURIComponent(String(Qt.resolvedUrl("../../../")).replace(/^file:\/\//, ""));
+        return here.replace(/\/+$/, "");
+    }
+
+    // Converts an absolute filesystem path to a file:// URL that QML loaders
+    // accept. Characters such as '#', '?' and '%' are legal in file names but
+    // would otherwise be parsed as URL fragment/query/escape and break loading.
+    function fileUrl(path) {
+        if (path === undefined || path === null) return "";
+        let p = String(path).trim();
+        if (p === "") return "";
+        if (p.startsWith("file://")) return p;
+        if (!p.startsWith("/")) return "";
+        return "file://" + p.split("/").map(part => encodeURIComponent(part)).join("/");
+    }
     readonly property string qsDir: Quickshell.env("QS_DIR")
 
     readonly property string home: Quickshell.env("HOME")

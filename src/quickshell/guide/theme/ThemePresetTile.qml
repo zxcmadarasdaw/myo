@@ -61,7 +61,7 @@ Rectangle {
                 Image {
                     id: matugenWall
                     anchors.fill: parent
-                    source: delegateContainer.tab.isWallpaperVideo ? ("file://" + Caching.getCacheDir("wallpaper") + "/current_wallpaper.png?rev=" + delegateContainer.tab.wallpaperRevision) : ("file://" + delegateContainer.tab.currentWallpaperPath + (delegateContainer.tab.wallpaperRevision > 0 ? ("?rev=" + delegateContainer.tab.wallpaperRevision) : ""))
+                    source: delegateContainer.tab.isWallpaperVideo ? ("file://" + Caching.getCacheDir("wallpaper") + "/current_wallpaper.png?rev=" + delegateContainer.tab.wallpaperRevision) : (Caching.fileUrl(delegateContainer.tab.currentWallpaperPath) + (delegateContainer.tab.wallpaperRevision > 0 ? ("?rev=" + delegateContainer.tab.wallpaperRevision) : ""))
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                     smooth: true

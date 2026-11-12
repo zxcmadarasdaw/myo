@@ -60,11 +60,11 @@ ShellRoot {
                 property real transitionProgress: 1.0
                 property bool isPreloading: false
                 property int configuredTransitionType: 0
-                readonly property int activeTransitionType: GpuCompatibility.effective.wallpaperTransitions ? configuredTransitionType : 0
+                readonly property int activeTransitionType: GpuCompatibility.effective.wallpaperTransitions && !performanceMode ? configuredTransitionType : 0
                 property string failedVideoA: ""
                 property string failedVideoB: ""
-                readonly property bool staticVideoA: GpuCompatibility.effective.fallback || (pathA !== "" && failedVideoA === pathA)
-                readonly property bool staticVideoB: GpuCompatibility.effective.fallback || (pathB !== "" && failedVideoB === pathB)
+                readonly property bool staticVideoA: GpuCompatibility.effective.fallback || performanceMode || (pathA !== "" && failedVideoA === pathA)
+                readonly property bool staticVideoB: GpuCompatibility.effective.fallback || performanceMode || (pathB !== "" && failedVideoB === pathB)
                 property bool wipeIsVertical: false
                 property int swipeDirection: 0
                 property real transitionOriginX: 0.5
@@ -72,6 +72,20 @@ ShellRoot {
                 property real transitionSeed: 0.0
                 property bool isInitialLoad: true
                 property bool restoreHistory: true
+                // Performance mode keeps the wallpaper but drops animated work:
+                // static transitions, video snapshot instead of playback, GIF paused.
+                readonly property bool performanceMode: !!(Config.getSetting("general", {}).performance)
+                // Human readable reason when the current wallpaper failed to load.
+                property string loadError: ""
+                function reportLoadError(path, reason) {
+                    // Deferred: a GIF fails synchronously while _loadNew() is still
+                    // running, before currentWallpaperPath points at the new file.
+                    Qt.callLater(function() {
+                        if (!path || path !== barWindow.currentWallpaperPath) return;
+                        barWindow.loadError = reason + ": " + path;
+                        console.warn("[wallpaper] " + (barWindow.screen ? barWindow.screen.name : "?") + ": " + barWindow.loadError);
+                    });
+                }
                 onPathAChanged: { if (!isVideo(pathA)) GpuCompatibility.forgetMedia((screen ? screen.name : "") + ":A"); }
                 onPathBChanged: { if (!isVideo(pathB)) GpuCompatibility.forgetMedia((screen ? screen.name : "") + ":B"); }
                 onStaticVideoAChanged: {
@@ -117,6 +131,7 @@ ShellRoot {
                 }
 
                 onCurrentWallpaperPathChanged: {
+                    loadError = "";
                     if (barWindow.screen && barWindow.screen.name) {
                         let map = Object.assign({}, Wallpaper.screenWallpaperPaths);
                         map[barWindow.screen.name] = currentWallpaperPath;
@@ -162,6 +177,28 @@ ShellRoot {
                     }
                 }
 
+                function adoptFallbackWallpaper() {
+                    adoptTimer.restart();
+                }
+
+                Timer {
+                    id: adoptTimer
+                    interval: 1500
+                    onTriggered: {
+                        if (barWindow.currentWallpaperPath !== "") return;
+                        const own = barWindow.screen ? barWindow.screen.name : "";
+                        const paths = Wallpaper.screenWallpaperPaths || {};
+                        for (const name in paths) {
+                            if (name !== own && paths[name] && barWindow.isSupportedMedia(paths[name])) {
+                                barWindow.changeWallpaper(paths[name], 0);
+                                return;
+                            }
+                        }
+                        if (Wallpaper.lastRequestedAll && barWindow.isSupportedMedia(Wallpaper.lastRequestedAll))
+                            barWindow.changeWallpaper(Wallpaper.lastRequestedAll, 0);
+                    }
+                }
+
                 function clearLayers() {
                     transitionAnim.stop();
                     videoWarmUpTimer.stop();
@@ -196,7 +233,11 @@ ShellRoot {
                             barWindow.clearLayers();
                             return;
                         }
-                        if (!barWindow.isSupportedMedia(savedPath)) return;
+                        if (!barWindow.isSupportedMedia(savedPath)) {
+                            console.warn("[wallpaper] unsupported saved wallpaper ignored: " + savedPath);
+                            barWindow.adoptFallbackWallpaper();
+                            return;
+                        }
                         barWindow.pendingChange = null;
                         captureWait.stop();
                         barWindow.capturingFrame = false;
@@ -216,6 +257,10 @@ ShellRoot {
                     onLoadFailed: {
                         barWindow.restoreHistory = false;
                         barWindow.clearLayers();
+                        // No saved wallpaper for this output (first start, new or
+                        // renamed monitor): reuse what another output shows so the
+                        // screen is not left with the bare fallback color.
+                        barWindow.adoptFallbackWallpaper();
                     }
                 }
 
@@ -644,13 +689,14 @@ ShellRoot {
 
                         MediaPlayer {
                             id: playerA
-                            source: barWindow.isVideoA && barWindow.pathA ? "file://" + barWindow.pathA : ""
+                            source: barWindow.isVideoA && barWindow.pathA ? Caching.fileUrl(barWindow.pathA) : ""
                             videoOutput: videoOutputA
                             loops: MediaPlayer.Infinite
                             onSourceChanged: GpuCompatibility.observeMedia(barWindow.screen.name + ":A", barWindow.pathA, "loading", "")
                             onErrorOccurred: function(error, errorString) {
                                 GpuCompatibility.observeMedia(barWindow.screen.name + ":A", barWindow.pathA, "error", errorString);
                                 const failedPath = barWindow.pathA;
+                                barWindow.reportLoadError(failedPath, "Video playback failed (" + errorString + "); codec may be missing, e.g. H.264 with ffmpeg-free");
                                 Qt.callLater(function() { barWindow.failedVideoA = failedPath; });
                             }
                             onPlaybackStateChanged: {
@@ -681,13 +727,14 @@ ShellRoot {
 
                         MediaPlayer {
                             id: playerB
-                            source: barWindow.isVideoB && barWindow.pathB ? "file://" + barWindow.pathB : ""
+                            source: barWindow.isVideoB && barWindow.pathB ? Caching.fileUrl(barWindow.pathB) : ""
                             videoOutput: videoOutputB
                             loops: MediaPlayer.Infinite
                             onSourceChanged: GpuCompatibility.observeMedia(barWindow.screen.name + ":B", barWindow.pathB, "loading", "")
                             onErrorOccurred: function(error, errorString) {
                                 GpuCompatibility.observeMedia(barWindow.screen.name + ":B", barWindow.pathB, "error", errorString);
                                 const failedPath = barWindow.pathB;
+                                barWindow.reportLoadError(failedPath, "Video playback failed (" + errorString + "); codec may be missing, e.g. H.264 with ffmpeg-free");
                                 Qt.callLater(function() { barWindow.failedVideoB = failedPath; });
                             }
                             onPlaybackStateChanged: {
@@ -742,7 +789,7 @@ ShellRoot {
                         property vector4d params: Qt.vector4d(barWindow.wipeIsVertical ? 1.0 : 0.0, barWindow.swipeDirection, barWindow.transitionSeed, 0.0)
                         property color tint: "transparent"
 
-                        fragmentShader: GpuCompatibility.shadersAllowed ? ("file://" + Caching.serpantinumDir + "/assets/shaders/transitions/wallpaper_transition.frag.qsb") : ""
+                        fragmentShader: GpuCompatibility.shadersAllowed ? Caching.fileUrl(Caching.serpantinumDir + "/assets/shaders/transitions/wallpaper_transition.frag.qsb") : ""
                     }
 
                     Item {
@@ -773,7 +820,8 @@ ShellRoot {
                         Image {
                             id: imgA
                             anchors.fill: parent
-                            source: !barWindow.isVideoA && !barWindow.isGif(barWindow.pathA) && barWindow.pathA ? "file://" + barWindow.pathA : ""
+                            onStatusChanged: if (status === Image.Error) barWindow.reportLoadError(barWindow.pathA, "Cannot decode image (missing Qt image plugin, e.g. qt6-qtimageformats for WebP, or damaged file)")
+                            source: !barWindow.isVideoA && !barWindow.isGif(barWindow.pathA) && barWindow.pathA ? Caching.fileUrl(barWindow.pathA) : ""
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                             visible: !barWindow.isVideoA && !barWindow.isGif(barWindow.pathA) && barWindow.pathA !== ""
@@ -784,14 +832,15 @@ ShellRoot {
 
                         WallpaperGif {
                             anchors.fill: parent
-                            imageUrl: barWindow.pathA ? "file://" + encodeURIComponent(barWindow.pathA).replace(/%2F/g, "/") : ""
-                            playing: !barWindow.playbackPaused && !GpuCompatibility.effective.fallback
+                            onFailed: reason => barWindow.reportLoadError(barWindow.pathA, reason)
+                            imageUrl: Caching.fileUrl(barWindow.pathA)
+                            playing: !barWindow.playbackPaused && !GpuCompatibility.effective.fallback && !barWindow.performanceMode
                         }
 
                         Image {
                             anchors.fill: parent
                             visible: barWindow.isVideoA && barWindow.staticVideoA && barWindow.snapReadyA
-                            source: visible ? "file://" + barWindow.layerSnapshotPathA + "?rev=" + barWindow.snapRevA : ""
+                            source: visible ? Caching.fileUrl(barWindow.layerSnapshotPathA) + "?rev=" + barWindow.snapRevA : ""
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                         }
@@ -834,7 +883,7 @@ ShellRoot {
                         property vector4d params: Qt.vector4d(barWindow.wipeIsVertical ? 1.0 : 0.0, barWindow.swipeDirection, barWindow.transitionSeed, 0.0)
                         property color tint: "transparent"
 
-                        fragmentShader: GpuCompatibility.shadersAllowed ? ("file://" + Caching.serpantinumDir + "/assets/shaders/transitions/wallpaper_transition.frag.qsb") : ""
+                        fragmentShader: GpuCompatibility.shadersAllowed ? Caching.fileUrl(Caching.serpantinumDir + "/assets/shaders/transitions/wallpaper_transition.frag.qsb") : ""
                     }
 
                     Item {
@@ -865,7 +914,8 @@ ShellRoot {
                         Image {
                             id: imgB
                             anchors.fill: parent
-                            source: !barWindow.isVideoB && !barWindow.isGif(barWindow.pathB) && barWindow.pathB ? "file://" + barWindow.pathB : ""
+                            onStatusChanged: if (status === Image.Error) barWindow.reportLoadError(barWindow.pathB, "Cannot decode image (missing Qt image plugin, e.g. qt6-qtimageformats for WebP, or damaged file)")
+                            source: !barWindow.isVideoB && !barWindow.isGif(barWindow.pathB) && barWindow.pathB ? Caching.fileUrl(barWindow.pathB) : ""
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                             visible: !barWindow.isVideoB && !barWindow.isGif(barWindow.pathB) && barWindow.pathB !== ""
@@ -876,14 +926,15 @@ ShellRoot {
 
                         WallpaperGif {
                             anchors.fill: parent
-                            imageUrl: barWindow.pathB ? "file://" + encodeURIComponent(barWindow.pathB).replace(/%2F/g, "/") : ""
-                            playing: !barWindow.playbackPaused && !GpuCompatibility.effective.fallback
+                            onFailed: reason => barWindow.reportLoadError(barWindow.pathB, reason)
+                            imageUrl: Caching.fileUrl(barWindow.pathB)
+                            playing: !barWindow.playbackPaused && !GpuCompatibility.effective.fallback && !barWindow.performanceMode
                         }
 
                         Image {
                             anchors.fill: parent
                             visible: barWindow.isVideoB && barWindow.staticVideoB && barWindow.snapReadyB
-                            source: visible ? "file://" + barWindow.layerSnapshotPathB + "?rev=" + barWindow.snapRevB : ""
+                            source: visible ? Caching.fileUrl(barWindow.layerSnapshotPathB) + "?rev=" + barWindow.snapRevB : ""
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                         }
@@ -926,8 +977,25 @@ ShellRoot {
                         property vector4d params: Qt.vector4d(0.0, 0.0, barWindow.transitionSeed, 1.0)
                         property color tint: ThemeBackend.mauve
 
-                        fragmentShader: GpuCompatibility.shadersAllowed ? ("file://" + Caching.serpantinumDir + "/assets/shaders/transitions/wallpaper_transition.frag.qsb") : ""
+                        fragmentShader: GpuCompatibility.shadersAllowed ? Caching.fileUrl(Caching.serpantinumDir + "/assets/shaders/transitions/wallpaper_transition.frag.qsb") : ""
                     }
+                }
+
+                // Safe fallback: the window color stays visible and the user gets
+                // a readable reason instead of an unexplained empty desktop.
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: parent.height * 0.12
+                    width: parent.width * 0.7
+                    z: 10
+                    visible: barWindow.loadError !== ""
+                    text: barWindow.loadError + "\nChoose another wallpaper with Super+W. Details: serpantinum logs"
+                    color: "#e0e0e0"
+                    style: Text.Outline
+                    styleColor: "#000000"
+                    wrapMode: Text.Wrap
+                    horizontalAlignment: Text.AlignHCenter
                 }
 
                 DropArea {

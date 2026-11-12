@@ -61,7 +61,7 @@ Item {
             visible: opacity > 0 && source !== ""
             opacity: preview.tab.customBackgroundActive ? 0.0 : 1.0
             Behavior on opacity { NumberAnimation { duration: 250 } }
-            source: preview.wallpaperPath !== "" && !preview.wallpaperIsVideo ? "file://" + preview.wallpaperPath : ""
+            source: preview.wallpaperPath !== "" && !preview.wallpaperIsVideo ? Caching.fileUrl(preview.wallpaperPath) : ""
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             smooth: true
@@ -73,7 +73,7 @@ Item {
             visible: opacity > 0 && source !== ""
             opacity: preview.tab.customBackgroundActive && !preview.customVideo ? 1.0 : 0.0
             Behavior on opacity { NumberAnimation { duration: 250 } }
-            source: preview.customPath !== "" && !preview.tab.isVideoPath(preview.customPath) ? "file://" + preview.customPath : ""
+            source: preview.customPath !== "" && !preview.tab.isVideoPath(preview.customPath) ? Caching.fileUrl(preview.customPath) : ""
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             smooth: true

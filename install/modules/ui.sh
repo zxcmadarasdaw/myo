@@ -683,7 +683,15 @@ EOF
     printf " $(t "installer.ui.buy_coffee")\n"
     printf " %s%sKo-fi:%s https://ko-fi.com/ilyamiro\n" "$BOLD" "$C_CYAN" "$RESET"
     printf "%s%s================================================================================%s\n\n" "$BOLD" "$C_MAGENTA" "$RESET"
-    printf "%s%s%s\n" "$C_GREEN" "$(t "installer.ui.installed_success" "ver=$target_ver" "commit=$target_commit")" "$RESET"
+    if [ "${INSTALL_INCOMPLETE:-false}" = true ]; then
+        printf "%s%sSerpantinum %s (%s) was NOT installed completely.%s\n" "$BOLD" "$C_RED" "$target_ver" "$target_commit" "$RESET"
+        for fp in "${VERIFY_ERRORS[@]}"; do
+            printf "  - %s%s%s\n" "$C_RED" "$fp" "$RESET"
+        done
+        printf "%sDo not log into the Hyprland session until these are fixed; run the installer again.%s\n" "$C_YELLOW" "$RESET"
+    else
+        printf "%s%s%s\n" "$C_GREEN" "$(t "installer.ui.installed_success" "ver=$target_ver" "commit=$target_commit")" "$RESET"
+    fi
     if [ ${#FAILED_PKGS[@]} -gt 0 ]; then
         printf "\n%s%s%s%s\n" "$BOLD" "$C_RED" "$(t "installer.ui.failed_packages")" "$RESET"
         for fp in "${FAILED_PKGS[@]}"; do

@@ -14,6 +14,9 @@ Item {
     property var screenWallpapers: ({})
     property var screenWallpaperPaths: ({})
     property var engines: ({})
+    // Last wallpaper requested for every output. Outputs that appear later
+    // (hotplug, slow monitor init on login) adopt it instead of staying empty.
+    property string lastRequestedAll: ""
 
     readonly property var transitionIds: ["fade", "wipe", "circle", "swipe", "paint"]
     readonly property var transitionModes: ["random", "custom"]
@@ -87,6 +90,7 @@ Item {
     }
 
     function setWallpaper(screenName: string, path: string, transition: string): void {
+        if (screenName === "all" && path) root.lastRequestedAll = path;
         root.wallpaperChanged(screenName, path, transition ? transition : "fade");
     }
 
@@ -118,7 +122,7 @@ Item {
         let scrName = screenName || "all";
         let dir = Config.getSetting("wallpaperDir", "") || Config.getSetting("wallpaper_dir", "") || Quickshell.env("WALLPAPER_DIR") || (Quickshell.env("HOME") + "/Pictures/Wallpapers");
         let script =
-            "[ -d \"$1\" ] && find -L \"$1\" -maxdepth 1 -type f \\( -iname \"*.jpg\" -o -iname \"*.jpeg\" -o -iname \"*.png\" -o -iname \"*.webp\" -o -iname \"*.bmp\" -o -iname \"*.mp4\" -o -iname \"*.mkv\" -o -iname \"*.mov\" -o -iname \"*.webm\" \\) 2>/dev/null | shuf -n 1";
+            "[ -d \"$1\" ] && find -L \"$1\" -maxdepth 1 -type f \\( -iname \"*.jpg\" -o -iname \"*.jpeg\" -o -iname \"*.png\" -o -iname \"*.webp\" -o -iname \"*.bmp\" -o -iname \"*.gif\" -o -iname \"*.avif\" -o -iname \"*.mp4\" -o -iname \"*.mkv\" -o -iname \"*.mov\" -o -iname \"*.webm\" \\) 2>/dev/null | shuf -n 1";
         shuffleProcess.targetScreenName = scrName;
         shuffleProcess.transition = transition || "";
         shuffleProcess.command = ["bash", "-c", script, "shuffle", dir];

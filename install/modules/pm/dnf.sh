@@ -15,6 +15,7 @@ declare -A PM_PKG_MAP=(
     [tesseract-data-eng]="tesseract-langpack-eng"
     [wl-clipboard]="wl-clipboard"
     [qt6-multimedia]="qt6-qtmultimedia"
+    [qt6-imageformats]="qt6-qtimageformats"
     [cliphist]="cliphist"
     [jq]="jq"
     [ddcutil]="ddcutil"
@@ -243,7 +244,12 @@ pm_install_pkg() {
 
     if [ -z "$(dnf repoquery --available --quiet "$target" 2>/dev/null | head -n 1)" ]; then
         if [ -n "${PM_TERRA_MAP[$pkg]:-}" ]; then
-            pm_enable_terra || return 1
+            # Terra is only needed for packages listed in PM_TERRA_MAP
+            # (MangoWC). Hyprland and the shell never depend on it.
+            if ! pm_enable_terra; then
+                echo -e "\e[31m[ ERROR ]\e[0m Terra repository could not be enabled; $pkg is unavailable (network error or repository down). Other compositors are unaffected." >&2
+                return 1
+            fi
         fi
         local copr="${PM_COPR_MAP[$pkg]:-}"
         if [ -n "$copr" ]; then
@@ -278,6 +284,13 @@ pm_remove_pkg() {
 
 pm_remove_conflicting_pkg() {
     true
+}
+
+# Fedora's own hyprland package may predate the Lua configuration format.
+# Try the COPR build, which tracks upstream releases.
+pm_upgrade_hyprland() {
+    pm_enable_copr "${PM_COPR_MAP[hyprland]}" || return 1
+    sudo dnf upgrade -y --refresh hyprland || sudo dnf install -y --refresh hyprland
 }
 
 pm_upgrade_quickshell() {

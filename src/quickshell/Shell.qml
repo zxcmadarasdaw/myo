@@ -73,8 +73,11 @@ ShellRoot {
             monitorName: modelData.name
         }
     }
+    // The wallpaper is always loaded. Performance mode used to unload it, which
+    // left a bare black desktop; the engine itself now skips animations,
+    // transitions and video playback while performance mode is on.
     Loader {
-        active: !performanceMode
+        active: true
         sourceComponent: WallpaperEngine {}
     }
     // Infinite canvas: minimap, widget navigator and the "canvas" IPC target.

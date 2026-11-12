@@ -46,6 +46,19 @@ get_wallpaper_dir() {
     echo "$user_pics/Wallpapers"
 }
 
+# Copies the wallpapers shipped inside bundled Themess packages into an empty
+# wallpaper folder so the first start never ends on a bare background.
+install_bundled_wallpapers() {
+    local wallpaper_dir="$1" f copied=0
+    [ -n "$(find -L "$wallpaper_dir" -maxdepth 1 -type f 2>/dev/null | head -n 1)" ] && return 0
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        cp -n "$f" "$wallpaper_dir/" 2>/dev/null && copied=$((copied + 1))
+    done < <(find -L "$HOME/.local/share/serpantinum/themess" -maxdepth 3 -type f -path "*/wallpapers/*" \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.gif" -o -iname "*.webm" \) 2>/dev/null)
+    [ "$copied" -gt 0 ] && echo -e "\e[36m[ INFO ]\e[0m Installed $copied bundled wallpaper(s) into $wallpaper_dir"
+    return 0
+}
+
 install_wallpapers() {
     local full_pack="${1:-true}"
     local wallpaper_dir
@@ -79,6 +92,8 @@ install_wallpapers() {
     fi
 
     if [ ! -d "$src_dir" ]; then
+        echo -e "\n\e[33m[ WARN ]\e[0m Wallpaper pack could not be downloaded (network?)."
+        install_bundled_wallpapers "$wallpaper_dir"
         return 0
     fi
 
@@ -121,6 +136,8 @@ install_wallpapers() {
             fi
         fi
     fi
+
+    install_bundled_wallpapers "$wallpaper_dir"
 }
 
 resolve_sddm_backend() {
@@ -366,6 +383,24 @@ remove_settings_desktop_entry() {
     fi
 }
 
+# Replace <dst> with a copy of <src> (without Python caches). The copy is
+# staged first so an interrupted copy never leaves a half-written tree.
+sync_program_dir() {
+    local src="$1" dst="$2" stage
+    [ -d "$src" ] || return 0
+    stage="$dst.new.$$"
+    rm -rf "$stage"
+    mkdir -p "$stage"
+    if ! cp -r "$src/." "$stage/"; then
+        rm -rf "$stage"
+        echo -e "\e[31m[ ERROR ]\e[0m Failed to copy $src to $dst" >&2
+        return 1
+    fi
+    find "$stage" -type d -name "__pycache__" -prune -exec rm -rf {} + 2>/dev/null || true
+    rm -rf "$dst"
+    mv "$stage" "$dst"
+}
+
 deploy_package() {
     local REPO_ROOT="$1"
     local OLD_COMMIT="$2"
@@ -557,6 +592,17 @@ deploy_package() {
             done <<< "$changed_files"
         fi
     fi
+
+    # Program files are mirrored from the source tree on every run. The
+    # incremental path above only copies files changed between two *commits*,
+    # so uncommitted edits in a local checkout were never installed, and the
+    # bundled Themess packages (themess/) were not copied at all although the
+    # Themess backend looks for them next to src/.
+    sync_program_dir "$REPO_ROOT/bin" "$TARGET_BASE/bin"
+    sync_program_dir "$REPO_ROOT/src" "$TARGET_BASE/src"
+    sync_program_dir "$REPO_ROOT/themess" "$TARGET_BASE/themess"
+    chmod +x "$TARGET_BASE/bin/"* 2>/dev/null || true
+    find "$TARGET_BASE/src" -type f \( -name "*.sh" -o -name "*.py" \) -exec chmod +x {} + 2>/dev/null || true
 
     if [ -f "$REPO_ROOT/version.txt" ]; then
         rm -f "$TARGET_BASE/src/version.txt"

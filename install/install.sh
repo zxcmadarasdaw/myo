@@ -63,6 +63,7 @@ source "$MODULES_DIR/version.sh"
 source "$MODULES_DIR/config.sh"
 source "$MODULES_DIR/service.sh"
 source "$MODULES_DIR/ui.sh"
+source "$MODULES_DIR/verify.sh"
 
 TELEMETRY_ID=$(get_telemetry_id)
 ENABLE_TELEMETRY=$(get_telemetry_enabled)
@@ -96,6 +97,9 @@ elif [[ "$INSTALL_STATE" == "fresh" || "$IS_REINSTALL" == true ]]; then
 fi
 
 install_dependencies "$INSTALL_STATE" "$IS_REINSTALL" "${SELECTED_COMPOSITORS[@]}"
+if [[ " ${SELECTED_COMPOSITORS[*]} " == *" hyprland "* ]]; then
+    ensure_hyprland_lua_support
+fi
 install_ski
 install_audio_daemon
 install_gamma_daemon
@@ -121,4 +125,10 @@ if [ "$ENABLE_TELEMETRY" = true ] && [ -f "$MODULES_DIR/telemetry.sh" ]; then
     bash "$MODULES_DIR/telemetry.sh" --mode done --version "$TARGET_VERSION" --old-version "$OLD_VERSION" --install-state "$INSTALL_STATE" --compositor "${SELECTED_COMPOSITORS[*]}" --id "$TELEMETRY_ID" --enabled "$ENABLE_TELEMETRY" --failed "${FAILED_PKGS[*]}"
 fi
 
+# Decides the final status; a failed check keeps the installer from
+# reporting success (see install/modules/verify.sh).
+verify_installation || true
+
 draw_completion_screen "$TARGET_VERSION" "$TARGET_COMMIT"
+[ "$INSTALL_INCOMPLETE" = true ] && exit 1
+exit 0

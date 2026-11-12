@@ -1039,7 +1039,7 @@ Item {
 
     FolderListModel {
         id: srcModel
-        folder: "file://" + window.srcDir
+        folder: Caching.fileUrl(window.srcDir)
         nameFilters: ["*.jpg", "*.jpeg", "*.png", "*.webp", "*.gif", "*.bmp", "*.mp4", "*.mkv", "*.mov", "*.webm", "*.JPG", "*.JPEG", "*.PNG", "*.WEBP", "*.GIF", "*.BMP", "*.MP4", "*.MKV", "*.MOV", "*.WEBM"]
         caseSensitive: true
         showDirs: false

@@ -205,6 +205,11 @@ Item {
                     }
                 }
             } catch (e) {
+                // A damaged settings.json used to be ignored silently; the next
+                // change then overwrote it with defaults and the user's settings
+                // were lost. Keep a copy of the damaged file and say why.
+                console.warn("[config] " + config.settingsJsonPath + " is not valid JSON (" + e + "); using defaults, damaged copy saved as settings.json.corrupt");
+                Quickshell.execDetached(["cp", "-f", "--", config.settingsJsonPath, config.settingsJsonPath + ".corrupt"]);
             }
             config.dataReady = true;
         }

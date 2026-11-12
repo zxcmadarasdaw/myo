@@ -9,8 +9,10 @@ source "$SERPANTINUM_DIR/scripts/caching.sh"
 source "$SERPANTINUM_DIR/scripts/config.sh"
 source "$SERPANTINUM_DIR/scripts/i18n.sh"
 
-if [ -z "$MAIN_QML" ]; then
-    export MAIN_QML="$(find "$SERPANTINUM_DIR/quickshell" -type f \( -name "Shell.qml" -o -name "Bar.qml" \) 2>/dev/null | head -n 1)"
+# caching.sh normally exports MAIN_QML. The entry point is always Shell.qml;
+# never pick a component such as bar/Bar.qml as the shell root.
+if [ -z "$MAIN_QML" ] || [ ! -f "$MAIN_QML" ]; then
+    export MAIN_QML="$SERPANTINUM_DIR/quickshell/Shell.qml"
 fi
 
 is_alive() {
@@ -90,6 +92,7 @@ show_help() {
     echo "  ipc ...                      $(t "cli.ipc_desc")"
     echo "  kill                         $(t "cli.kill_desc")"
     echo "  restart                      $(t "cli.restart_desc")"
+    echo "  logs [lines]                 shell log (quickshell output, start/crash events)"
     echo "  config <action> [args]       $(t "cli.config_desc")"
     echo "  info <topic>                 $(t "cli.info_desc")"
     echo "  set <topic> [value]          $(t "cli.set_desc")"
@@ -649,6 +652,13 @@ cli_trigger() {
             ;;
     esac
 }
+
+if [[ "$1" == "logs" ]]; then
+    log_file="${XDG_STATE_HOME:-$HOME/.local/state}/serpantinum/logs/shell.log"
+    echo "$log_file"
+    [ -f "$log_file" ] && tail -n "${2:-80}" "$log_file"
+    exit 0
+fi
 
 if [[ "$1" == "kill" ]]; then
     stop_daemon

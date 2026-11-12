@@ -67,3 +67,11 @@ for i = 1, 10 do
   hl.bind(mainMod .. " + " .. key, hl.dsp.exec_cmd("serpantinum msg workspace " .. ws))
   hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.exec_cmd("serpantinum msg workspace " .. ws .. " move"))
 end
+
+-- Recovery binds that work even when the shell is not running:
+-- Super+Return opens a terminal (above), Super+Ctrl+R restarts the shell,
+-- Super+Ctrl+Shift+Escape leaves the session.
+hl.bind(mainMod .. " + CTRL + R", hl.dsp.exec_cmd("serpantinum restart"))
+if hl.dsp.exit then
+  hl.bind(mainMod .. " + CTRL + SHIFT + Escape", hl.dsp.exit())
+end

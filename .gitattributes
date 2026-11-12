@@ -1,0 +1,15 @@
+# Scripts and configs run on Linux; CRLF breaks bash ("\r: command not found")
+# and Lua/JSON parsers. Keep LF in the repository and in every checkout.
+* text=auto eol=lf
+*.png binary
+*.gif binary
+*.webm binary
+*.mp4 binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.zip binary
+*.ttf binary
+*.otf binary
+*.qsb binary
+*.wav binary
