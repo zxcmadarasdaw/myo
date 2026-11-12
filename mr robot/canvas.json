@@ -1,0 +1,16 @@
+{
+  "canvas": {
+    "enabled": true,
+    "sensitivity": 0.85,
+    "inertia": true,
+    "friction": 8,
+    "wheelAction": "zoom",
+    "zoomStep": 1.10,
+    "gridSize": 16,
+    "snapToGrid": false,
+    "snapToGuides": true,
+    "minimap": "auto",
+    "minimapCorner": "top-right",
+    "dragToPan": true
+  }
+}

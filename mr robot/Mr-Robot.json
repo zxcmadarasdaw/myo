@@ -1,0 +1,206 @@
+{
+  "name": "Mr. Robot",
+  "palette": {
+    "crust": "#060B13",
+    "mantle": "#0A111C",
+    "base": "#0D1724",
+    "surface0": "#152536",
+    "surface1": "#20354B",
+    "surface2": "#304B63",
+    "overlay0": "#58718B",
+    "overlay1": "#6D88A3",
+    "overlay2": "#839EB9",
+    "subtext0": "#9CB1C7",
+    "subtext1": "#B4C8DB",
+    "text": "#E2EFFC",
+    "blue": "#85A9FF",
+    "sapphire": "#5BBDEB",
+    "mauve": "#71E3F7",
+    "teal": "#55D9C1",
+    "green": "#8FE3B2",
+    "yellow": "#F1D294",
+    "peach": "#EEB286",
+    "red": "#FF8398",
+    "maroon": "#DE778F",
+    "pink": "#C6ABF2"
+  },
+  "settings": {
+    "theme": {
+      "activePreset": "Mr. Robot",
+      "matugen": false,
+      "mode": "dark",
+      "fontFamily": "JetBrains Mono",
+      "borderRadius": 14,
+      "elementOpacity": 87,
+      "blurBackground": true,
+      "blurStyle": "blur",
+      "colors": {
+        "crust": "#060B13",
+        "mantle": "#0A111C",
+        "base": "#0D1724",
+        "surface0": "#152536",
+        "surface1": "#20354B",
+        "surface2": "#304B63",
+        "overlay0": "#58718B",
+        "overlay1": "#6D88A3",
+        "overlay2": "#839EB9",
+        "subtext0": "#9CB1C7",
+        "subtext1": "#B4C8DB",
+        "text": "#E2EFFC",
+        "blue": "#85A9FF",
+        "sapphire": "#5BBDEB",
+        "mauve": "#71E3F7",
+        "teal": "#55D9C1",
+        "green": "#8FE3B2",
+        "yellow": "#F1D294",
+        "peach": "#EEB286",
+        "red": "#FF8398",
+        "maroon": "#DE778F",
+        "pink": "#C6ABF2"
+      }
+    },
+    "bar": {
+      "position": "top",
+      "style": "modular",
+      "width": 96,
+      "height": 40,
+      "opacity": 90,
+      "autohide": false,
+      "distinctPills": false,
+      "centerByEdges": true,
+      "menuItems": [
+        "launcher",
+        "settings"
+      ],
+      "workspacesStyle": "pills",
+      "timeStyle": "classic",
+      "timeShowDate": true,
+      "time": {
+        "format": "HH:mm"
+      },
+      "wifiShowName": false,
+      "sysmonStyle": "bars",
+      "sysmonStats": [
+        "cpu",
+        "ram"
+      ],
+      "modules": {
+        "left": [
+          "left",
+          "workspaces"
+        ],
+        "center": [
+          "timedate"
+        ],
+        "right": [
+          "tray",
+          [
+            "sysmon",
+            "kb",
+            "wifi",
+            "vol",
+            "bat"
+          ]
+        ]
+      }
+    },
+    "launcher": {
+      "position": "center",
+      "width": 520,
+      "itemCount": 6
+    },
+    "dock": {
+      "enabled": false
+    },
+    "wallpaperTransition": {
+      "mode": "custom",
+      "pool": [
+        "fade"
+      ],
+      "effects": {
+        "fade": {
+          "duration": 600
+        }
+      }
+    },
+    "canvas": {
+      "enabled": true,
+      "sensitivity": 0.85,
+      "inertia": true,
+      "friction": 8,
+      "wheelAction": "zoom",
+      "zoomStep": 1.1,
+      "gridSize": 16,
+      "snapToGrid": false,
+      "snapToGuides": true,
+      "minimap": "auto",
+      "minimapCorner": "top-right",
+      "dragToPan": true
+    }
+  },
+  "widgets": {
+    "eDP-1": [
+      {
+        "id": "mr_robot_clock",
+        "type": "time",
+        "variant": "lockscreen",
+        "anchor": "top left",
+        "x": 28,
+        "y": 30,
+        "w": 292,
+        "h": 108
+      },
+      {
+        "id": "mr_robot_weather",
+        "type": "weather",
+        "variant": "compact",
+        "anchor": "top left",
+        "x": 340,
+        "y": 30,
+        "w": 216,
+        "h": 108
+      },
+      {
+        "id": "mr_robot_music",
+        "type": "music",
+        "variant": "full",
+        "anchor": "bottom left",
+        "x": 28,
+        "y": 24,
+        "w": 328,
+        "h": 104,
+        "showBars": false
+      },
+      {
+        "id": "mr_robot_cpu",
+        "type": "cpu",
+        "variant": "default",
+        "anchor": "bottom left",
+        "x": 374,
+        "y": 24,
+        "w": 112,
+        "h": 104
+      },
+      {
+        "id": "mr_robot_ram",
+        "type": "ram",
+        "variant": "default",
+        "anchor": "bottom left",
+        "x": 504,
+        "y": 24,
+        "w": 112,
+        "h": 104
+      },
+      {
+        "id": "mr_robot_notes",
+        "type": "notes",
+        "variant": "default",
+        "anchor": "bottom right",
+        "x": 28,
+        "y": 24,
+        "w": 284,
+        "h": 184
+      }
+    ]
+  }
+}

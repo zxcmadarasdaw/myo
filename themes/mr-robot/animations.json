@@ -1,0 +1,9 @@
+{
+  "wallpaperTransition": {
+    "mode": "custom",
+    "pool": ["fade"],
+    "effects": {
+      "fade": { "duration": 600 }
+    }
+  }
+}
