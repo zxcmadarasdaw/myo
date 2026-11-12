@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "Mr. Robot",
+  "author": "Serpantinum",
+  "description": "Midnight blues, cyan accents and the original animated wallpaper. The layout includes a clock, weather, music, system monitors and notes.",
+  "components": {
+    "palette": "palette.json",
+    "materials": "materials.json",
+    "panels": "panels.json",
+    "animations": "animations.json",
+    "canvas": "canvas.json",
+    "dock": "dock.json",
+    "launcher": "launcher.json",
+    "notifications": "notifications.json",
+    "widgets": "widgets.json",
+    "wallpaper": "wallpapers/mr-robot.gif"
+  }
+}

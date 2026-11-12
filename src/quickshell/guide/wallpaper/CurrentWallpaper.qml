@@ -31,6 +31,12 @@ Item {
         path: root.screenName !== "" ? (Caching.getCacheDir("wallpaper") + "/current_" + root.screenName) : ""
         watchChanges: true
         onFileChanged: reload()
+        onLoadFailed: {
+            if (root.path !== "") {
+                root.path = "";
+                root.revision++;
+            }
+        }
         onLoaded: {
             let res = text().trim();
             if (res !== "" && res !== root.path) {

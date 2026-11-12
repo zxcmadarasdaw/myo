@@ -71,6 +71,7 @@ ShellRoot {
                 property real transitionOriginY: 0.5
                 property real transitionSeed: 0.0
                 property bool isInitialLoad: true
+                property bool restoreHistory: true
                 onPathAChanged: { if (!isVideo(pathA)) GpuCompatibility.forgetMedia((screen ? screen.name : "") + ":A"); }
                 onPathBChanged: { if (!isVideo(pathB)) GpuCompatibility.forgetMedia((screen ? screen.name : "") + ":B"); }
                 onStaticVideoAChanged: {
@@ -105,7 +106,6 @@ ShellRoot {
                 }
 
                 Component.onCompleted: {
-                    restorePoller.running = true;
                     Wallpaper.registerEngine(barWindow.screen ? barWindow.screen.name : "", barWindow);
                 }
 
@@ -156,48 +156,102 @@ ShellRoot {
 
                     function onWallpaperCleared(screenName) {
                         if (screenName === "all" || screenName === barWindow.screen.name) {
-                            barWindow.currentWallpaperPath = "";
-                            barWindow.pathA = "";
-                            barWindow.pathB = "";
-                            barWindow.isVideoA = false;
-                            barWindow.isVideoB = false;
-                            barWindow.originalFileName = "";
-                            barWindow.stopA();
-                            barWindow.stopB();
-                            Quickshell.execDetached(["bash", "-c", "rm -f '" + barWindow.wpStatePath + "' '" + barWindow.wpStatePath + "_name'"]);
+                            barWindow.clearLayers();
+                            Quickshell.execDetached(["rm", "-f", "--", barWindow.wpStatePath, barWindow.wpStatePath + "_name"]);
                         }
                     }
                 }
 
-                Process {
-                    id: restorePoller
-                    running: false
-                    command: [
-                        "bash", "-c",
-                        "F1='" + barWindow.wpStatePath + "'; F2='" + barWindow.wpStatePath + "_name'; [ -f \"$F1\" ] && cat \"$F1\" || true; echo '---SPLIT---'; [ -f \"$F2\" ] && cat \"$F2\" || true"
-                    ]
-                    stdout: StdioCollector {
-                        onStreamFinished: {
-                            let parts = this.text.split("---SPLIT---");
-                            let savedPath = parts[0] ? parts[0].trim() : "";
-                            let savedName = parts[1] ? parts[1].trim() : "";
-                            if (savedPath !== "") {
-                                barWindow.originalFileName = savedName;
-                                barWindow._loadNew(savedPath, false);
-                                if (barWindow.isVideo(savedPath)) {
-                                    videoSnapshotProcess.targetPath = savedPath;
-                                    videoSnapshotProcess.running = false;
-                                    videoSnapshotProcess.running = true;
-                                }
-                                if (savedName !== "") {
-                                    let histFile = barWindow.wpCacheDir + "/history.txt";
-                                    Quickshell.execDetached(["bash", "-c",
-                                        "HIST='" + histFile + "'; if [ -f \"$HIST\" ]; then if [ \"$(head -n 1 \"$HIST\" 2>/dev/null)\" != '" + savedName + "' ]; then grep -v -F -x '" + savedName + "' \"$HIST\" > \"$HIST.tmp\" 2>/dev/null || true; printf '%s\n' '" + savedName + "' | cat - \"$HIST.tmp\" > \"$HIST\"; rm -f \"$HIST.tmp\"; fi; else printf '%s\n' '" + savedName + "' > \"$HIST\"; fi"
-                                    ]);
-                                }
-                            }
+                function clearLayers() {
+                    transitionAnim.stop();
+                    videoWarmUpTimer.stop();
+                    captureWait.stop();
+                    pendingChange = null;
+                    capturingFrame = false;
+                    frozenActive = false;
+                    isPreloading = false;
+                    transitionProgress = 1.0;
+                    currentWallpaperPath = "";
+                    originalFileName = "";
+                    stopA();
+                    stopB();
+                    pathA = "";
+                    pathB = "";
+                    isVideoA = false;
+                    isVideoB = false;
+                    isInitialLoad = true;
+                }
+
+                FileView {
+                    id: savedWallpaper
+                    path: barWindow.wpStatePath
+                    printErrors: false
+                    watchChanges: true
+                    onFileChanged: wallpaperReload.restart()
+                    onLoaded: {
+                        const savedPath = text().trim();
+                        if (savedPath === barWindow.currentWallpaperPath) return;
+                        if (savedPath === "") {
+                            barWindow.restoreHistory = false;
+                            barWindow.clearLayers();
+                            return;
+                        }
+                        if (!barWindow.isSupportedMedia(savedPath)) return;
+                        barWindow.pendingChange = null;
+                        captureWait.stop();
+                        barWindow.capturingFrame = false;
+                        barWindow.frozenActive = false;
+                        const fx = Wallpaper.resolveTransition(-1);
+                        barWindow.configureTransition(fx, -1, -1);
+                        barWindow._loadNew(savedPath, false);
+                        savedTitle.reload();
+                        if (barWindow.isVideo(savedPath)) {
+                            videoSnapshotProcess.targetPath = savedPath;
+                            videoSnapshotProcess.running = false;
+                            videoSnapshotProcess.running = true;
+                        } else if (Matugen.isMatugenTheme()) {
+                            Matugen.generate(barWindow.isGif(savedPath) ? barWindow.wpSnapshotPath : savedPath);
                         }
                     }
+                    onLoadFailed: {
+                        barWindow.restoreHistory = false;
+                        barWindow.clearLayers();
+                    }
+                }
+
+                FileView {
+                    id: savedTitle
+                    path: barWindow.wpStatePath + "_name"
+                    printErrors: false
+                    watchChanges: true
+                    onFileChanged: reload()
+                    onLoaded: {
+                        const name = text().trim();
+                        if (barWindow.currentWallpaperPath === "" || name === "") return;
+                        barWindow.originalFileName = name;
+                        if (!barWindow.restoreHistory) return;
+                        barWindow.restoreHistory = false;
+                        Quickshell.execDetached(["bash", "-c",
+                            "if [ \"$(head -n 1 -- \"$1\" 2>/dev/null)\" != \"$2\" ]; then\n    { printf '%s\\n' \"$2\"; grep -v -F -x -- \"$2\" \"$1\" 2>/dev/null || true; } > \"$1.tmp.$$\" &&\n        mv -f -- \"$1.tmp.$$\" \"$1\"\nfi",
+                            "_", barWindow.wpCacheDir + "/history.txt", name]);
+                    }
+                    onLoadFailed: {
+                        if (barWindow.currentWallpaperPath !== "") barWindow.restoreHistory = false;
+                    }
+                }
+
+                Connections {
+                    target: Themess
+                    function onStoresChanged() {
+                        wallpaperReload.restart();
+                        savedTitle.reload();
+                    }
+                }
+
+                Timer {
+                    id: wallpaperReload
+                    interval: 80
+                    onTriggered: savedWallpaper.reload()
                 }
 
                 Timer {
@@ -271,6 +325,10 @@ ShellRoot {
                     proc.targetPath = path;
                     proc.running = false;
                     proc.running = true;
+                }
+
+                function isGif(path) {
+                    return path.toLowerCase().endsWith(".gif");
                 }
 
                 function isVideo(p) {
@@ -434,6 +492,25 @@ ShellRoot {
                     barWindow.currentWallpaperPath = cleanPath;
                 }
 
+                function configureTransition(fx, customOriginX, customOriginY) {
+                    barWindow.configuredTransitionType = fx.type;
+                    barWindow.activeDuration = fx.duration;
+                    barWindow.wipeIsVertical = fx.vertical;
+                    barWindow.swipeDirection = fx.direction;
+                    barWindow.transitionSeed = Math.random() * 100.0;
+
+                    if (customOriginX >= 0 && customOriginY >= 0) {
+                        barWindow.transitionOriginX = customOriginX;
+                        barWindow.transitionOriginY = customOriginY;
+                    } else if (fx.centered) {
+                        barWindow.transitionOriginX = 0.5;
+                        barWindow.transitionOriginY = 0.5;
+                    } else {
+                        barWindow.transitionOriginX = 0.15 + Math.random() * 0.70;
+                        barWindow.transitionOriginY = 0.15 + Math.random() * 0.70;
+                    }
+                }
+
                 function changeWallpaper(path, ttype) {
                     if (!path) return;
                     if (barWindow.transitionBusy) {
@@ -476,22 +553,7 @@ ShellRoot {
                     }
 
                     let fx = Wallpaper.resolveTransition(chosenType);
-                    barWindow.configuredTransitionType = fx.type;
-                    barWindow.activeDuration = fx.duration;
-                    barWindow.wipeIsVertical = fx.vertical;
-                    barWindow.swipeDirection = fx.direction;
-                    barWindow.transitionSeed = Math.random() * 100.0;
-
-                    if (fromMenu && customOriginX >= 0 && customOriginY >= 0) {
-                        barWindow.transitionOriginX = customOriginX;
-                        barWindow.transitionOriginY = customOriginY;
-                    } else if (fx.centered) {
-                        barWindow.transitionOriginX = 0.5;
-                        barWindow.transitionOriginY = 0.5;
-                    } else {
-                        barWindow.transitionOriginX = 0.15 + Math.random() * 0.70;
-                        barWindow.transitionOriginY = 0.15 + Math.random() * 0.70;
-                    }
+                    barWindow.configureTransition(fx, fromMenu ? customOriginX : -1, fromMenu ? customOriginY : -1);
 
                     if (typeof DesktopMenuController !== "undefined") {
                         DesktopMenuController.isMenuShuffle = false;
@@ -711,13 +773,19 @@ ShellRoot {
                         Image {
                             id: imgA
                             anchors.fill: parent
-                            source: !barWindow.isVideoA && barWindow.pathA ? "file://" + barWindow.pathA : ""
+                            source: !barWindow.isVideoA && !barWindow.isGif(barWindow.pathA) && barWindow.pathA ? "file://" + barWindow.pathA : ""
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
-                            visible: !barWindow.isVideoA && barWindow.pathA !== ""
+                            visible: !barWindow.isVideoA && !barWindow.isGif(barWindow.pathA) && barWindow.pathA !== ""
                             cache: true
                             sourceSize.width: parent.width > 0 ? Math.ceil(parent.width * (Screen.devicePixelRatio || 1)) : 0
                             sourceSize.height: parent.height > 0 ? Math.ceil(parent.height * (Screen.devicePixelRatio || 1)) : 0
+                        }
+
+                        WallpaperGif {
+                            anchors.fill: parent
+                            imageUrl: barWindow.pathA ? "file://" + encodeURIComponent(barWindow.pathA).replace(/%2F/g, "/") : ""
+                            playing: !barWindow.playbackPaused && !GpuCompatibility.effective.fallback
                         }
 
                         Image {
@@ -797,13 +865,19 @@ ShellRoot {
                         Image {
                             id: imgB
                             anchors.fill: parent
-                            source: !barWindow.isVideoB && barWindow.pathB ? "file://" + barWindow.pathB : ""
+                            source: !barWindow.isVideoB && !barWindow.isGif(barWindow.pathB) && barWindow.pathB ? "file://" + barWindow.pathB : ""
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
-                            visible: !barWindow.isVideoB && barWindow.pathB !== ""
+                            visible: !barWindow.isVideoB && !barWindow.isGif(barWindow.pathB) && barWindow.pathB !== ""
                             cache: true
                             sourceSize.width: parent.width > 0 ? Math.ceil(parent.width * (Screen.devicePixelRatio || 1)) : 0
                             sourceSize.height: parent.height > 0 ? Math.ceil(parent.height * (Screen.devicePixelRatio || 1)) : 0
+                        }
+
+                        WallpaperGif {
+                            anchors.fill: parent
+                            imageUrl: barWindow.pathB ? "file://" + encodeURIComponent(barWindow.pathB).replace(/%2F/g, "/") : ""
+                            playing: !barWindow.playbackPaused && !GpuCompatibility.effective.fallback
                         }
 
                         Image {

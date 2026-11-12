@@ -13,6 +13,7 @@ Item {
     readonly property string safeMonitorName: (monitorName || (screen ? screen.name : "default")).replace(/[^a-zA-Z0-9_-]/g, "_")
 
     property bool isRedacting: false
+    property string lastLayoutText: ""
 
     // Infinite canvas camera of this monitor (see CanvasState / CanvasCamera).
     readonly property var camera: CanvasState.cameraFor(loaderRoot.safeMonitorName)
@@ -153,7 +154,8 @@ Item {
             if (item.isRemoving) continue;
             data.push(toJson(item));
         }
-        layoutWriter.setText(JSON.stringify(data));
+        lastLayoutText = JSON.stringify(data);
+        layoutWriter.setText(lastLayoutText);
     }
 
     FileView {
@@ -174,8 +176,38 @@ Item {
         id: loadProcess
         printErrors: false
         path: Caching.getStateDir("widgets/" + loaderRoot.safeMonitorName) + "/layout.json"
-        onLoadFailed: loaderRoot.applyLayoutText("[]")
-        onLoaded: loaderRoot.applyLayoutText(text())
+        watchChanges: true
+        onFileChanged: {
+            if (!loaderRoot.isRedacting && !saveTimer.running) externalLayoutReload.restart();
+        }
+        onLoadFailed: {
+            if (!loaderRoot.isRedacting && loaderRoot.lastLayoutText !== "[]") {
+                loaderRoot.lastLayoutText = "[]";
+                loaderRoot.applyLayoutText("[]");
+            }
+        }
+        onLoaded: {
+            const data = text().trim();
+            if (data === loaderRoot.lastLayoutText) return;
+            loaderRoot.lastLayoutText = data;
+            loaderRoot.applyLayoutText(data);
+        }
+    }
+
+    Connections {
+        target: Themess
+        function onStoresChanged() {
+            layoutWriter.reload();
+            externalLayoutReload.restart();
+        }
+    }
+
+    Timer {
+        id: externalLayoutReload
+        interval: 100
+        onTriggered: {
+            if (!loaderRoot.isRedacting && !saveTimer.running) loadProcess.reload();
+        }
     }
 
     function applyLayoutText(rawText) {
@@ -539,6 +571,7 @@ Item {
 
         function reload(): string {
             saveTimer.stop();
+            loaderRoot.lastLayoutText = "";
             loadProcess.reload();
             return "ok";
         }

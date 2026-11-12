@@ -9,6 +9,8 @@ slug: /configure
 
 The configuration file is located at `~/.config/serpantinum/settings.json` (or `${XDG_CONFIG_HOME:-$HOME/.config}/serpantinum/settings.json`), and changes apply instantly without a reload.
 
+See [Themess](Themess.md) for folder-based desktop configuration packages.
+
 ## Example settings.json
 
 ```json

@@ -31,6 +31,10 @@ Item {
 
     signal settingsLoaded()
 
+    function reloadFromDisk() {
+        if (!isWriting) settingsWatcher.reload();
+    }
+
     function areEqual(a, b) {
         if (a === b) return true;
         if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
@@ -164,6 +168,16 @@ Item {
         path: config.settingsJsonPath
         watchChanges: true
         onFileChanged: reload()
+        printErrors: false
+
+        onLoadFailed: {
+            if (!config.isWriting && config.dataReady && Object.keys(config.rawSettings).length) {
+                config.lastWrittenContent = "";
+                config.rawSettings = {};
+                config.settingsLoaded();
+            }
+            config.dataReady = true;
+        }
 
         onLoaded: {
             try {
@@ -179,6 +193,7 @@ Item {
                         config.dataReady = true;
                         return;
                     }
+                    config.lastWrittenContent = "";
                     if (trimmed.length > 0) {
                         let parsed = JSON.parse(trimmed);
                         if (parsed && typeof parsed === "object") {
@@ -202,8 +217,8 @@ Item {
     }
 
     Component.onDestruction: {
-        let targetObj = pendingPayload !== null ? pendingPayload : rawSettings;
-        let str = JSON.stringify(targetObj, null, 2);
+        if (pendingPayload === null) return;
+        let str = JSON.stringify(pendingPayload, null, 2);
         lastWrittenContent = str;
         Quickshell.execDetached(["bash", "-c", writerScript, "_", settingsJsonPath, str + "\n"]);
     }

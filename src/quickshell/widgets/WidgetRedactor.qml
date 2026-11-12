@@ -15,11 +15,13 @@ Scope {
     id: root
 
     property bool isActive: false
+    onIsActiveChanged: Themess.widgetEditorOpen = isActive
     property string targetMonitorName: ""
     property string targetSelectedWidgetId: ""
     readonly property var activeWidgetsModel: (redactorWindowLoader.item && redactorWindowLoader.item.activeWidgetsModel) ? redactorWindowLoader.item.activeWidgetsModel : null
 
     function open(mon, widgetId) {
+        if (Themess.writingStores) return;
         root.targetMonitorName = (mon && typeof mon === "string") ? mon.trim() : "";
         root.targetSelectedWidgetId = (widgetId && typeof widgetId === "string") ? widgetId.trim() : "";
 
@@ -3162,11 +3164,22 @@ Scope {
                                     rot = ((Math.round(rot) % 360) + 360) % 360;
                                     let imgPath = item.wImagePath || item.imagePath || item.path || "";
 
+                                    let x = item.wX !== undefined ? parseFloat(item.wX) : 100;
+                                    let y = item.wY !== undefined ? parseFloat(item.wY) : 100;
+                                    if (item.anchor && redactorWindow.targetScreen) {
+                                        const output = redactorWindow.targetScreen;
+                                        if (item.stretchWidth) w = output.width;
+                                        if (item.stretchHeight) h = output.height;
+                                        const position = WidgetRegistry.resolvePosition(item, output.width, output.height, w, h);
+                                        x = position.x;
+                                        y = position.y;
+                                    }
+
                                     let entry = {
                                         wType: type,
                                         wVariant: variant,
-                                        wX: item.wX !== undefined ? parseFloat(item.wX) : 100,
-                                        wY: item.wY !== undefined ? parseFloat(item.wY) : 100,
+                                        wX: x,
+                                        wY: y,
                                         wWidth: w,
                                         wHeight: h,
                                         wOpacity: op,

@@ -54,6 +54,7 @@ singleton AppMatcher 1.0 singletons/system/AppMatcher.qml
 singleton Caching 1.0 singletons/system/Caching.qml
 singleton Compositor 1.0 singletons/system/Compositor.qml
 singleton Config 1.0 singletons/system/Config.qml
+singleton Themess 1.0 singletons/system/Themess.qml
 singleton CurrentFocus 1.0 singletons/system/CurrentFocus.qml
 singleton DateTime 1.0 singletons/system/DateTime.qml
 singleton FirstLaunch 1.0 singletons/system/FirstLaunch.qml

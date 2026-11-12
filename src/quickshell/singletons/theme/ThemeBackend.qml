@@ -7,8 +7,10 @@ import "../../"
 Item {
     id: root
 
-    property string fontFamily: "Adwaita Mono"
-    property int borderRadius: 8
+    readonly property string defaultFontFamily: "Adwaita Mono"
+    readonly property int defaultBorderRadius: 8
+    property string fontFamily: defaultFontFamily
+    property int borderRadius: defaultBorderRadius
     property int clampedBorderRadius: {
         const r = borderRadius;
         return Math.floor(
@@ -258,12 +260,8 @@ Item {
     function updateColors() {
         let themeConfig = Config.getSetting("theme", {});
 
-        if (themeConfig.fontFamily !== undefined) {
-            root.fontFamily = themeConfig.fontFamily;
-        }
-        if (themeConfig.borderRadius !== undefined) {
-            root.borderRadius = themeConfig.borderRadius;
-        }
+        root.fontFamily = themeConfig.fontFamily ?? root.defaultFontFamily;
+        root.borderRadius = themeConfig.borderRadius ?? root.defaultBorderRadius;
         root.syncElementOpacity();
 
         let customColors = themeConfig.colors || themeConfig.palette || (themeConfig.base !== undefined ? themeConfig : null);

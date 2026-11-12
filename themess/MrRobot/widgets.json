@@ -1,0 +1,62 @@
+[
+  {
+    "id": "mr_robot_clock",
+    "type": "time",
+    "variant": "lockscreen",
+    "anchor": "top left",
+    "x": 28,
+    "y": 24,
+    "w": 292,
+    "h": 108
+  },
+  {
+    "id": "mr_robot_weather",
+    "type": "weather",
+    "variant": "compact",
+    "anchor": "top left",
+    "x": 340,
+    "y": 24,
+    "w": 216,
+    "h": 108
+  },
+  {
+    "id": "mr_robot_music",
+    "type": "music",
+    "variant": "full",
+    "anchor": "bottom left",
+    "x": 28,
+    "y": 76,
+    "w": 328,
+    "h": 104
+  },
+  {
+    "id": "mr_robot_cpu",
+    "type": "cpu",
+    "variant": "default",
+    "anchor": "bottom left",
+    "x": 374,
+    "y": 76,
+    "w": 112,
+    "h": 104
+  },
+  {
+    "id": "mr_robot_ram",
+    "type": "ram",
+    "variant": "default",
+    "anchor": "bottom left",
+    "x": 504,
+    "y": 76,
+    "w": 112,
+    "h": 104
+  },
+  {
+    "id": "mr_robot_notes",
+    "type": "notes",
+    "variant": "default",
+    "anchor": "bottom right",
+    "x": 28,
+    "y": 76,
+    "w": 284,
+    "h": 184
+  }
+]

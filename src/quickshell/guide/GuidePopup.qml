@@ -294,7 +294,12 @@ Item {
     }
 
     function rebuildSearchIndex() {
-        let list = [];
+        const themess = normalizeSearchEntry({
+            id: "themess_library", title: "Themess", tab: "themess", icon: "󰏖",
+            desc: I18n.t("guide.themess.search_description", "Import and apply desktop configuration packages"),
+            keywords: "themess package theme import desktop restore пакеты темы импорт рабочий стол откат"
+        });
+        let list = [themess];
         for (let k in searchIndexMap) {
             list.push(searchIndexMap[k]);
         }
@@ -649,6 +654,7 @@ Item {
         { id: "Screenshot", key: "screenshot", name: "Screenshot", icon: "󰹑", file: "screenshot/ScreenshotTab.qml" },
         { id: "Wellbeing", key: "wellbeing", name: "Wellbeing", icon: "󰄉", separatorBefore: true, file: "wellbeing/DigitalWellbeingTab.qml" },
         { id: "Idle", key: "idle", name: "Idle", icon: "󰒲", file: "IdleTab.qml" },
+        { id: "Themess", key: "themess", name: "Themess", icon: "󰏖", file: "ThemessTab.qml" },
         { id: "About", key: "about", name: "About", icon: "󰋽", separatorBefore: true, file: "AboutTab.qml" }
     ]
 
