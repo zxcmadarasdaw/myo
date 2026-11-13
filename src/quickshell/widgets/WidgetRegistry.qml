@@ -772,12 +772,23 @@ QtObject {
             defaultHeight: 120,
             defaultVariant: "full",
             variants: {
+                "compactGlass": { file: "faces/music/MusicFaceCompactGlass.qml", icon: "♫", label: "Compact Glass" },
+                "minimal": { file: "faces/music/MusicFaceMinimal.qml", icon: "♫", label: "Minimal" },
+                "albumCover": { file: "faces/music/MusicFaceAlbumCover.qml", icon: "♫", label: "Album Cover" },
+                "vinyl": { file: "faces/music/MusicFaceVinyl.qml", icon: "♫", label: "Vinyl" },
+                "neonMusic": { file: "faces/music/MusicFaceNeonMusic.qml", icon: "♫", label: "Neon Music" },
+                "floatingPlayer": { file: "faces/music/MusicFaceFloatingPlayer.qml", icon: "♫", label: "Floating Player" },
                 "full":         { file: "faces/music/MusicFace.qml",             icon: "1", label: I18n.t("widgets.variants.full") },
                 "round":        { file: "faces/music/MusicFaceRound.qml",        icon: "2", label: I18n.t("widgets.variants.round") },
                 "lyrics":       { file: "faces/music/MusicFaceLyrics.qml",       icon: "3", label: I18n.t("widgets.variants.lyrics") },
                 "simpleLyrics": { file: "faces/music/MusicFaceLyricsSimple.qml", icon: "4", label: typeof I18n !== "undefined" ? I18n.t("widgets.variants.simpleLyrics", "Simple Lyrics") : "Simple Lyrics" }
             },
             additionalSettings: [
+                { id: "musicDrawer", name: "Audio Studio · полоска", property: "musicDrawer", type: "custom", component: registry.toggleSettingComponent },
+                { id: "musicAnimations", name: "Анимации музыки", property: "musicAnimations", type: "custom", component: registry.toggleSettingComponent },
+                { id: "musicVisualizer", name: "Спектр в Audio Studio", property: "musicVisualizer", type: "custom", component: registry.toggleSettingComponent },
+                { id: "musicMaterial", name: "Материал Audio Studio", property: "musicMaterial", type: "custom", component: registry.choiceSettingComponent,
+                  options: [{id:"liquid",label:"Liquid Glass"},{id:"mica",label:"Mica"},{id:"neon",label:"Neon Glass"},{id:"minimal",label:"Dark Minimal"}] },
                 {
                     id: "lyricsLines",
                     name: typeof I18n !== "undefined" ? I18n.t("widgets.settings.lyricsLines", "Lines") : "Lines",

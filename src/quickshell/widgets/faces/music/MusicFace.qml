@@ -11,6 +11,10 @@ import "../../../"
 
 Item {
     id: root
+    property bool musicDrawer: true
+    property string musicMaterial: "liquid"
+    property bool musicAnimations: true
+    property bool musicVisualizer: false
     anchors.fill: parent
 
     property bool previewMode: false
@@ -245,6 +249,7 @@ Item {
                         accentColor: ThemeBackend.surface1
                         bgOpacity: ThemeBackend.liquidGlass ? 1.0 : ThemeBackend.elementOpacity
                         textColor: isHoveredOrHighlighted ? ThemeBackend.text : ThemeBackend.overlay2
+                        enabled: !root.previewMode && !!root.player && root.player.canControl && root.player.canGoPrevious
                         onClicked: if (root.player && root.player.canGoPrevious) root.player.previous()
                     }
 
@@ -259,6 +264,7 @@ Item {
                         accentColor: ThemeBackend.surface1
                         bgOpacity: ThemeBackend.liquidGlass ? 1.0 : ThemeBackend.elementOpacity
                         textColor: isHoveredOrHighlighted ? ThemeBackend.green : ThemeBackend.text
+                        enabled: !root.previewMode && !!root.player && root.player.canControl && root.player.canTogglePlaying
                         onClicked: if (root.player && root.player.canTogglePlaying) root.player.togglePlaying()
                     }
 
@@ -273,6 +279,7 @@ Item {
                         accentColor: ThemeBackend.surface1
                         bgOpacity: ThemeBackend.liquidGlass ? 1.0 : ThemeBackend.elementOpacity
                         textColor: isHoveredOrHighlighted ? ThemeBackend.text : ThemeBackend.overlay2
+                        enabled: !root.previewMode && !!root.player && root.player.canControl && root.player.canGoNext
                         onClicked: if (root.player && root.player.canGoNext) root.player.next()
                     }
                 }
@@ -305,6 +312,7 @@ Item {
 
                         WavySeekBar {
                             id: progBar
+                            enabled: !root.previewMode && !!root.player && root.player.canControl && root.player.canSeek && root.player.positionSupported
                             Layout.fillWidth: true
                             Layout.preferredHeight: Math.max(14, Math.round(root.subSize * 1.2))
                             Layout.maximumHeight: Math.max(14, Math.round(root.subSize * 1.2))

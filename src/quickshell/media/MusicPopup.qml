@@ -9,6 +9,24 @@ MusicEqualizerState {
     id: popupRoot
     visible: false
     focus: true
+    property bool studioMode: false
+    presetAnimationEnabled: !studioMode
+    property string studioMaterial: "liquid"
+    property bool studioAnimations: true
+    property bool studioVisualizer: false
+    signal closeStudioRequested()
+
+    Loader {
+        anchors.fill: parent
+        active: popupRoot.studioMode
+        source: "AudioStudioView.qml"
+        onLoaded: {
+            item.material = Qt.binding(() => popupRoot.studioMaterial);
+            item.animations = Qt.binding(() => popupRoot.studioAnimations);
+            item.showVisualizer = Qt.binding(() => popupRoot.studioVisualizer);
+            item.closeRequested.connect(() => popupRoot.closeStudioRequested());
+        }
+    }
 
     property alias maskRectOuter: borderLayer.maskRectOuter
     property alias chargeAnim: borderLayer.chargeAnim
@@ -83,8 +101,7 @@ MusicEqualizerState {
         updateLyricsSubscription();
         if (active) {
             forceActiveFocus();
-            resetAndPlayIntro();
-            registerSpectrum();
+            if (!studioMode) { resetAndPlayIntro(); registerSpectrum(); }
             triggerLocalArtFetch();
         } else {
             exitAnim.stop();
@@ -99,13 +116,9 @@ MusicEqualizerState {
     }
 
     Component.onCompleted: {
-        if (popupRoot.eqData) {
-            popupRoot.savedEqData = Object.assign({}, popupRoot.eqData);
-        }
         if (active) {
             forceActiveFocus();
-            resetAndPlayIntro();
-            registerSpectrum();
+            if (!studioMode) { resetAndPlayIntro(); registerSpectrum(); }
             triggerLocalArtFetch();
             updateLyricsSubscription();
         }
@@ -384,6 +397,7 @@ MusicEqualizerState {
 
     Item {
         id: mainWrapper
+        visible: !popupRoot.studioMode
         anchors.fill: parent
         
         scale: 0.92 + (0.08 * popupRoot.introMain)
@@ -436,6 +450,14 @@ MusicEqualizerState {
                 anchors.margins: popupRoot.s(18)
                 spacing: 0
 
+                Text {
+                    Layout.fillWidth: true
+                    visible: MusicEffects.error.length > 0
+                    text: MusicEffects.error
+                    color: ThemeBackend.peach
+                    font.pixelSize: popupRoot.s(11)
+                    wrapMode: Text.Wrap
+                }
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.preferredHeight: popupRoot.s(224)

@@ -8,6 +8,7 @@ import "../reusables/guide"
 
 Item {
     id: audioView
+    enabled: MusicEffects.available && MusicEffects.eqState.effects
     required property var root
     property alias balanceSlider: balanceSlider
     anchors.top: parent.top

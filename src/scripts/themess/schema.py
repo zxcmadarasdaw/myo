@@ -144,6 +144,10 @@ def widget_layout(value, caps):
         }
         if isinstance(item, dict) and schema["type"](item.get("type")):
             schema["variant"] = choice(types[item["type"]])
+            if item["type"] == "music":
+                # Appearance only. Themes cannot apply EQ, presets, routing or commands.
+                schema.update(musicDrawer=BOOL, musicAnimations=BOOL, musicVisualizer=BOOL,
+                              musicMaterial=choice(("liquid", "mica", "neon", "minimal")))
         validate(item, schema, label)
         if not {"id", "type", "x", "y", "w", "h"} <= item.keys():
             raise ValueError(f"{label}: requires id, type, x, y, w and h")

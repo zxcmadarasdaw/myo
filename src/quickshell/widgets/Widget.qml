@@ -21,6 +21,8 @@ PanelWindow {
     property var customProps: ({})
 
     readonly property real auraMargin: 8
+    readonly property bool musicDrawerEnabled: wType === "music" && customProps.musicDrawer !== false
+    readonly property real musicStripHeight: musicDrawerEnabled ? 24 : 0
 
     readonly property bool isSelected: typeof DesktopMenuController !== "undefined"
         && DesktopMenuController.isVisible
@@ -129,7 +131,7 @@ PanelWindow {
     margins.top: screenY - root.auraMargin
 
     implicitWidth: screenBoxWidth + (root.auraMargin * 2)
-    implicitHeight: screenBoxHeight + (root.auraMargin * 2)
+    implicitHeight: screenBoxHeight + (root.auraMargin * 2) + root.musicStripHeight
 
     Component.onCompleted: {
         Qt.callLater(() => {
@@ -201,7 +203,8 @@ PanelWindow {
         source: WidgetRegistry.faceFile(root.wType, root.wVariant)
         width: root.effectiveWidth
         height: root.effectiveHeight
-        anchors.centerIn: parent
+        x: (root.width - width) / 2
+        y: (root.height - root.musicStripHeight - height) / 2
         rotation: root.wRotation || 0
         // The face keeps its own size and is scaled as a whole, so every face
         // zooms the same way without knowing about the canvas.
@@ -229,6 +232,18 @@ PanelWindow {
             }
             root.applyCustomProps();
             root.updateEffectiveSize();
+        }
+    }
+
+    Loader {
+        x: root.auraMargin
+        y: root.auraMargin + root.screenBoxHeight
+        width: root.screenBoxWidth
+        height: root.musicStripHeight
+        active: root.musicDrawerEnabled
+        visible: active && root.visible
+        sourceComponent: Component {
+            MusicWidgetDrawer { host: root }
         }
     }
 

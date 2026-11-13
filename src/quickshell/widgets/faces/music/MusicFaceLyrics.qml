@@ -9,6 +9,10 @@ import "../../../"
 
 Item {
     id: root
+    property bool musicDrawer: true
+    property string musicMaterial: "liquid"
+    property bool musicAnimations: true
+    property bool musicVisualizer: false
     anchors.fill: parent
     clip: true
 

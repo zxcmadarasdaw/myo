@@ -10,3 +10,7 @@ MusicPlayerState 1.0 MusicPlayerState.qml
 MusicPopup 1.0 MusicPopup.qml
 MusicPresetButton 1.0 MusicPresetButton.qml
 MusicTrackControls 1.0 MusicTrackControls.qml
+AudioStudioView 1.0 AudioStudioView.qml
+StudioSlider 1.0 StudioSlider.qml
+StudioButton 1.0 StudioButton.qml
+StudioComboBox 1.0 StudioComboBox.qml

@@ -66,6 +66,7 @@ RowLayout {
 
     ClickButton {
         id: audioTestBtn
+        enabled: MusicEffects.available
         Layout.preferredHeight: root.s(26)
         Layout.preferredWidth: root.audioTestBtnWidth * root.audioHeaderProgress
         implicitWidth: Layout.preferredWidth
@@ -92,6 +93,7 @@ RowLayout {
 
     ClickButton {
         id: dynamicEqBtn
+        enabled: MusicEffects.available && MusicEffects.eqState.effects
         readonly property real showProgress: Math.max(0.0, 1.0 - root.actionBtnMorph)
         readonly property bool dynamicOn: !!root.eqData && root.eqData.dyneq === true
         Layout.preferredHeight: root.s(26)
@@ -166,7 +168,7 @@ RowLayout {
         }
         enabled: bottomSectionSwitch.currentIndex === 2
             ? (root.hasTargetPlayer && !Lyrics.loading)
-            : (bottomSectionSwitch.currentIndex === 1
+            : MusicEffects.available && MusicEffects.eqState.effects && (bottomSectionSwitch.currentIndex === 1
                 ? (Math.abs(root.balanceSlider.value) >= 0.005 || root.eqData.mono === true || root.eqData.swap === true || String(root.eqData.dynamics || "off") !== "off")
                 : !(root.eqData && root.eqData.dyneq === true))
         opacity: bottomSectionSwitch.currentIndex === 2
@@ -182,13 +184,7 @@ RowLayout {
             } else if (bottomSectionSwitch.currentIndex === 1) {
                 root.resetAudio();
             } else if (root.eqData && root.eqData.pending) {
-                var temp = Object.assign({}, root.eqData);
-                temp.pending = false;
-                root.eqData = temp;
-                root.savedEqData = Object.assign({}, temp);
-                root.lastEqUpdate = Date.now();
-                root.triggerEqLightning();
-                root.execCmd(Caching.qsDir + "/media/equalizer.sh apply");
+                MusicEffects.command(["apply"]);
             }
         }
     }

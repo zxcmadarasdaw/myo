@@ -92,6 +92,7 @@ Item {
                             spacing: root.s(4)
                             Slider {
                                 id: eqSlider
+                                enabled: MusicEffects.available && MusicEffects.eqState.effects && !MusicEffects.eqState.dyneq
                                 Layout.fillHeight: true
                                 Layout.alignment: Qt.AlignHCenter
                                 orientation: Qt.Vertical
@@ -119,19 +120,7 @@ Item {
                                     }
                                 }
 
-                                onPressedChanged: {
-                                    if (!pressed) {
-                                        var temp = Object.assign({}, root.eqData);
-                                        temp["b" + modelData.idx] = Math.round(value);
-                                        temp.preset = "Custom";
-                                        temp.pending = true;
-                                        root.eqData = temp;
-                                        
-                                        root.lastEqUpdate = Date.now();
-                                        
-                                        root.execCmd(Caching.qsDir + `/media/equalizer.sh set_band ${modelData.idx} ${Math.round(value)}`);
-                                    }
-                                }
+                                onMoved: root.setBand(modelData.idx, value)
 
                                 background: Rectangle {
                                     id: trackBg

@@ -13,6 +13,8 @@ It creates a virtual output called **Serpantinum**, processes everything sent to
 
 ## In the shell
 
+Desktop music widgets now expose the existing music popup through an **Audio Studio** drawer. The compact styles, live ten-band EQ, tone groups, presets and Fedora verification steps are documented in [Music Widget + Audio Studio](../configure/music-studio.md). The original popup and its audio/lyrics pages remain available through Super+M. UI state is committed after a successful engine command; missing effects dependencies are reported without blocking MPRIS controls.
+
 - `serpantinumd start` starts the engine, so it runs whenever the shell does.
 - Your real device stays the default output. The engine moves each app's audio onto the **Serpantinum** output, processes it and plays it on the default device, just as EasyEffects did. The **Serpantinum** output appears in the volume popup next to your devices.
 - Choosing a device in the volume popup moves the processed audio to that device. The volume keys and every app that asks for the default output see your real device.

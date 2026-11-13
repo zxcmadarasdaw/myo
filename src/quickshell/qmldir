@@ -95,3 +95,5 @@ singleton CanvasState 1.0 singletons/widgetcontrols/CanvasState.qml
 singleton GpuCompatibility 1.0 singletons/system/GpuCompatibility.qml
 singleton DesktopMenuController singletons/widgetcontrols/DesktopMenuController.qml
 singleton DockAppMenuController 1.0 singletons/widgetcontrols/DockAppMenuController.qml
+
+singleton MusicEffects 1.0 singletons/audio/MusicEffects.qml

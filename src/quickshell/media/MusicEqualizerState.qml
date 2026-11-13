@@ -1,86 +1,43 @@
 import QtQuick
-import QtQuick.Window
 import Quickshell.Io
 import "../"
 
+// Both the original popup and its desktop drawer share the same acknowledged state.
 MusicPlayerState {
     id: root
-
-    property var eqData: {
-        "b1": 0, "b2": 0, "b3": 0, "b4": 0, "b5": 0,
-        "b6": 0, "b7": 0, "b8": 0, "b9": 0, "b10": 0,
-        "preset": "Flat", "pending": false, "balance": 0,
-        "mono": false, "swap": false, "dynamics": "off", "dyneq": false
-    }
-
-    property var savedEqData: ({
-        "b1": 0, "b2": 0, "b3": 0, "b4": 0, "b5": 0,
-        "b6": 0, "b7": 0, "b8": 0, "b9": 0, "b10": 0,
-        "preset": "Flat", "pending": false, "balance": 0,
-        "mono": false, "swap": false, "dynamics": "off", "dyneq": false
-    })
-
-    property bool audioTestRunning: false
-
-    Timer {
-        id: audioTestTimer
-        interval: 3200
-        repeat: false
-        onTriggered: root.audioTestRunning = false
-    }
-
-    function restoreLastSavedEqualizer() {
-        if (!root.savedEqData) return;
-        var wasPending = root.eqData && root.eqData.pending;
-        var needsRestore = wasPending;
-        if (!needsRestore && root.eqData) {
-            for (var i = 1; i <= 10; i++) {
-                if (root.eqData["b" + i] !== root.savedEqData["b" + i]) {
-                    needsRestore = true;
-                    break;
-                }
-            }
-        }
-        var restored = Object.assign({}, root.savedEqData);
-        restored.pending = false;
-        root.eqData = restored;
-        if (needsRestore) {
-            root.lastEqUpdate = Date.now();
-            if (root.savedEqData.preset && root.savedEqData.preset !== "Custom") {
-                root.execCmd(Caching.qsDir + `/media/equalizer.sh preset ${root.savedEqData.preset}`);
-            } else {
-                for (var b = 1; b <= 10; b++) {
-                    if (root.savedEqData["b" + b] !== undefined) {
-                        root.execCmd(Caching.qsDir + `/media/equalizer.sh set_band ${b} ${root.savedEqData["b" + b]}`);
-                    }
-                }
-            }
-        }
-    }
-
-    property color eqAccentColor: ThemeBackend.mauve || "#cba6f7"
-    property string accumulatedEqOut: ""
+    property var eqData: MusicEffects.eqState
+    property var savedEqData: MusicEffects.eqState
+    property color eqAccentColor: ThemeBackend.mauve
+    property real eqLightningProgress: 0
+    property real eqLightningFade: 1
     property real lastEqUpdate: 0
-
-    property real eqLightningProgress: 0.0
-    property real eqLightningFade: 1.0
-
+    property bool presetAnimationEnabled: true
+    property bool audioTestRunning: false
+    property bool effectsSubscribed: false
+    function subscribeEffects() {
+        if (active && !effectsSubscribed) { MusicEffects.register(); effectsSubscribed = true; }
+        else if (!active && effectsSubscribed) { MusicEffects.unregister(); effectsSubscribed = false; }
+    }
+    Connections { target: root; function onActiveChanged() { root.subscribeEffects(); } }
+    Component.onCompleted: subscribeEffects()
+    Component.onDestruction: { if (effectsSubscribed) MusicEffects.unregister(); }
+    function restoreLastSavedEqualizer() {} // Every successful change is already persistent.
     SequentialAnimation {
         id: eqLightningAnim
         running: false
         ScriptAction { script: { root.eqLightningFade = 0.0; root.eqLightningProgress = 0.0; } }
-        NumberAnimation { 
-            target: root; property: "eqLightningProgress"; 
-            from: 0.0; to: 10.0; 
-            duration: 650; 
-            easing.type: Easing.OutSine 
+        NumberAnimation {
+            target: root; property: "eqLightningProgress";
+            from: 0.0; to: 10.0;
+            duration: 650;
+            easing.type: Easing.OutSine
         }
         PauseAnimation { duration: 150 }
-        NumberAnimation { 
-            target: root; property: "eqLightningFade"; 
-            from: 0.0; to: 1.0; 
-            duration: 800; 
-            easing.type: Easing.OutQuad 
+        NumberAnimation {
+            target: root; property: "eqLightningFade";
+            from: 0.0; to: 1.0;
+            duration: 800;
+            easing.type: Easing.OutQuad
         }
         ScriptAction { script: { root.eqLightningProgress = 0.0; } }
     }
@@ -90,154 +47,27 @@ MusicPlayerState {
         eqLightningAnim.restart();
     }
 
-    function execCmd(cmdStr) {
-        var safeCmd = cmdStr.replace(/`/g, "\\`");
-        var p = Qt.createQmlObject(`
-            import Quickshell.Io
-            Process {
-                command: ["bash", "-c", \`${safeCmd}\`]
-                running: true
-                onExited: (exitCode) => destroy()
-            }
-        `, root);
-    }
-
-    function applyPresetOptimistically(presetName) {
-        var presets = {
-            "Flat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            "Bass": [5, 7, 5, 2, 1, 0, 0, 0, 1, 2],
-            "Treble": [-2, -1, 0, 1, 2, 3, 4, 5, 6, 6],
-            "Vocal": [-2, -1, 1, 3, 5, 5, 4, 2, 1, 0],
-            "Pop": [2, 4, 2, 0, 1, 2, 4, 2, 1, 2],
-            "Rock": [5, 4, 2, -1, -2, -1, 2, 4, 5, 6],
-            "Jazz": [3, 3, 1, 1, 1, 1, 2, 1, 2, 3],
-            "Classic": [0, 1, 2, 2, 2, 2, 1, 2, 3, 4]
-        };
-        if (presets[presetName]) {
-            var temp = Object.assign({}, root.eqData);
-            for (var i = 0; i < 10; i++) {
-                temp["b" + (i + 1)] = presets[presetName][i];
-            }
-            temp.preset = presetName;
-            temp.pending = false;
-            root.eqData = temp;
-            root.savedEqData = Object.assign({}, temp);
-            
-            root.lastEqUpdate = Date.now();
-            
-            root.triggerEqLightning();
-            execCmd(Caching.qsDir + `/media/equalizer.sh preset ${presetName}`);
+    Connections {
+        target: MusicEffects
+        function onApplied(command) {
+            if (root.active && root.presetAnimationEnabled && command === "preset" && GpuCompatibility.effective.profile !== "Performance") root.triggerEqLightning();
         }
     }
-
-    function setBalance(value) {
-        var clamped = Math.max(-1.0, Math.min(1.0, Number(value)));
-        if (isNaN(clamped)) return;
-
-        var temp = Object.assign({}, root.eqData);
-        temp.balance = Math.round(clamped * 100) / 100;
-        root.eqData = temp;
-        root.savedEqData = Object.assign({}, temp);
-        root.lastEqUpdate = Date.now();
-        root.execCmd(Caching.qsDir + `/media/equalizer.sh set_balance ${temp.balance}`);
-    }
-
+    function applyPresetOptimistically(name) { MusicEffects.command(["preset", name]); }
+    function setBand(band, value) { MusicEffects.command(["set_band", band, Math.round(value)]); }
+    function setBalance(value) { MusicEffects.command(["set_balance", Math.round(value * 100) / 100]); }
     function setAudioFlag(name, value) {
-        if (name !== "mono" && name !== "swap" && name !== "dyneq") return;
-        var temp = Object.assign({}, root.eqData);
-        temp[name] = value === true;
-        root.eqData = temp;
-        root.savedEqData = Object.assign({}, temp);
-        root.lastEqUpdate = Date.now();
-        root.execCmd(Caching.qsDir + `/media/equalizer.sh set_${name} ${temp[name]}`);
+        if (["mono", "swap", "dyneq"].indexOf(name) >= 0) MusicEffects.command(["set_" + name, value]);
     }
-
-    function setDynamics(value) {
-        if (["off", "balanced", "night"].indexOf(value) < 0) return;
-        var temp = Object.assign({}, root.eqData);
-        temp.dynamics = value;
-        root.eqData = temp;
-        root.savedEqData = Object.assign({}, temp);
-        root.lastEqUpdate = Date.now();
-        root.execCmd(Caching.qsDir + `/media/equalizer.sh set_dynamics ${value}`);
-    }
-
-    function resetAudio() {
-        var temp = Object.assign({}, root.eqData);
-        temp.balance = 0;
-        temp.mono = false;
-        temp.swap = false;
-        temp.dynamics = "off";
-        root.eqData = temp;
-        root.savedEqData = Object.assign({}, temp);
-        root.audioTestRunning = false;
-        audioTestTimer.stop();
-        root.lastEqUpdate = Date.now();
-        root.execCmd(Caching.qsDir + "/media/equalizer.sh reset_audio");
-    }
-
+    function setDynamics(value) { MusicEffects.command(["set_dynamics", value]); }
+    function resetAudio() { MusicEffects.command(["reset_audio"]); }
     function toggleAudioTest() {
-        if (root.audioTestRunning) {
-            root.execCmd(Caching.qsDir + "/media/equalizer.sh stop_test");
-            root.audioTestRunning = false;
-            audioTestTimer.stop();
-        } else {
-            root.execCmd(Caching.qsDir + "/media/equalizer.sh test");
-            root.audioTestRunning = true;
-            audioTestTimer.restart();
-        }
+        if (!MusicEffects.available || testProcess.running) return;
+        testProcess.command = ["bash", Caching.qsDir + "/media/equalizer.sh", audioTestRunning ? "stop_test" : "test"];
+        testProcess.running = true;
+        audioTestRunning = !audioTestRunning;
+        testTimer.restart();
     }
-
-    property bool eqInitDone: false
-
-    function applyEqState(text) {
-        var outStr = text ? text.trim() : "";
-        if (outStr.length === 0) return;
-
-        // Our own writes land here too; skip them for a moment and re-read once they settle.
-        var sinceLocal = Date.now() - root.lastEqUpdate;
-        if (sinceLocal < 2000) {
-            eqResyncTimer.interval = 2000 - sinceLocal;
-            eqResyncTimer.restart();
-            return;
-        }
-
-        try {
-            var parsed = JSON.parse(outStr);
-            root.eqData = parsed;
-            if (!parsed.pending) {
-                root.savedEqData = Object.assign({}, parsed);
-            }
-        } catch(e) {}
-    }
-
-    // equalizer.sh keeps its state in this file; watch it instead of polling the script.
-    FileView {
-        id: eqStateFile
-        path: Caching.runDir + "/music/eq_state.json"
-        watchChanges: true
-        printErrors: false
-        onFileChanged: reload()
-        onLoaded: root.applyEqState(text())
-        // The script creates the file with defaults on first use.
-        onLoadFailed: {
-            if (!root.eqInitDone && !eqInitProc.running) {
-                root.eqInitDone = true;
-                eqInitProc.running = true;
-            }
-        }
-    }
-
-    Timer {
-        id: eqResyncTimer
-        repeat: false
-        onTriggered: eqStateFile.reload()
-    }
-
-    Process {
-        id: eqInitProc
-        running: false
-        command: ["bash", "-c", Caching.qsDir + "/media/equalizer.sh get"]
-        onExited: eqStateFile.reload()
-    }
+    Timer { id: testTimer; interval: 3200; onTriggered: root.audioTestRunning = false }
+    Process { id: testProcess; onExited: (code) => { if (code !== 0) root.audioTestRunning = false; } }
 }

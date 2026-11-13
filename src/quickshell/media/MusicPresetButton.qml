@@ -6,6 +6,7 @@ import "../reusables"
 
 ClickButton {
     required property var root
+    enabled: MusicEffects.available && MusicEffects.eqState.effects && !MusicEffects.eqState.dyneq
     property string name: ""
     bgOpacity: ThemeBackend.elementOpacity
     Layout.fillWidth: true
