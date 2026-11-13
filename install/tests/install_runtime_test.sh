@@ -167,10 +167,111 @@ test_supervisor() {
     rm -rf "$home"
 }
 
+# ---------------------------------------------------------------------------
+# 5. Fedora + Hyprland never touches Terra. Terra is needed only for MangoWC
+#    (mangowm); a configured but unreachable Terra repo (left by an earlier
+#    MangoWC install) must not break the Hyprland install, and a Terra failure
+#    for MangoWC must still be reported as a failed package.
+# ---------------------------------------------------------------------------
+test_fedora_terra() {
+    local home log result
+    home="$(new_home)"
+    log="$home/dnf.log"
+    mkdir -p "$home/repos" "$home/.local/bin"
+    # sudo/dnf/rpm/curl stubs. dnf fails like dnf5 does when an enabled repo
+    # cannot be loaded: any repo-loading command without --disablerepo=terra
+    # fails while a terra*.repo file exists and STUB_TERRA_BROKEN=1.
+    printf '#!/bin/sh\nexec "$@"\n' > "$home/stub-bin/sudo"
+    cat > "$home/stub-bin/dnf" <<'EOF'
+#!/bin/sh
+echo "dnf $*" >> "$STUB_DNF_LOG"
+cmd=""; terra_off=0
+for a in "$@"; do
+    case "$a" in
+        --disablerepo=terra) terra_off=1 ;;
+        -*) ;;
+        *) [ -z "$cmd" ] && cmd="$a" ;;
+    esac
+done
+case "$cmd" in
+    install|upgrade|makecache|repoquery|remove)
+        if [ "$STUB_TERRA_BROKEN" = 1 ] && [ "$terra_off" = 0 ] && ls "$PM_YUM_REPOS_DIR"/terra*.repo >/dev/null 2>&1; then
+            echo "Failed to download metadata for repository 'terra'" >&2; exit 1
+        fi ;;
+esac
+case "$cmd" in
+    repoquery) for a in "$@"; do last="$a"; done
+        case " $STUB_UNAVAILABLE " in *" $last "*) ;; *) echo "$last-1.0-1.fc45.x86_64" ;; esac ;;
+    install) case "$*" in *terra-release*) [ "$STUB_TERRA_UNREACHABLE" = 1 ] && exit 1 ;; esac ;;
+esac
+exit 0
+EOF
+    cat > "$home/stub-bin/rpm" <<'EOF'
+#!/bin/sh
+for a in "$@"; do last="$a"; done
+case " $STUB_RPM_MISSING terra-release " in *" $last "*) exit 1 ;; esac
+exit 0
+EOF
+    printf '#!/bin/sh\nexit 1\n' > "$home/stub-bin/curl"
+    printf '#!/bin/sh\necho "matugen 4.2.0"\n' > "$home/.local/bin/matugen"
+    printf '#!/bin/sh\nexit 0\n' > "$home/stub-bin/satty"
+    chmod +x "$home/stub-bin/"* "$home/.local/bin/matugen"
+
+    run_deps() {
+        (
+            export HOME="$home" PATH="$home/stub-bin:$home/.local/bin:/usr/bin:/bin"
+            export STUB_DNF_LOG="$log" PM_YUM_REPOS_DIR="$home/repos"
+            export STUB_RPM_MISSING="hyprland quickshell kitty mangowm" STUB_UNAVAILABLE="mangowm"
+            : > "$log"
+            t() { echo "$1"; }
+            sleep() { :; }
+            # shellcheck source=/dev/null
+            source "$ROOT/install/modules/pm/dnf.sh"
+            # shellcheck source=/dev/null
+            source "$ROOT/install/modules/deps.sh"
+            OPT_SDDM=false
+            install_dependencies fresh false "$@" >/dev/null 2>&1
+            echo "${FAILED_PKGS[*]}"
+        )
+    }
+
+    # a) Hyprland only, no Terra configured: Terra is never enabled.
+    rm -f "$home/repos/"*
+    result="$(STUB_TERRA_BROKEN=1 run_deps hyprland)"
+    if [ -z "$result" ] && grep -q 'dnf install -y hyprland' "$log" && ! grep -qi 'terra' "$log"; then
+        ok "Fedora + Hyprland installs without enabling Terra"
+    else
+        bad "Fedora + Hyprland without Terra (failed: '$result'; log: $(grep -i terra "$log" | head -n 3))"
+    fi
+
+    # b) Hyprland only, broken Terra repo left on the system: every dnf call
+    #    excludes it, so the install succeeds and terra-release is not touched.
+    printf '[terra]\nname=Terra\n[terra-source]\nenabled=0\n' > "$home/repos/terra.repo"
+    result="$(STUB_TERRA_BROKEN=1 run_deps hyprland)"
+    if [ -z "$result" ] && ! grep -q 'terra-release' "$log" \
+        && ! grep -E 'dnf .*(install|upgrade|makecache|repoquery|remove)' "$log" | grep -qv -- '--disablerepo=terra '; then
+        ok "Fedora + Hyprland ignores an unreachable leftover Terra repo"
+    else
+        bad "Fedora + Hyprland with leftover Terra repo (failed: '$result'; log: $(head -n 5 "$log"))"
+    fi
+
+    # c) Hyprland + MangoWC with Terra unreachable: only mangowm fails, and it
+    #    is reported (not masked); Hyprland and the shell still install.
+    rm -f "$home/repos/"*
+    result="$(STUB_TERRA_UNREACHABLE=1 run_deps hyprland mango)"
+    if [ "$result" = "mangowm" ] && grep -q 'terra-release' "$log" && grep -q 'dnf install -y hyprland' "$log"; then
+        ok "Terra failure fails only mangowm and is reported"
+    else
+        bad "Terra failure handling for MangoWC (failed: '$result')"
+    fi
+    rm -rf "$home"
+}
+
 test_first_launch
 test_deploy_sync
 test_verify
 test_supervisor
+test_fedora_terra
 
 echo
 echo "passed=$PASS failed=$FAIL skipped=$SKIP"

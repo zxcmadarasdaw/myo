@@ -55,8 +55,20 @@ rpm -q quickshell qt6-qtmultimedia qt6-qtwayland qt6-qtimageformats qt6-qtdeclar
 `qt6-qtimageformats` обязателен: без него Qt не открывает обои в формате **WebP**,
 а такие файлы есть в загружаемом наборе обоев.
 
-Terra нужен **только для MangoWC**. Для Hyprland он не требуется; ошибка Terra
-относится только к пакету `mangowm`.
+Terra нужен **только для MangoWC** (пакет `mangowm`). Hyprland, Quickshell и
+оболочка от него не зависят. Если Terra уже подключён в системе (`terra-release`
+остался от прошлой установки MangoWC) и недоступен, dnf прерывал всю установку.
+Теперь установщик отключает репозитории `terra*` (`--disablerepo`) во всех вызовах
+dnf, кроме установки `mangowm`. Если Terra не удаётся подключить при выборе Mango,
+установка `mangowm` помечается как неудачная, остальные пакеты ставятся.
+
+Проверить, подключён ли Terra:
+
+```bash
+rpm -q terra-release; ls /etc/yum.repos.d/ | grep -i terra
+```
+
+Если Mango больше не нужен, Terra можно удалить: `sudo dnf remove terra-release`.
 
 ## 3. Автоматические тесты
 

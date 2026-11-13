@@ -64,6 +64,46 @@ declare -A PM_TERRA_MAP=(
     [mangowm]=1
 )
 
+PM_YUM_REPOS_DIR="${PM_YUM_REPOS_DIR:-/etc/yum.repos.d}"
+PM_USE_TERRA=false
+
+# Ids of the Terra repositories configured on this system (terra,
+# terra-extras, ...). They exist once terra-release was installed, e.g. by an
+# earlier MangoWC install.
+pm_terra_repo_ids() {
+    local f
+    for f in "$PM_YUM_REPOS_DIR"/*.repo; do
+        [ -f "$f" ] || continue
+        sed -n 's/^[[:space:]]*\[\(terra[^]]*\)\][[:space:]]*$/\1/p' "$f"
+    done
+}
+
+# Terra is needed only for the packages in PM_TERRA_MAP (MangoWC). dnf aborts
+# every transaction when an enabled repository cannot be loaded, so a configured
+# but unreachable Terra repo broke the Hyprland install too. Every installer
+# dnf call excludes Terra unless PM_USE_TERRA=true (set only while installing a
+# PM_TERRA_MAP package).
+pm_dnf_repo_opts() {
+    PM_DNF_OPTS=()
+    [ "$PM_USE_TERRA" = true ] && return 0
+    local id
+    while IFS= read -r id; do
+        [ -n "$id" ] && PM_DNF_OPTS+=("--disablerepo=$id")
+    done < <(pm_terra_repo_ids)
+}
+
+pm_dnf() {
+    local PM_DNF_OPTS
+    pm_dnf_repo_opts
+    sudo dnf "${PM_DNF_OPTS[@]}" "$@"
+}
+
+pm_dnf_query() {
+    local PM_DNF_OPTS
+    pm_dnf_repo_opts
+    dnf "${PM_DNF_OPTS[@]}" "$@"
+}
+
 PM_MATUGEN_MIN_MAJOR=4
 PM_MATUGEN_REPO="InioX/matugen"
 
@@ -92,7 +132,7 @@ pm_prepare_repos() {
 }
 
 pm_bootstrap_install() {
-    sudo dnf install -y "$@"
+    pm_dnf install -y "$@"
 }
 
 pm_bootstrap_helper() {
@@ -100,7 +140,7 @@ pm_bootstrap_helper() {
 }
 
 pm_full_upgrade() {
-    sudo dnf makecache --refresh >/dev/null 2>&1 || true
+    pm_dnf makecache --refresh >/dev/null 2>&1 || true
 }
 
 pm_resolve_name() {
@@ -136,7 +176,7 @@ pm_install_matugen() {
     pm_install_release_binary "$(pm_matugen_release_url)" matugen || return 1
     pm_matugen_ok || return 1
     if rpm -q matugen &>/dev/null; then
-        sudo dnf remove -y matugen || true
+        pm_dnf remove -y matugen || true
     fi
 }
 
@@ -174,18 +214,18 @@ pm_enable_copr() {
     echo -e "\e[36m[ INFO ]\e[0m $(t "installer.deps.enabling_copr" "repo=$repo")"
     if ! dnf copr --help &>/dev/null; then
         if command -v dnf5 &>/dev/null; then
-            sudo dnf install -y dnf5-plugins || return 1
+            pm_dnf install -y dnf5-plugins || return 1
         else
-            sudo dnf install -y dnf-plugins-core || return 1
+            pm_dnf install -y dnf-plugins-core || return 1
         fi
     fi
-    sudo dnf copr enable -y "$repo"
+    pm_dnf copr enable -y "$repo"
 }
 
 pm_enable_terra() {
     rpm -q terra-release &>/dev/null && return 0
     echo -e "\e[36m[ INFO ]\e[0m $(t "installer.deps.enabling_terra")"
-    sudo dnf install -y --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release
+    pm_dnf install -y --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release
 }
 
 pm_install_release_binary() {
@@ -219,7 +259,7 @@ pm_install_batch() {
         fi
     done
     [ ${#batch[@]} -gt 0 ] || return 0
-    if sudo dnf install -y "${names[@]}"; then
+    if pm_dnf install -y "${names[@]}"; then
         for pkg in "${batch[@]}"; do
             echo -e "\n\e[32m[ OK ] $(t "installer.deps.install_ok" "pkg=$pkg")\e[0m"
         done
@@ -242,10 +282,13 @@ pm_install_pkg() {
     spec="$(pm_resolve_name "$pkg")"
     target="${spec%%|*}"
 
-    if [ -z "$(dnf repoquery --available --quiet "$target" 2>/dev/null | head -n 1)" ]; then
+    # Only PM_TERRA_MAP packages may use Terra; dynamic scope covers the
+    # pm_dnf calls below.
+    local PM_USE_TERRA=false
+    [ -n "${PM_TERRA_MAP[$pkg]:-}" ] && PM_USE_TERRA=true
+
+    if [ -z "$(pm_dnf_query repoquery --available --quiet "$target" 2>/dev/null | head -n 1)" ]; then
         if [ -n "${PM_TERRA_MAP[$pkg]:-}" ]; then
-            # Terra is only needed for packages listed in PM_TERRA_MAP
-            # (MangoWC). Hyprland and the shell never depend on it.
             if ! pm_enable_terra; then
                 echo -e "\e[31m[ ERROR ]\e[0m Terra repository could not be enabled; $pkg is unavailable (network error or repository down). Other compositors are unaffected." >&2
                 return 1
@@ -257,7 +300,7 @@ pm_install_pkg() {
         fi
     fi
 
-    sudo dnf install -y "$target"
+    pm_dnf install -y "$target"
 }
 
 pm_enable_display_manager() {
@@ -290,10 +333,10 @@ pm_remove_conflicting_pkg() {
 # Try the COPR build, which tracks upstream releases.
 pm_upgrade_hyprland() {
     pm_enable_copr "${PM_COPR_MAP[hyprland]}" || return 1
-    sudo dnf upgrade -y --refresh hyprland || sudo dnf install -y --refresh hyprland
+    pm_dnf upgrade -y --refresh hyprland || pm_dnf install -y --refresh hyprland
 }
 
 pm_upgrade_quickshell() {
     pm_enable_copr "${PM_COPR_MAP[quickshell]}" || true
-    sudo dnf upgrade -y --refresh quickshell || true
+    pm_dnf upgrade -y --refresh quickshell || true
 }
