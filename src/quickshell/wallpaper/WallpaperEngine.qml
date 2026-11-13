@@ -830,11 +830,20 @@ ShellRoot {
                             sourceSize.height: parent.height > 0 ? Math.ceil(parent.height * (Screen.devicePixelRatio || 1)) : 0
                         }
 
-                        WallpaperGif {
+                        // GIF layer, loaded by URL: wallpaper/ has no qmldir, so under
+                        // Quickshell (qs: URLs) WallpaperGif is not a type here, and a
+                        // broken GIF layer must not stop the whole shell.
+                        Loader {
+                            id: gifLayerA
                             anchors.fill: parent
-                            onFailed: reason => barWindow.reportLoadError(barWindow.pathA, reason)
-                            imageUrl: Caching.fileUrl(barWindow.pathA)
-                            playing: !barWindow.playbackPaused && !GpuCompatibility.effective.fallback && !barWindow.performanceMode
+                            source: Qt.resolvedUrl("WallpaperGif.qml")
+                            onStatusChanged: if (status === Loader.Error) console.warn("[wallpaper] WallpaperGif.qml failed to load; GIF wallpapers are unavailable")
+                            Binding { target: gifLayerA.item; when: gifLayerA.item !== null; property: "imageUrl"; value: Caching.fileUrl(barWindow.pathA) }
+                            Binding { target: gifLayerA.item; when: gifLayerA.item !== null; property: "playing"; value: !barWindow.playbackPaused && !GpuCompatibility.effective.fallback && !barWindow.performanceMode }
+                            Connections {
+                                target: gifLayerA.item
+                                function onFailed(reason) { barWindow.reportLoadError(barWindow.pathA, reason) }
+                            }
                         }
 
                         Image {
@@ -924,11 +933,18 @@ ShellRoot {
                             sourceSize.height: parent.height > 0 ? Math.ceil(parent.height * (Screen.devicePixelRatio || 1)) : 0
                         }
 
-                        WallpaperGif {
+                        // GIF layer, loaded by URL (see gifLayerA).
+                        Loader {
+                            id: gifLayerB
                             anchors.fill: parent
-                            onFailed: reason => barWindow.reportLoadError(barWindow.pathB, reason)
-                            imageUrl: Caching.fileUrl(barWindow.pathB)
-                            playing: !barWindow.playbackPaused && !GpuCompatibility.effective.fallback && !barWindow.performanceMode
+                            source: Qt.resolvedUrl("WallpaperGif.qml")
+                            onStatusChanged: if (status === Loader.Error) console.warn("[wallpaper] WallpaperGif.qml failed to load; GIF wallpapers are unavailable")
+                            Binding { target: gifLayerB.item; when: gifLayerB.item !== null; property: "imageUrl"; value: Caching.fileUrl(barWindow.pathB) }
+                            Binding { target: gifLayerB.item; when: gifLayerB.item !== null; property: "playing"; value: !barWindow.playbackPaused && !GpuCompatibility.effective.fallback && !barWindow.performanceMode }
+                            Connections {
+                                target: gifLayerB.item
+                                function onFailed(reason) { barWindow.reportLoadError(barWindow.pathB, reason) }
+                            }
                         }
 
                         Image {

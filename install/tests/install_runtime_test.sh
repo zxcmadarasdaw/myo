@@ -132,6 +132,24 @@ test_verify() {
     [ "$result" = "true" ] && ok "missing required package marks install incomplete" || bad "missing package detection (got $result)"
     result="$(STUB_MISSING="" run_verify 0.54.0)"
     [ "$result" = "true" ] && ok "Hyprland without Lua config support is rejected" || bad "old Hyprland detection (got $result)"
+
+    # The real shell tree passes the Quickshell QML check; a sibling type that
+    # Quickshell cannot see (the WallpaperGif crash, exit 255) fails verify.
+    local py
+    py="$(command -v python3 || command -v python || true)"
+    if [ -n "$py" ] && "$py" -c 'import sys; sys.exit(sys.version_info < (3, 6))' 2>/dev/null; then
+        printf '#!/bin/sh\nexec "%s" "$@"\n' "$py" > "$home/stub-bin/python3"
+        chmod +x "$home/stub-bin/python3"
+        rm -rf "$home/.local/share/serpantinum/src/quickshell"
+        cp -r "$ROOT/src/quickshell" "$home/.local/share/serpantinum/src/quickshell"
+        result="$(STUB_MISSING="" run_verify 0.57.1)"
+        [ "$result" = "false" ] && ok "installed shell passes the Quickshell QML type check" || bad "QML check on the real shell (got $result)"
+        printf 'import QtQuick\nItem {\n    WallpaperGif {}\n}\n' > "$home/.local/share/serpantinum/src/quickshell/wallpaper/Probe.qml"
+        result="$(STUB_MISSING="" run_verify 0.57.1)"
+        [ "$result" = "true" ] && ok "unresolved QML type (WallpaperGif is not a type) marks install incomplete" || bad "QML type check in verify (got $result)"
+    else
+        skip "QML type check in verify (python3 not found)"
+    fi
     rm -rf "$home"
 }
 

@@ -104,6 +104,29 @@ python3 install/tests/apptheme_test.py
 
 `apptheme_test.py` работает только на Linux (использует `fcntl`).
 
+Проверка QML-типов по правилам Quickshell (без PySide6 выполняется только
+статическая часть):
+
+```bash
+python3 install/modules/qml_check.py ~/.local/share/serpantinum/src/quickshell
+```
+
+```bash
+python3 install/tests/qml_imports_test.py
+```
+
+### «X is not a type» и quickshell exit code 255
+
+Quickshell загружает конфигурацию по адресам `qs:`, и Qt считает их удалёнными.
+Поэтому соседние `.qml` в папке видны как типы, только если в папке есть `qmldir`.
+Он может быть свой или созданный Quickshell, но Quickshell создаёт его лишь для
+папок, до которых доходит через `import "папка"` от `Shell.qml`. Из-за этого
+`wallpaper/WallpaperEngine.qml` (подключён через корневой `qmldir`) не видел
+`WallpaperGif`, и вся оболочка не стартовала. Через `file://` (qmlscene, тесты
+PySide6) тот же код загружается, поэтому раньше ошибку не замечали.
+`install/modules/qml_check.py` повторяет правила Quickshell, а установщик
+вызывает его в конце установки.
+
 ## 4. Ручная проверка в сессии Hyprland
 
 1. Войти в сессию Hyprland. Должны появиться панель и обои.
@@ -142,6 +165,8 @@ for f in ~/.cache/serpantinum/wallpaper/current_*; do case "$f" in *_name|*.png)
 | Папка обоев пуста | не скачался набор обоев | первый запуск берёт обои из `themess/*/wallpapers`; добавьте свои в `~/Pictures/Wallpapers` |
 | Обоев нет совсем | старый Hyprland не прочитал `hyprland.lua` | см. раздел 2 |
 | Нет обоев на новом мониторе | у монитора нет сохранённого файла | теперь берутся обои соседнего монитора |
+| В логе `WallpaperGif.qml failed to load` | слой GIF не загрузился | остальные форматы работают; переустановите файлы (раздел 1) |
+| `Your system does not have hyprland-guiutils installed` | у Fedora нет этого пакета, он есть только в COPR | Serpantinum он не нужен; для диалогов Hyprland: `sudo dnf copr enable mineiro/hyprland && sudo dnf install hyprland-guiutils` |
 
 Сбросить выбор обоев:
 

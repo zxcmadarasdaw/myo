@@ -18,6 +18,11 @@ CRITICAL_PKGS=("quickshell" "qt6-multimedia" "qt6-wayland" "qt6-imageformats" "j
 # config: no autostart, so no shell and no wallpaper.
 MIN_HYPRLAND_LUA_VERSION="0.55.0"
 
+# Resolves the shell's QML types the way Quickshell does (qs: URLs, scanned
+# directories only). A type that does not resolve aborts the whole config with
+# "X is not a type" and quickshell exit code 255.
+VERIFY_QML_CHECK="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/qml_check.py"
+
 hyprland_version() {
     local bin
     for bin in Hyprland hyprland; do
@@ -84,6 +89,13 @@ verify_installation() {
                     verify_error "Hyprland $version does not support the Lua config (needs >= $MIN_HYPRLAND_LUA_VERSION); the session would start without the shell"
                 fi
                 [ -f "$HOME/.config/hypr/hyprland.lua" ] || verify_error "~/.config/hypr/hyprland.lua was not deployed"
+                # Hyprland's own dialogs (app not responding, permission
+                # prompts). Not used by Serpantinum; Fedora ships it only in
+                # COPR, which may need newer hypr* libraries than Fedora's
+                # Hyprland, so it is reported instead of installed.
+                if ! pm_is_installed hyprland-guiutils 2>/dev/null && ! command -v hyprland-dialog >/dev/null 2>&1; then
+                    verify_warning "hyprland-guiutils missing: Hyprland warns about it and its own dialogs (app not responding, permissions) do not open; Serpantinum does not need it. Fedora: sudo dnf copr enable mineiro/hyprland && sudo dnf install hyprland-guiutils"
+                fi
                 ;;
             mango)
                 command -v mango >/dev/null 2>&1 || verify_error "MangoWC is not installed (it needs the Terra repository on Fedora)"
@@ -95,6 +107,20 @@ verify_installation() {
     done
 
     [ -f "$target_base/src/quickshell/Shell.qml" ] || verify_error "shell files missing in $target_base/src"
+    if [ -n "${PROJECT_ROOT:-}" ] && [ -d "$PROJECT_ROOT/src/quickshell" ] && [ -d "$target_base/src/quickshell" ]; then
+        if ! diff -rq -x __pycache__ "$PROJECT_ROOT/src/quickshell" "$target_base/src/quickshell" >/dev/null 2>&1; then
+            verify_error "installed shell differs from $PROJECT_ROOT/src/quickshell (stale or incomplete copy)"
+        fi
+    fi
+    if [ -f "$target_base/src/quickshell/Shell.qml" ]; then
+        local qml_report
+        if [ ! -f "$VERIFY_QML_CHECK" ]; then
+            verify_error "QML check script missing: $VERIFY_QML_CHECK"
+        elif command -v python3 >/dev/null 2>&1 \
+            && ! qml_report="$(python3 "$VERIFY_QML_CHECK" "$target_base/src/quickshell" 2>&1)"; then
+            verify_error "the shell would not start (quickshell exit 255), unresolved QML types:"$'\n'"$qml_report"
+        fi
+    fi
     [ -x "$target_base/bin/serpantinumd" ] || verify_error "serpantinumd missing in $target_base/bin"
     if ! command -v serpantinumd >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/serpantinumd" ]; then
         verify_error "serpantinumd is not linked into ~/.local/bin"
