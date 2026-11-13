@@ -24,6 +24,16 @@ FORMATS = {
     ".jpeg": ("jpeg_pipe", (b"\xff\xd8\xff",)),
     ".webp": ("webp_pipe", (b"RIFF",)),
 }
+# Video wallpapers. The engine plays them with Qt Multimedia; Themess only checks that the
+# file really is a short, ordinary video before it is copied into the user's state folder.
+VIDEO_FORMATS = {
+    ".mp4": ("mov,mp4,m4a,3gp,3g2,mj2", lambda data: data[4:8] == b"ftyp"),
+    ".webm": ("matroska,webm", lambda data: data.startswith(bytes.fromhex("1a45dfa3"))),
+}
+VIDEO_CODECS = {"h264", "hevc", "vp8", "vp9", "av1"}
+VIDEO_MAX_SIDE = 4096
+VIDEO_MAX_SECONDS = 600
+WALLPAPER_SUFFIXES = (*FORMATS, *VIDEO_FORMATS)
 FALLBACK = {kind: f"{kind}.json" for kind in (*SETTINGS, "widgets")}
 KINDS = set(FALLBACK) | {"wallpaper"}
 
@@ -116,6 +126,56 @@ def image_snapshot(data, suffix, size=(1920, 1080)):
     return process.stdout
 
 
+def video_snapshot(data, suffix, size=(1920, 1080)):
+    """Validate a video wallpaper and return its first frame as PNG.
+
+    MP4 needs a seekable input, so the bytes go to a private temporary file that only the
+    `file` protocol may open. The demuxer is forced, only common codecs are accepted and
+    external data references are not followed (ffmpeg's default).
+    """
+    demuxer, has_magic = VIDEO_FORMATS[suffix]
+    if not has_magic(data):
+        raise ValueError("wallpaper data does not match its extension")
+    guard = ["-nostdin", "-v", "error", "-protocol_whitelist", "file", "-f", demuxer]
+    try:
+        with tempfile.TemporaryDirectory(prefix="serpantinum-themess-") as folder:
+            path = Path(folder) / ("wallpaper" + suffix)
+            path.write_bytes(data)
+            probe = subprocess.run(
+                ["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-f", demuxer,
+                 "-show_entries", "stream=codec_type,codec_name,width,height:format=duration",
+                 "-of", "json", str(path)],
+                capture_output=True, timeout=15, check=True)
+            info = json.loads(probe.stdout.decode("utf-8", "replace"))
+            streams = [item for item in info.get("streams", []) if item.get("codec_type") == "video"]
+            if not streams:
+                raise ValueError("wallpaper video has no video stream")
+            first = streams[0]
+            if first.get("codec_name") not in VIDEO_CODECS:
+                raise ValueError("unsupported video codec (use H.264, HEVC, VP8, VP9 or AV1)")
+            width, height = int(first.get("width") or 0), int(first.get("height") or 0)
+            if not (16 <= width <= VIDEO_MAX_SIDE and 16 <= height <= VIDEO_MAX_SIDE):
+                raise ValueError("wallpaper video size is outside the supported limits")
+            duration = float(info.get("format", {}).get("duration") or 0)
+            if not 0 < duration <= VIDEO_MAX_SECONDS:
+                raise ValueError("wallpaper video must be shorter than 10 minutes")
+            command = ["ffmpeg", *guard, "-xerror", "-max_pixels", "16777216", "-threads", "2", "-i", str(path)]
+            subprocess.run(command + ["-an", "-t", "3", "-f", "null", "-"],
+                           capture_output=True, timeout=30, check=True)
+            frame = subprocess.run(
+                command + ["-an", "-frames:v", "1", "-vf",
+                           f"scale='min({size[0]},iw)':'min({size[1]},ih)':force_original_aspect_ratio=decrease",
+                           "-c:v", "png", "-f", "image2pipe", "pipe:1"],
+                capture_output=True, timeout=30, check=True)
+    except FileNotFoundError as error:
+        raise ValueError("ffmpeg and ffprobe are required to validate wallpaper") from error
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as error:
+        raise ValueError("wallpaper video could not be decoded within the supported limits") from error
+    if not frame.stdout.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("wallpaper contains no decodable frame")
+    return frame.stdout
+
+
 def merge(target, patch):
     for key, value in patch.items():
         if isinstance(value, dict):
@@ -180,7 +240,7 @@ def manifest(plan):
 
     files = {key: name for key, name in FALLBACK.items() if os.path.lexists(plan.root / name)}
     candidates = [f"{base}{suffix}" for base in ("wallpaper", "wallpapers/wallpaper")
-                  for suffix in FORMATS if os.path.lexists(plan.root / f"{base}{suffix}")]
+                  for suffix in WALLPAPER_SUFFIXES if os.path.lexists(plan.root / f"{base}{suffix}")]
     if len(candidates) > 1:
         raise ValueError("Multiple default wallpapers. Choose one in theme.json.")
     if candidates:
@@ -212,11 +272,12 @@ def scan(folder, caps, thumbnail=False):
             parts = relative_parts(name)
             suffix = PurePosixPath(parts[-1]).suffix.lower()
             if kind == "wallpaper":
-                if suffix not in FORMATS:
-                    raise ValueError("expected a GIF, PNG, JPEG or WebP wallpaper")
+                if suffix not in WALLPAPER_SUFFIXES:
+                    raise ValueError("expected a GIF, PNG, JPEG, WebP, MP4 or WebM wallpaper")
                 data = read_package_file(root, name, MEDIA_LIMIT)
                 size = (480, 270) if thumbnail else (1920, 1080)
-                plan.image = (name, suffix, data, image_snapshot(data, suffix, size))
+                snapshot_of = video_snapshot if suffix in VIDEO_FORMATS else image_snapshot
+                plan.image = (name, suffix, data, snapshot_of(data, suffix, size))
             else:
                 if suffix != ".json":
                     raise ValueError("expected a JSON file")
@@ -431,7 +492,7 @@ def catalog(stores, state):
             if not entry.is_dir() or entry.name.startswith("."):
                 continue
             known = ("theme.json", *FALLBACK.values(),
-                     *(f"{base}{suffix}" for base in ("wallpaper", "wallpapers/wallpaper") for suffix in FORMATS))
+                     *(f"{base}{suffix}" for base in ("wallpaper", "wallpapers/wallpaper") for suffix in WALLPAPER_SUFFIXES))
             if any(os.path.lexists(entry / name) for name in known):
                 paths.add(str(entry.resolve()))
     packages = []

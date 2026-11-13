@@ -13,6 +13,6 @@
     "launcher": "launcher.json",
     "notifications": "notifications.json",
     "widgets": "widgets.json",
-    "wallpaper": "wallpapers/midnight-lens.gif"
+    "wallpaper": "wallpapers/midnight-lens.webm"
   }
 }

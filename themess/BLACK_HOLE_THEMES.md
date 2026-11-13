@@ -1,6 +1,6 @@
 # Black Hole themes
 
-Six dark-blue Themess packages built on one wallpaper (a black hole accretion-flow video, converted to a looping GIF at 960x540 because Themess accepts only GIF, PNG, JPEG and WebP). Each package has its own grade of the wallpaper, palette, panel, dock, launcher, notification settings and widget layout, and a music widget in a different variant and Audio Studio material.
+Six dark-blue Themess packages built on one wallpaper: a black hole accretion-flow video. Each package has its own grade of the video (looping WebM/VP9, 1920x1080, about 1 MB; WebM plays on Fedora's stock ffmpeg-free, while H.264 MP4 needs RPM Fusion ffmpeg), palette, panel, dock, launcher, notification settings and widget layout, and a music widget in a different variant and Audio Studio material.
 
 | Folder | Wallpaper | Accent | Music widget | Other widgets |
 | --- | --- | --- | --- | --- |

@@ -13,6 +13,6 @@
     "launcher": "launcher.json",
     "notifications": "notifications.json",
     "widgets": "widgets.json",
-    "wallpaper": "wallpapers/deep-void.gif"
+    "wallpaper": "wallpapers/deep-void.webm"
   }
 }

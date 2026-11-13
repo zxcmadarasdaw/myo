@@ -330,6 +330,50 @@ class ThemessTest(unittest.TestCase):
         (self.folder / "wallpaper.gif").write_bytes(b"GIF89a\0")
         self.assertIn("could not be decoded", self.report()["errors"][0])
 
+    def make_video(self, name, *codec_args, size="320x180"):
+        path = self.folder / name
+        subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i",
+                        f"testsrc=size={size}:rate=10:duration=1", *codec_args, str(path)],
+                       check=True, capture_output=True, timeout=60)
+        return path
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg required")
+    def test_video_wallpapers_are_validated_and_applied(self):
+        encoders = subprocess.run(["ffmpeg", "-v", "quiet", "-encoders"], capture_output=True, text=True).stdout
+        made = []
+        if "libx264" in encoders:
+            made.append(self.make_video("wallpaper.mp4", "-c:v", "libx264", "-pix_fmt", "yuv420p"))
+        if "libvpx-vp9" in encoders:
+            made.append(self.make_video("clip.webm", "-c:v", "libvpx-vp9", "-b:v", "200k"))
+        if not made:
+            self.skipTest("no H.264 or VP9 encoder")
+        for video in made:
+            with self.subTest(video=video.name):
+                for other in made:
+                    if other != video:
+                        other.rename(other.with_name("unused-" + other.name))
+                self.package_file("theme.json", {"version": 1, "name": "Video", "components": {
+                    "wallpaper": video.name}})
+                report = self.report(preview=True)
+                self.assertEqual(report["errors"], [])
+                self.assertTrue(report["image"].startswith("data:image/png;base64,"))
+                self.assertEqual(report["components"], [{"kind": "wallpaper", "file": video.name}])
+                for other in made:
+                    leftover = other.with_name("unused-" + other.name)
+                    if leftover.exists():
+                        leftover.rename(other)
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg required")
+    def test_video_wallpaper_rejects_wrong_content_codec_and_truncation(self):
+        self.package_file("theme.json", {"version": 1, "name": "Video", "components": {
+            "wallpaper": "wallpaper.mp4"}})
+        (self.folder / "wallpaper.mp4").write_bytes(b"GIF89a" + bytes(64))
+        self.assertIn("does not match its extension", self.report()["errors"][0])
+        (self.folder / "wallpaper.mp4").write_bytes(bytes([0, 0, 0, 24]) + b"ftypisom" + bytes(32))
+        self.assertIn("could not be decoded", self.report()["errors"][0])
+        self.make_video("wallpaper.mp4", "-c:v", "mpeg4")
+        self.assertIn("unsupported video codec", self.report()["errors"][0])
+
 
 if __name__ == "__main__":
     unittest.main()

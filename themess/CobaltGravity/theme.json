@@ -13,6 +13,6 @@
     "launcher": "launcher.json",
     "notifications": "notifications.json",
     "widgets": "widgets.json",
-    "wallpaper": "wallpapers/cobalt-gravity.gif"
+    "wallpaper": "wallpapers/cobalt-gravity.webm"
   }
 }
