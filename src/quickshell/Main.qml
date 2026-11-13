@@ -140,6 +140,21 @@ PanelWindow {
                 return;
             }
 
+            if (cmd === "processes" || targetWidget === "processes" || cmd === "taskmanager" || targetWidget === "taskmanager") {
+                if (cmd === "close") {
+                    ProcessExplorerController.hide();
+                } else if (cmd === "open") {
+                    LauncherController.hide();
+                    ClipboardController.hide();
+                    ProcessExplorerController.show();
+                } else {
+                    LauncherController.hide();
+                    ClipboardController.hide();
+                    ProcessExplorerController.toggle();
+                }
+                return;
+            }
+
             if (cmd === "calendar" || targetWidget === "calendar") {
                 if (cmd === "close") {
                     DashboardController.hide();

@@ -182,6 +182,15 @@ QtObject {
                     desc: typeof I18n !== "undefined" ? I18n.t("guide.bar.wifi.style.text", "Clean text and icon without background") : "Clean text and icon without background",
                     icon: "󰤨",
                     face: "faces/wifi/WifiFace.qml"
+                },
+                // Network Monitor Pro "Compact Panel": the button plus live
+                // download / upload speed. Opt-in; "button" stays the default.
+                "speed": {
+                    id: "speed",
+                    name: typeof I18n !== "undefined" ? I18n.t("guide.bar.wifi.style.name.speed", "Speed") : "Speed",
+                    desc: typeof I18n !== "undefined" ? I18n.t("guide.bar.wifi.style.speed", "Button with live download and upload speed") : "Button with live download and upload speed",
+                    icon: "󰇚",
+                    face: "faces/wifi/WifiFace.qml"
                 }
             }
         },

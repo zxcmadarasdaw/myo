@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import Quickshell
 import "../"
 import "../reusables"
+import "settings"
 
 QtObject {
     id: registry
@@ -550,6 +551,81 @@ QtObject {
         }
     }
 
+    // Generic settings driven by the setting's own fields (property, options,
+    // from/to, ...). Used by the network monitor, file dock and terminal.
+    property Component toggleSettingComponent: Component { WidgetToggleSetting {} }
+    property Component choiceSettingComponent: Component { WidgetChoiceSetting {} }
+    property Component numberSettingComponent: Component { WidgetNumberSetting {} }
+    property Component textSettingComponent: Component { WidgetTextSetting {} }
+    property Component fileDockItemsComponent: Component { FileDockItemsSetting {} }
+
+    function _setting(id, kind, row, extra) {
+        let comps = {
+            toggle: registry.toggleSettingComponent,
+            choice: registry.choiceSettingComponent,
+            number: registry.numberSettingComponent,
+            text: registry.textSettingComponent,
+            dockItems: registry.fileDockItemsComponent
+        };
+        return Object.assign({
+            id: id,
+            icon: String.fromCodePoint(0xF0493),
+            iconFontSize: 16,
+            action: id,
+            type: "custom",
+            row: row,
+            property: id,
+            accentColor: "surface0",
+            textColor: "mauve",
+            component: comps[kind]
+        }, extra || {});
+    }
+
+    readonly property var networkSettings: [
+        _setting("interfaceName", "choice", "top", { name: I18n.t("widgets.network.interface", "Interface"), optionsSource: "netInterfaces" }),
+        _setting("updateInterval", "number", "top", { name: I18n.t("widgets.network.refresh", "Refresh, s"), from: 0.5, to: 10, stepSize: 0.5, decimals: 1, scale: 1000 }),
+        _setting("showLatency", "toggle", "bottom", { name: I18n.t("widgets.network.latency", "Latency (ping)"), variants: ["glass", "graph", "cyber"] }),
+        _setting("pingHost", "text", "bottom", { name: I18n.t("widgets.network.pingHost", "Ping host"), placeholder: "1.1.1.1", width: 160, variants: ["glass", "graph", "cyber"] }),
+        _setting("showTotals", "toggle", "bottom", { name: I18n.t("widgets.network.totals", "Totals"), variants: ["glass"] })
+    ]
+
+    readonly property var fileDockSettings: [
+        _setting("itemsJson", "dockItems", "top", { name: I18n.t("widgets.filedock.items", "Items") }),
+        _setting("iconSize", "number", "top", { name: I18n.t("widgets.filedock.iconSize", "Icon size"), from: 24, to: 96, stepSize: 4, decimals: 0 }),
+        _setting("showLabels", "toggle", "bottom", { name: I18n.t("widgets.filedock.labels", "Labels"), variants: ["stack", "expandable", "grid", "cyber"] }),
+        _setting("backgroundOpacity", "number", "bottom", { name: I18n.t("widgets.filedock.background", "Background"), from: 0, to: 1, stepSize: 0.05, decimals: 2, fallback: 0.8, variants: ["floating", "stack", "expandable", "grid", "cyber"] }),
+        _setting("startExpanded", "toggle", "bottom", { name: I18n.t("widgets.filedock.startExpanded", "Open expanded"), variants: ["stack", "expandable"] })
+    ]
+
+    readonly property var terminalSettings: [
+        _setting("mode", "choice", "top", { name: I18n.t("widgets.terminal.mode", "Mode"), options: [
+            { id: "interactive", label: I18n.t("widgets.terminal.modes.interactive", "Interactive") },
+            { id: "fastfetch", label: "Fastfetch" },
+            { id: "cmatrix", label: "CMatrix" },
+            { id: "cava", label: "CAVA" },
+            { id: "monitor", label: I18n.t("widgets.terminal.modes.monitor", "Command monitor") }
+        ] }),
+        // Typed here by the user = approved on this machine (TerminalTrust).
+        _setting("command", "text", "top", { name: I18n.t("widgets.terminal.command", "Command"), placeholder: I18n.t("widgets.terminal.commandHint", "start / monitor command"), width: 200, trustCommand: true }),
+        _setting("monitorInterval", "number", "top", { name: I18n.t("widgets.terminal.interval", "Every, s"), from: 1, to: 3600, stepSize: 1, decimals: 0 }),
+        _setting("shell", "choice", "bottom", { name: I18n.t("widgets.terminal.shell", "Shell"), options: [
+            { id: "auto", label: I18n.t("widgets.terminal.shellAuto", "Login shell") }, { id: "bash", label: "bash" }, { id: "zsh", label: "zsh" }
+        ] }),
+        _setting("fontFamily", "choice", "bottom", { name: I18n.t("widgets.terminal.font", "Font"), optionsSource: "monoFonts" }),
+        _setting("fontSize", "number", "bottom", { name: I18n.t("widgets.terminal.fontSize", "Size"), from: 7, to: 32, stepSize: 1, decimals: 0 }),
+        _setting("colorScheme", "choice", "bottom", { name: I18n.t("widgets.terminal.colors", "Colors"), options: [
+            { id: "theme", label: I18n.t("widgets.terminal.colorsTheme", "Theme") }, { id: "classic", label: "Classic" },
+            { id: "matrix", label: "Matrix" }, { id: "cyber", label: "Cyber" }, { id: "amber", label: "Amber" }
+        ] }),
+        _setting("backgroundOpacity", "number", "bottom", { name: I18n.t("widgets.terminal.background", "Background"), from: 0, to: 1, stepSize: 0.05, decimals: 2, fallback: 0.85 }),
+        _setting("cornerRadius", "number", "bottom", { name: I18n.t("widgets.terminal.radius", "Radius"), from: 0, to: 40, stepSize: 1, decimals: 0, fallback: 12 }),
+        _setting("appearAnimation", "choice", "bottom", { name: I18n.t("widgets.terminal.appear", "Appear"), options: [
+            { id: "fade", label: I18n.t("widgets.terminal.appearFade", "Fade") }, { id: "slide", label: I18n.t("widgets.terminal.appearSlide", "Slide") },
+            { id: "scale", label: I18n.t("widgets.terminal.appearScale", "Scale") }, { id: "none", label: I18n.t("widgets.terminal.appearNone", "None") }
+        ] }),
+        _setting("paused", "toggle", "bottom", { name: I18n.t("widgets.terminal.pausedSetting", "Paused") })
+    ]
+
     property Component textContentInputComponent: Component {
         Item {
             id: settingRoot
@@ -938,6 +1014,62 @@ QtObject {
                     component: registry.textContentInputComponent
                 }
             ]
+        },
+        // Network Monitor Pro. "original" is the bar indicator as it is.
+        "network": {
+            name: I18n.t("widgets.types.network", "Network"),
+            icon: String.fromCodePoint(0xF06F3),
+            category: "system",
+            defaultWidth: 300,
+            defaultHeight: 150,
+            defaultVariant: "glass",
+            variants: {
+                "original": { file: "faces/network/NetworkFaceOriginal.qml", icon: "1", label: I18n.t("widgets.variants.original", "Original") },
+                "minimal":  { file: "faces/network/NetworkFaceMinimal.qml",  icon: "2", label: I18n.t("widgets.variants.minimalSpeed", "Minimal Speed") },
+                "glass":    { file: "faces/network/NetworkFaceGlass.qml",    icon: "3", label: I18n.t("widgets.variants.glassNetwork", "Glass Network") },
+                "graph":    { file: "faces/network/NetworkFaceGraph.qml",    icon: "4", label: I18n.t("widgets.variants.liveGraph", "Live Graph") },
+                "cyber":    { file: "faces/network/NetworkFaceCyber.qml",    icon: "5", label: I18n.t("widgets.variants.cyberNetwork", "Cyber Network") },
+                "compact":  { file: "faces/network/NetworkFaceCompact.qml",  icon: "6", label: I18n.t("widgets.variants.compactPanel", "Compact Panel") }
+            },
+            additionalSettings: registry.networkSettings
+        },
+        // File Dock: shortcuts only; never deletes or moves files.
+        "filedock": {
+            name: I18n.t("widgets.types.filedock", "File Dock"),
+            icon: String.fromCodePoint(0xF024B),
+            category: "info",
+            defaultWidth: 360,
+            defaultHeight: 110,
+            defaultVariant: "floating",
+            lockScreen: false,
+            variants: {
+                "floating":   { file: "faces/filedock/FileDockFloating.qml",   icon: "1", label: I18n.t("widgets.variants.floatingGlass", "Floating Glass") },
+                "minimal":    { file: "faces/filedock/FileDockMinimal.qml",    icon: "2", label: I18n.t("widgets.variants.minimalIcons", "Minimal Icons") },
+                "stack":      { file: "faces/filedock/FileDockStack.qml",      icon: "3", label: I18n.t("widgets.variants.folderStack", "Folder Stack") },
+                "expandable": { file: "faces/filedock/FileDockExpandable.qml", icon: "4", label: I18n.t("widgets.variants.expandableDock", "Expandable Dock") },
+                "grid":       { file: "faces/filedock/FileDockGrid.qml",       icon: "5", label: I18n.t("widgets.variants.grid", "Grid") },
+                "cyber":      { file: "faces/filedock/FileDockCyber.qml",      icon: "6", label: I18n.t("widgets.variants.cyberFiles", "Cyber Files") }
+            },
+            additionalSettings: registry.fileDockSettings
+        },
+        // Desktop Terminal: a real PTY terminal. Never on the lock screen; it
+        // runs nothing until placed on the desktop, and only approved commands.
+        "terminal": {
+            name: I18n.t("widgets.types.terminal", "Terminal"),
+            icon: String.fromCodePoint(0xF018D),
+            category: "system",
+            defaultWidth: 560,
+            defaultHeight: 320,
+            defaultVariant: "glass",
+            lockScreen: false,
+            variants: {
+                "transparent": { file: "faces/terminal/TerminalTransparent.qml", icon: "1", label: I18n.t("widgets.variants.transparent", "Transparent") },
+                "glass":       { file: "faces/terminal/TerminalGlass.qml",       icon: "2", label: I18n.t("widgets.variants.glassTerminal", "Glass Terminal") },
+                "cyber":       { file: "faces/terminal/TerminalCyber.qml",       icon: "3", label: I18n.t("widgets.variants.cyberTerminal", "Cyber Terminal") },
+                "minimal":     { file: "faces/terminal/TerminalMinimal.qml",     icon: "4", label: I18n.t("widgets.variants.minimal", "Minimal") },
+                "card":        { file: "faces/terminal/TerminalCard.qml",        icon: "5", label: I18n.t("widgets.variants.consoleCard", "Console Card") }
+            },
+            additionalSettings: registry.terminalSettings
         }
     })
 

@@ -50,6 +50,9 @@ Popup {
     property string selectedFilePath: ""
     property string selectedFileName: ""
     property bool saveMode: false
+    // Opt-in: "Done" with no file selected returns the folder being shown
+    // (File Dock uses it to pin folders). Off by default.
+    property bool folderMode: false
     property string saveFileName: ""
     onSelectedFileNameChanged: {
         if (saveMode && selectedFileName !== "") saveFileName = selectedFileName;
@@ -146,6 +149,10 @@ Popup {
         }
         if (pickerRoot.selectedFilePath !== "") {
             pickerRoot.fileSelected(pickerRoot.selectedFilePath, pickerRoot.selectedFileName);
+            pickerRoot.close();
+        } else if (pickerRoot.folderMode) {
+            let dir = pickerRoot.getAbsolutePath(folderModel.folder).replace(/\/$/, "") || "/";
+            pickerRoot.fileSelected(dir, dir.substring(dir.lastIndexOf("/") + 1) || "/");
             pickerRoot.close();
         }
     }
@@ -764,7 +771,7 @@ Popup {
                 cornerRadius: pickerRoot.crMedium
                 buttonText: pickerRoot.doneButtonText
                 textFontSize: Scaler.s(13)
-                readonly property bool ready: pickerRoot.saveMode ? pickerRoot.saveFileName.trim() !== "" : pickerRoot.selectedFilePath !== ""
+                readonly property bool ready: pickerRoot.saveMode ? pickerRoot.saveFileName.trim() !== "" : (pickerRoot.selectedFilePath !== "" || pickerRoot.folderMode)
                 accentColor: ready ? ThemeBackend.mauve : ThemeBackend.surface0
                 textColor: ready ? ThemeBackend.crust : ThemeBackend.subtext0
                 enabled: ready

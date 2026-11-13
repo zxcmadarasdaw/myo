@@ -190,6 +190,13 @@ PanelWindow {
         property string wImagePath: root.wImagePath
         property string imagePath: root.wImagePath
         property string path: root.wImagePath
+        // Read by faces that act on the system (terminal, file dock) or save
+        // their own state: only a real desktop widget starts shells or writes
+        // to its layout. Previews (editor, settings, lock screen) do not set
+        // these, so faces stay inert there. Existing faces ignore them.
+        readonly property bool liveDesktopWidget: true
+        readonly property string widgetId: String(root.wId)
+        readonly property string widgetMonitor: root.screen ? String(root.screen.name || "") : ""
         visible: root.visible
         source: WidgetRegistry.faceFile(root.wType, root.wVariant)
         width: root.effectiveWidth

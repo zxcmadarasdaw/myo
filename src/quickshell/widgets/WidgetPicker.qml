@@ -9,6 +9,9 @@ Item {
 
     property var leadingSections: []
     property var redactor: null
+    // Lock screen editor: hide widget types marked `lockScreen: false`
+    // (terminal, file dock). The desktop editor leaves this off.
+    property bool lockScreenScope: false
     property real maxWidth: 0
     default property alias actions: actionsRow.data
 
@@ -44,6 +47,11 @@ Item {
 
     readonly property var sections: {
         let types = WidgetRegistry.types;
+        if (root.lockScreenScope) {
+            let allowed = {};
+            for (let k in types) if (types[k].lockScreen !== false) allowed[k] = types[k];
+            types = allowed;
+        }
         let placed = {};
         let out = [];
 

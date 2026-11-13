@@ -55,6 +55,13 @@ ShellRoot {
     Clipboard {}    
     Dashboard {}
 
+    // Process Explorer exists only while open (or closing), so it holds no
+    // keyboard focus and runs no sampler in the background.
+    LazyLoader {
+        active: ProcessExplorerController.loaded
+        ProcessExplorer {}
+    }
+
     Polkit {}
     WellbeingLimitOverlay {}
     PopoutManager {}

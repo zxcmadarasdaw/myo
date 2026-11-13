@@ -6,6 +6,7 @@ Bar 1.0 bar/Bar.qml
 Floating 1.0 quickactions/Floating.qml
 FloatingEdgeTrigger 1.0 quickactions/FloatingEdgeTrigger.qml
 Clipboard 1.0 clipboard/Clipboard.qml
+ProcessExplorer 1.0 processexplorer/ProcessExplorer.qml
 Dashboard 1.0 calendar/Dashboard.qml
 Launcher 1.0 launcher/Launcher.qml
 ScreenshotOverlay 1.0 screenshot/ScreenshotOverlay.qml
@@ -67,6 +68,7 @@ singleton SwayState 1.0 singletons/system/SwayState.qml
 singleton RecordingState 1.0 singletons/system/RecordingState.qml
 singleton SysNotif 1.0 singletons/system/SysNotif.qml
 singleton TimerState 1.0 singletons/system/TimerState.qml
+singleton TerminalTrust 1.0 singletons/system/TerminalTrust.qml
 singleton FocusTimer 1.0 singletons/system/FocusTimer.qml
 singleton Updater 1.0 singletons/system/Updater.qml
 singleton WindowTracker 1.0 singletons/system/WindowTracker.qml
@@ -74,12 +76,14 @@ singleton ShellSurfaces 1.0 singletons/system/ShellSurfaces.qml
 singleton SurfaceField 1.0 singletons/system/SurfaceField.qml
 
 singleton SysData 1.0 singletons/info/SysData.qml
+singleton NetStats 1.0 singletons/info/NetStats.qml
 singleton SystemInfo 1.0 singletons/info/SystemInfo.qml
 
 ScreenToggleController 1.0 singletons/widgetcontrols/ScreenToggleController.qml
 HoverMenuController 1.0 singletons/widgetcontrols/HoverMenuController.qml
 
 singleton ClipboardController 1.0 singletons/widgetcontrols/ClipboardController.qml
+singleton ProcessExplorerController 1.0 singletons/widgetcontrols/ProcessExplorerController.qml
 singleton DashboardController 1.0 singletons/widgetcontrols/DashboardController.qml
 singleton FloatingController 1.0 singletons/widgetcontrols/FloatingController.qml
 singleton LauncherController 1.0 singletons/widgetcontrols/LauncherController.qml

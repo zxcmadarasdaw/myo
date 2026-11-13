@@ -69,6 +69,7 @@ BarFaceBase {
     Component.onCompleted: {
         findDevices();
         updateNetworkData();
+        syncSpeedSubscription();
     }
 
     Connections {
@@ -269,6 +270,28 @@ BarFaceBase {
         }
     }
 
+    // ---- Network Monitor Pro: "speed" style only (opt-in) ----
+    // Every other style renders exactly as before and never touches NetStats.
+    readonly property bool showSpeed: root.wifiStyle === "speed" && !root.isVertical
+    readonly property string speedToken: "bar-wifi-" + Math.random().toString(36).slice(2)
+    readonly property var speedStats: root.showSpeed ? NetStats.stats("auto") : null
+    readonly property string speedText: root.speedStats
+        ? ("󰇚" + NetStats.formatShortSpeed(root.speedStats.rx) + " 󰕒" + NetStats.formatShortSpeed(root.speedStats.tx))
+        : ""
+
+    function syncSpeedSubscription() {
+        if (root.showSpeed) NetStats.register(root.speedToken, 1000, false, "");
+        else NetStats.unregister(root.speedToken);
+    }
+
+    onShowSpeedChanged: syncSpeedSubscription()
+    Component.onDestruction: NetStats.unregister(root.speedToken)
+
+    function withSpeed(label) {
+        if (!root.showSpeed) return label;
+        return label !== "" ? (label + "  " + root.speedText) : root.speedText;
+    }
+
     property string effectiveIcon: root.showEthernet ? "󰈀" : root.wifiIcon
     property string effectiveName: root.showEthernet ? root.ethStatus : ((root.isWifiOn ? (root.wifiSsid !== "" ? root.wifiSsid : "On") : "Off"))
     readonly property bool isActive: root.showEthernet ? (root.ethStatus === "Connected") : root.isWifiOn
@@ -372,17 +395,17 @@ BarFaceBase {
             property bool isActive: root.isActive
 
             height: s(root.isCompact ? 28 : 30)
-            maxWidth: s(root.isCompact ? 156 : 160)
+            maxWidth: s(root.showSpeed ? (root.isCompact ? 250 : 260) : (root.isCompact ? 156 : 160))
             cornerRadius: Math.max(0, ThemeBackend.borderRadius - s(2))
             horizontalPadding: s(root.isCompact ? 10 : 12)
             buttonIcon: root.showIcon ? root.effectiveIcon : ""
             iconFontSize: s(root.isCompact ? 14 : 15)
-            buttonText: root.showName ? root.effectiveName : ""
+            buttonText: root.withSpeed(root.showName ? root.effectiveName : "")
             textFontSize: s(root.isCompact ? 11 : 12)
             accentColor: isActive ? (root.isCompact ? Qt.lighter(ThemeBackend.blue, 1.08) : ThemeBackend.blue) : (root.isCompact ? Qt.lighter(ThemeBackend.surface0, 1.18) : ThemeBackend.surface0)
             textColor: isActive ? ThemeBackend.base : (root.isCompact ? Qt.lighter(ThemeBackend.text, 1.05) : ThemeBackend.text)
 
-            property real targetWidth: (root.showIcon || root.showName) ? implicitWidth : 0
+            property real targetWidth: (root.showIcon || root.showName || root.showSpeed) ? implicitWidth : 0
             width: targetWidth
             Behavior on width { NumberAnimation { duration: 480; easing.type: Easing.OutQuint } }
 

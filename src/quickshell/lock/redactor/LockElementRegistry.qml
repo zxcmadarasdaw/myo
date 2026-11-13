@@ -150,7 +150,11 @@ QtObject {
     }
 
     function hasType(type) {
-        if (registry.isWidget(type)) return WidgetRegistry.types[registry.widgetKey(type)] !== undefined;
+        if (registry.isWidget(type)) {
+            // Types marked lockScreen: false (terminal, file dock) never render on the lock screen.
+            let w = WidgetRegistry.types[registry.widgetKey(type)];
+            return w !== undefined && w.lockScreen !== false;
+        }
         return registry.types[type] !== undefined;
     }
 

@@ -128,6 +128,8 @@ verify_installation() {
 
     command -v ffmpeg >/dev/null 2>&1 || verify_warning "ffmpeg missing: video wallpaper snapshots and Themess wallpaper validation will not work"
     command -v matugen >/dev/null 2>&1 || [ -x "$HOME/.local/bin/matugen" ] || verify_warning "matugen missing: colors will not follow the wallpaper"
+    command -v xdg-open >/dev/null 2>&1 || verify_warning "xdg-open missing (xdg-utils): the File Dock widget cannot open files and folders"
+    command -v ping >/dev/null 2>&1 || verify_warning "ping missing (iputils): the network widget's optional latency stays empty"
     if command -v rpm >/dev/null 2>&1 && rpm -q ffmpeg-free >/dev/null 2>&1 && ! rpm -q ffmpeg >/dev/null 2>&1; then
         verify_warning "ffmpeg-free is installed: H.264/HEVC (most .mp4/.mov) video wallpapers will not play; WebM (VP9/AV1) works. RPM Fusion 'ffmpeg' adds the codecs."
     fi

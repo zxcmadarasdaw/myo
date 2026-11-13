@@ -28,6 +28,7 @@ bindsym XF86AudioRaiseVolume exec serpantinum volume raise
 
 bindsym $mod+R exec serpantinum reload
 bindsym $mod+C exec serpantinum msg toggle clipboard
+bindsym $mod+Shift+P exec serpantinum msg toggle processes
 bindsym $mod+D exec serpantinum msg toggle launcher
 bindsym $mod+M exec serpantinum msg toggle music
 bindsym $mod+B exec serpantinum msg toggle system

@@ -609,6 +609,7 @@ Scope {
 
                     WidgetPicker {
                         id: toolbar
+                        lockScreenScope: true
                         anchors.bottom: parent.bottom
                         anchors.bottomMargin: Scaler.s(24)
                         anchors.horizontalCenter: parent.horizontalCenter
