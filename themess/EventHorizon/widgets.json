@@ -1,0 +1,86 @@
+[
+  {
+    "id": "eh_clock",
+    "type": "time",
+    "variant": "lumen",
+    "anchor": "top right",
+    "x": 40,
+    "y": 40,
+    "w": 320,
+    "h": 150
+  },
+  {
+    "id": "eh_weather",
+    "type": "weather",
+    "variant": "compact",
+    "anchor": "top right",
+    "x": 380,
+    "y": 40,
+    "w": 250,
+    "h": 120
+  },
+  {
+    "id": "eh_network",
+    "type": "network",
+    "variant": "cyber",
+    "anchor": "top left",
+    "x": 40,
+    "y": 40,
+    "w": 320,
+    "h": 160
+  },
+  {
+    "id": "eh_dock",
+    "type": "filedock",
+    "variant": "cyber",
+    "anchor": "top left",
+    "x": 40,
+    "y": 220,
+    "w": 380,
+    "h": 120
+  },
+  {
+    "id": "eh_cpu",
+    "type": "cpu",
+    "variant": "circle",
+    "anchor": "bottom right",
+    "x": 40,
+    "y": 300,
+    "w": 180,
+    "h": 130
+  },
+  {
+    "id": "eh_ram",
+    "type": "ram",
+    "variant": "circle",
+    "anchor": "bottom right",
+    "x": 240,
+    "y": 300,
+    "w": 180,
+    "h": 130
+  },
+  {
+    "id": "eh_temp",
+    "type": "temp",
+    "variant": "circle",
+    "anchor": "bottom right",
+    "x": 440,
+    "y": 300,
+    "w": 180,
+    "h": 130
+  },
+  {
+    "id": "eh_music",
+    "type": "music",
+    "variant": "neonMusic",
+    "anchor": "bottom right",
+    "x": 40,
+    "y": 110,
+    "w": 460,
+    "h": 170,
+    "musicDrawer": true,
+    "musicAnimations": true,
+    "musicVisualizer": true,
+    "musicMaterial": "neon"
+  }
+]

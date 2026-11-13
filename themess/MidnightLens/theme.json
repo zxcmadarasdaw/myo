@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "Black Hole - Midnight Lens",
+  "author": "Serpantinum",
+  "description": "Close-up lens on the black hole in sky-blue accents. Minimal music player, lockscreen clock, full weather, notes, pomodoro timer and compact network.",
+  "components": {
+    "palette": "palette.json",
+    "materials": "materials.json",
+    "panels": "panels.json",
+    "animations": "animations.json",
+    "canvas": "canvas.json",
+    "dock": "dock.json",
+    "launcher": "launcher.json",
+    "notifications": "notifications.json",
+    "widgets": "widgets.json",
+    "wallpaper": "wallpapers/midnight-lens.gif"
+  }
+}

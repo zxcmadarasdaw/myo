@@ -1,0 +1,86 @@
+[
+  {
+    "id": "ad_clock",
+    "type": "time",
+    "variant": "material",
+    "anchor": "top left",
+    "x": 40,
+    "y": 40,
+    "w": 320,
+    "h": 150
+  },
+  {
+    "id": "ad_weather",
+    "type": "weather",
+    "variant": "compact",
+    "anchor": "top left",
+    "x": 380,
+    "y": 40,
+    "w": 250,
+    "h": 120
+  },
+  {
+    "id": "ad_battery",
+    "type": "battery",
+    "variant": "default",
+    "anchor": "top right",
+    "x": 40,
+    "y": 40,
+    "w": 260,
+    "h": 90
+  },
+  {
+    "id": "ad_network",
+    "type": "network",
+    "variant": "original",
+    "anchor": "top right",
+    "x": 40,
+    "y": 150,
+    "w": 300,
+    "h": 150
+  },
+  {
+    "id": "ad_dock",
+    "type": "filedock",
+    "variant": "stack",
+    "anchor": "bottom left",
+    "x": 40,
+    "y": 110,
+    "w": 380,
+    "h": 120
+  },
+  {
+    "id": "ad_cpu",
+    "type": "cpu",
+    "variant": "default",
+    "anchor": "bottom right",
+    "x": 40,
+    "y": 300,
+    "w": 180,
+    "h": 130
+  },
+  {
+    "id": "ad_ram",
+    "type": "ram",
+    "variant": "default",
+    "anchor": "bottom right",
+    "x": 240,
+    "y": 300,
+    "w": 180,
+    "h": 130
+  },
+  {
+    "id": "ad_music",
+    "type": "music",
+    "variant": "albumCover",
+    "anchor": "bottom right",
+    "x": 40,
+    "y": 110,
+    "w": 460,
+    "h": 180,
+    "musicDrawer": true,
+    "musicAnimations": true,
+    "musicVisualizer": true,
+    "musicMaterial": "liquid"
+  }
+]

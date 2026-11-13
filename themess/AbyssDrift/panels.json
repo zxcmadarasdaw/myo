@@ -1,0 +1,43 @@
+{
+  "position": "bottom",
+  "style": "modular",
+  "width": 94,
+  "height": 40,
+  "autohide": false,
+  "distinctPills": false,
+  "centerByEdges": true,
+  "menuItems": [
+    "launcher",
+    "shuffle",
+    "settings"
+  ],
+  "workspacesStyle": "pacman",
+  "timeStyle": "classic",
+  "timeShowDate": true,
+  "wifiShowName": false,
+  "sysmonStyle": "wave",
+  "sysmonStats": [
+    "cpu",
+    "temp"
+  ],
+  "modules": {
+    "left": [
+      "left",
+      "workspaces",
+      "focus"
+    ],
+    "center": [
+      "timedate"
+    ],
+    "right": [
+      "tray",
+      [
+        "kb",
+        "wifi",
+        "bt",
+        "vol",
+        "bat"
+      ]
+    ]
+  }
+}

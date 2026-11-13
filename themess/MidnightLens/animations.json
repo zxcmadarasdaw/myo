@@ -1,0 +1,16 @@
+{
+  "mode": "custom",
+  "pool": [
+    "fade",
+    "swipe"
+  ],
+  "effects": {
+    "fade": {
+      "duration": 800
+    },
+    "swipe": {
+      "duration": 900,
+      "direction": "right"
+    }
+  }
+}

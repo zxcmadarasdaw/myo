@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "Black Hole - Cobalt Gravity",
+  "author": "Serpantinum",
+  "description": "Indigo-shifted black hole, electric blue accents. Floating Player music, Material analog clock, bar visualizer, ring gauges and a file grid.",
+  "components": {
+    "palette": "palette.json",
+    "materials": "materials.json",
+    "panels": "panels.json",
+    "animations": "animations.json",
+    "canvas": "canvas.json",
+    "dock": "dock.json",
+    "launcher": "launcher.json",
+    "notifications": "notifications.json",
+    "widgets": "widgets.json",
+    "wallpaper": "wallpapers/cobalt-gravity.gif"
+  }
+}

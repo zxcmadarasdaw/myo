@@ -1,0 +1,86 @@
+[
+  {
+    "id": "dv_clock",
+    "type": "time",
+    "variant": "minimal",
+    "anchor": "top left",
+    "x": 40,
+    "y": 40,
+    "w": 260,
+    "h": 120
+  },
+  {
+    "id": "dv_weather",
+    "type": "weather",
+    "variant": "compact",
+    "anchor": "top left",
+    "x": 320,
+    "y": 40,
+    "w": 250,
+    "h": 120
+  },
+  {
+    "id": "dv_network",
+    "type": "network",
+    "variant": "minimal",
+    "anchor": "top left",
+    "x": 40,
+    "y": 180,
+    "w": 300,
+    "h": 130
+  },
+  {
+    "id": "dv_notes",
+    "type": "notes",
+    "variant": "default",
+    "anchor": "top right",
+    "x": 40,
+    "y": 40,
+    "w": 300,
+    "h": 280
+  },
+  {
+    "id": "dv_cpu",
+    "type": "cpu",
+    "variant": "default",
+    "anchor": "bottom right",
+    "x": 40,
+    "y": 40,
+    "w": 180,
+    "h": 130
+  },
+  {
+    "id": "dv_ram",
+    "type": "ram",
+    "variant": "default",
+    "anchor": "bottom right",
+    "x": 240,
+    "y": 40,
+    "w": 180,
+    "h": 130
+  },
+  {
+    "id": "dv_disk",
+    "type": "disk",
+    "variant": "default",
+    "anchor": "bottom right",
+    "x": 440,
+    "y": 40,
+    "w": 180,
+    "h": 130
+  },
+  {
+    "id": "dv_music",
+    "type": "music",
+    "variant": "compactGlass",
+    "anchor": "bottom left",
+    "x": 40,
+    "y": 110,
+    "w": 440,
+    "h": 150,
+    "musicDrawer": true,
+    "musicAnimations": false,
+    "musicVisualizer": false,
+    "musicMaterial": "mica"
+  }
+]

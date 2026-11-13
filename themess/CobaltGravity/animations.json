@@ -1,0 +1,11 @@
+{
+  "mode": "custom",
+  "pool": [
+    "paint"
+  ],
+  "effects": {
+    "paint": {
+      "duration": 1300
+    }
+  }
+}

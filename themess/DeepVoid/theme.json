@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "Black Hole - Deep Void",
+  "author": "Serpantinum",
+  "description": "The darkest of the set: ice-steel accents, Compact Glass music on Mica, minimal clock, plain system gauges, notes and a minimal network card.",
+  "components": {
+    "palette": "palette.json",
+    "materials": "materials.json",
+    "panels": "panels.json",
+    "animations": "animations.json",
+    "canvas": "canvas.json",
+    "dock": "dock.json",
+    "launcher": "launcher.json",
+    "notifications": "notifications.json",
+    "widgets": "widgets.json",
+    "wallpaper": "wallpapers/deep-void.gif"
+  }
+}

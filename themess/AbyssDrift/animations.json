@@ -1,0 +1,12 @@
+{
+  "mode": "custom",
+  "pool": [
+    "swipe"
+  ],
+  "effects": {
+    "swipe": {
+      "duration": 1000,
+      "direction": "bottom_left"
+    }
+  }
+}

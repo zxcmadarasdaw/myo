@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "Black Hole - Abyss Drift",
+  "author": "Serpantinum",
+  "description": "Inverted black hole with teal-navy accents. Album Cover music player, material clock, folder stack, original network card and battery.",
+  "components": {
+    "palette": "palette.json",
+    "materials": "materials.json",
+    "panels": "panels.json",
+    "animations": "animations.json",
+    "canvas": "canvas.json",
+    "dock": "dock.json",
+    "launcher": "launcher.json",
+    "notifications": "notifications.json",
+    "widgets": "widgets.json",
+    "wallpaper": "wallpapers/abyss-drift.gif"
+  }
+}

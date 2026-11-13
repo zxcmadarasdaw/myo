@@ -1,0 +1,66 @@
+[
+  {
+    "id": "sm_clock",
+    "type": "time",
+    "variant": "analog",
+    "anchor": "top left",
+    "x": 120,
+    "y": 40,
+    "w": 230,
+    "h": 230
+  },
+  {
+    "id": "sm_weather",
+    "type": "weather",
+    "variant": "round",
+    "anchor": "top left",
+    "x": 370,
+    "y": 40,
+    "w": 200,
+    "h": 200
+  },
+  {
+    "id": "sm_timer",
+    "type": "timer",
+    "variant": "stopwatch",
+    "anchor": "top right",
+    "x": 40,
+    "y": 40,
+    "w": 320,
+    "h": 250
+  },
+  {
+    "id": "sm_network",
+    "type": "network",
+    "variant": "graph",
+    "anchor": "top right",
+    "x": 40,
+    "y": 310,
+    "w": 320,
+    "h": 170
+  },
+  {
+    "id": "sm_visual",
+    "type": "visualizer",
+    "variant": "continuous",
+    "anchor": "bottom left",
+    "x": 120,
+    "y": 310,
+    "w": 560,
+    "h": 130
+  },
+  {
+    "id": "sm_music",
+    "type": "music",
+    "variant": "vinyl",
+    "anchor": "bottom left",
+    "x": 120,
+    "y": 110,
+    "w": 460,
+    "h": 180,
+    "musicDrawer": true,
+    "musicAnimations": true,
+    "musicVisualizer": false,
+    "musicMaterial": "liquid"
+  }
+]

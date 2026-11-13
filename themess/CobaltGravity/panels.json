@@ -1,0 +1,41 @@
+{
+  "position": "top",
+  "style": "solid",
+  "width": 98,
+  "height": 42,
+  "autohide": false,
+  "distinctPills": true,
+  "centerByEdges": false,
+  "menuItems": [
+    "launcher",
+    "settings",
+    "nightlight"
+  ],
+  "workspacesStyle": "numbers",
+  "timeStyle": "material",
+  "timeShowDate": false,
+  "wifiShowName": true,
+  "sysmonStyle": "wave",
+  "sysmonStats": [
+    "cpu",
+    "ram",
+    "temp"
+  ],
+  "modules": {
+    "left": [
+      "left",
+      "workspaces"
+    ],
+    "center": [
+      "media"
+    ],
+    "right": [
+      [
+        "sysmon",
+        "wifi",
+        "vol"
+      ],
+      "timedate"
+    ]
+  }
+}

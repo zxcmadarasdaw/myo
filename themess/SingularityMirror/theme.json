@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "Black Hole - Singularity Mirror",
+  "author": "Serpantinum",
+  "description": "Mirrored black hole in violet-blue. Vinyl music player, analog clock, stopwatch, live network graph and a continuous visualizer.",
+  "components": {
+    "palette": "palette.json",
+    "materials": "materials.json",
+    "panels": "panels.json",
+    "animations": "animations.json",
+    "canvas": "canvas.json",
+    "dock": "dock.json",
+    "launcher": "launcher.json",
+    "notifications": "notifications.json",
+    "widgets": "widgets.json",
+    "wallpaper": "wallpapers/singularity-mirror.gif"
+  }
+}

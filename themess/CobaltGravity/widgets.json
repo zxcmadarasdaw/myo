@@ -1,0 +1,96 @@
+[
+  {
+    "id": "cg_clock",
+    "type": "time",
+    "variant": "materialAnalog",
+    "anchor": "top right",
+    "x": 40,
+    "y": 40,
+    "w": 230,
+    "h": 230
+  },
+  {
+    "id": "cg_weather",
+    "type": "weather",
+    "variant": "compact",
+    "anchor": "top right",
+    "x": 290,
+    "y": 40,
+    "w": 250,
+    "h": 120
+  },
+  {
+    "id": "cg_visual",
+    "type": "visualizer",
+    "variant": "bars",
+    "anchor": "top left",
+    "x": 40,
+    "y": 40,
+    "w": 560,
+    "h": 150
+  },
+  {
+    "id": "cg_network",
+    "type": "network",
+    "variant": "minimal",
+    "anchor": "top left",
+    "x": 40,
+    "y": 210,
+    "w": 300,
+    "h": 130
+  },
+  {
+    "id": "cg_cpu",
+    "type": "cpu",
+    "variant": "circle",
+    "anchor": "top right",
+    "x": 40,
+    "y": 290,
+    "w": 180,
+    "h": 130
+  },
+  {
+    "id": "cg_ram",
+    "type": "ram",
+    "variant": "circle",
+    "anchor": "top right",
+    "x": 240,
+    "y": 290,
+    "w": 180,
+    "h": 130
+  },
+  {
+    "id": "cg_temp",
+    "type": "temp",
+    "variant": "circle",
+    "anchor": "top right",
+    "x": 440,
+    "y": 290,
+    "w": 180,
+    "h": 130
+  },
+  {
+    "id": "cg_files",
+    "type": "filedock",
+    "variant": "grid",
+    "anchor": "bottom right",
+    "x": 40,
+    "y": 275,
+    "w": 320,
+    "h": 180
+  },
+  {
+    "id": "cg_music",
+    "type": "music",
+    "variant": "floatingPlayer",
+    "anchor": "bottom right",
+    "x": 40,
+    "y": 110,
+    "w": 460,
+    "h": 160,
+    "musicDrawer": true,
+    "musicAnimations": true,
+    "musicVisualizer": true,
+    "musicMaterial": "neon"
+  }
+]

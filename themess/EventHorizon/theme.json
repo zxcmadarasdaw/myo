@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "Black Hole - Event Horizon",
+  "author": "Serpantinum",
+  "description": "Deep navy and cyan around a black hole. Neon Music player, lumen clock, cyber network and file dock, ring gauges.",
+  "components": {
+    "palette": "palette.json",
+    "materials": "materials.json",
+    "panels": "panels.json",
+    "animations": "animations.json",
+    "canvas": "canvas.json",
+    "dock": "dock.json",
+    "launcher": "launcher.json",
+    "notifications": "notifications.json",
+    "widgets": "widgets.json",
+    "wallpaper": "wallpapers/event-horizon.gif"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "position": "bottom",
+  "autohide": true,
+  "smartAutohide": true,
+  "elementSize": 38,
+  "floating": false,
+  "hoverScale": 115
+}

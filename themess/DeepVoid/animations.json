@@ -1,0 +1,12 @@
+{
+  "mode": "custom",
+  "pool": [
+    "wipe"
+  ],
+  "effects": {
+    "wipe": {
+      "duration": 1100,
+      "orientation": "vertical"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "position": "left",
+  "autohide": true,
+  "elementSize": 40,
+  "floating": true,
+  "hoverScale": 150
+}

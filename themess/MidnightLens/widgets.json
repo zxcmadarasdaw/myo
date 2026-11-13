@@ -1,0 +1,96 @@
+[
+  {
+    "id": "ml_clock",
+    "type": "time",
+    "variant": "lockscreen",
+    "anchor": "top right",
+    "x": 40,
+    "y": 40,
+    "w": 340,
+    "h": 126
+  },
+  {
+    "id": "ml_weather",
+    "type": "weather",
+    "variant": "full",
+    "anchor": "top left",
+    "x": 40,
+    "y": 40,
+    "w": 320,
+    "h": 160
+  },
+  {
+    "id": "ml_battery",
+    "type": "battery",
+    "variant": "default",
+    "anchor": "top left",
+    "x": 40,
+    "y": 220,
+    "w": 260,
+    "h": 90
+  },
+  {
+    "id": "ml_disk",
+    "type": "disk",
+    "variant": "default",
+    "anchor": "top left",
+    "x": 320,
+    "y": 220,
+    "w": 180,
+    "h": 130
+  },
+  {
+    "id": "ml_network",
+    "type": "network",
+    "variant": "compact",
+    "anchor": "top right",
+    "x": 40,
+    "y": 190,
+    "w": 280,
+    "h": 130
+  },
+  {
+    "id": "ml_timer",
+    "type": "timer",
+    "variant": "pomodoro",
+    "anchor": "bottom right",
+    "x": 40,
+    "y": 330,
+    "w": 330,
+    "h": 230
+  },
+  {
+    "id": "ml_notes",
+    "type": "notes",
+    "variant": "default",
+    "anchor": "bottom right",
+    "x": 40,
+    "y": 40,
+    "w": 300,
+    "h": 270
+  },
+  {
+    "id": "ml_files",
+    "type": "filedock",
+    "variant": "minimal",
+    "anchor": "bottom right",
+    "x": 360,
+    "y": 40,
+    "w": 360,
+    "h": 110
+  },
+  {
+    "id": "ml_music",
+    "type": "music",
+    "variant": "minimal",
+    "anchor": "bottom left",
+    "x": 40,
+    "y": 110,
+    "w": 440,
+    "h": 150,
+    "musicDrawer": true,
+    "musicAnimations": false,
+    "musicVisualizer": false,
+    "musicMaterial": "minimal"
+  }
+]

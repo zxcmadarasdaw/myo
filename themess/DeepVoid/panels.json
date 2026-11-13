@@ -1,0 +1,38 @@
+{
+  "position": "top",
+  "style": "fill",
+  "width": 100,
+  "height": 34,
+  "autohide": true,
+  "distinctPills": false,
+  "centerByEdges": true,
+  "menuItems": [
+    "settings",
+    "caffeine"
+  ],
+  "workspacesStyle": "pills",
+  "timeStyle": "badge",
+  "timeShowDate": true,
+  "wifiShowName": false,
+  "sysmonStyle": "bars",
+  "sysmonStats": [
+    "cpu",
+    "ram"
+  ],
+  "modules": {
+    "left": [
+      "workspaces"
+    ],
+    "center": [
+      "timedate"
+    ],
+    "right": [
+      [
+        "sysmon",
+        "vol",
+        "bat"
+      ],
+      "tray"
+    ]
+  }
+}

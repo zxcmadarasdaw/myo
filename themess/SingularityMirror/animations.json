@@ -1,0 +1,16 @@
+{
+  "mode": "custom",
+  "pool": [
+    "circle",
+    "fade"
+  ],
+  "effects": {
+    "circle": {
+      "duration": 1200,
+      "origin": "center"
+    },
+    "fade": {
+      "duration": 700
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "mode": "dark",
+  "colors": {
+    "crust": "#03030C",
+    "mantle": "#050512",
+    "base": "#07081C",
+    "surface0": "#0F102C",
+    "surface1": "#181A3E",
+    "surface2": "#262754",
+    "overlay0": "#454778",
+    "overlay1": "#565895",
+    "overlay2": "#6C6EAC",
+    "subtext0": "#9798C9",
+    "subtext1": "#B5B6DE",
+    "text": "#E1E1FA",
+    "blue": "#8A8CFF",
+    "sapphire": "#6A7BFF",
+    "mauve": "#B07CFF",
+    "teal": "#6CC8F2",
+    "green": "#8FE3B2",
+    "yellow": "#F1D294",
+    "peach": "#EEB286",
+    "red": "#FF8398",
+    "maroon": "#DE778F",
+    "pink": "#C6ABF2"
+  }
+}
