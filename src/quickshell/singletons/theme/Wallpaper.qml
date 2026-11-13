@@ -18,6 +18,27 @@ Item {
     // (hotplug, slow monitor init on login) adopt it instead of staying empty.
     property string lastRequestedAll: ""
 
+    // Opt-in (Settings -> Diagnostics): while a screen recorder runs, the
+    // wallpaper engine uses its existing light path (video snapshot, paused
+    // GIF, no shader transitions). Normal playback returns when recording stops.
+    readonly property bool recordingLiteEnabled: (typeof Config !== "undefined") && !!Config.getSetting("general.recordingLite", false)
+    property bool captureActive: false
+    readonly property bool captureLite: recordingLiteEnabled && captureActive
+    onRecordingLiteEnabledChanged: if (!recordingLiteEnabled) captureActive = false
+
+    Process {
+        id: captureProbe
+        command: ["sh", "-c", "pgrep -x obs >/dev/null || pgrep -x wf-recorder >/dev/null || pgrep -x wl-screenrec >/dev/null || pgrep -x kooha >/dev/null || pgrep -f '^gpu-screen-recorder' >/dev/null"]
+        onExited: (code) => { root.captureActive = root.recordingLiteEnabled && code === 0; }
+    }
+    Timer {
+        interval: 4000
+        repeat: true
+        triggeredOnStart: true
+        running: root.recordingLiteEnabled
+        onTriggered: { if (!captureProbe.running) captureProbe.running = true; }
+    }
+
     readonly property var transitionIds: ["fade", "wipe", "circle", "swipe", "paint"]
     readonly property var transitionModes: ["random", "custom"]
     readonly property var wipeOrientations: ["random", "horizontal", "vertical"]

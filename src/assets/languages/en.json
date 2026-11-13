@@ -46,6 +46,8 @@
       "theme_appearance": "Appearance",
       "theme_apps": "App theming",
       "theme_wallpapers": "Wallpapers",
+      "theme_wallpaper_hub": "Wallpaper Hub",
+      "diagnostics": "Diagnostics",
       "general_main": "General",
       "general_presets": "Presets",
       "general_weather": "Weather"

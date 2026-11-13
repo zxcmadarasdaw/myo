@@ -74,7 +74,8 @@ ShellRoot {
                 property bool restoreHistory: true
                 // Performance mode keeps the wallpaper but drops animated work:
                 // static transitions, video snapshot instead of playback, GIF paused.
-                readonly property bool performanceMode: !!(Config.getSetting("general", {}).performance)
+                // Wallpaper.captureLite: same light path, only while a screen recorder runs (opt-in).
+                readonly property bool performanceMode: !!(Config.getSetting("general", {}).performance) || Wallpaper.captureLite
                 // Human readable reason when the current wallpaper failed to load.
                 property string loadError: ""
                 function reportLoadError(path, reason) {

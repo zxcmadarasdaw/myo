@@ -632,6 +632,7 @@ Item {
             subtabs: [
                 { id: "ThemeAppearance", key: "theme_appearance", name: "Appearance", icon: "󰏘", file: "theme/ThemeTab.qml" },
                 { id: "ThemeWallpapers", key: "theme_wallpapers", name: "Wallpapers", icon: "󰸉", file: "wallpaper/WallpaperTab.qml" },
+                { id: "ThemeWallpaperHub", key: "theme_wallpaper_hub", name: "Wallpaper Hub", icon: "󰖟", file: "wallpaper/hub/WallpaperHubTab.qml" },
                 { id: "ThemeApps", key: "theme_apps", name: "App theming", icon: "󰏗", file: "theme/ThemeAppsTab.qml" }
             ]
         },
@@ -655,6 +656,7 @@ Item {
         { id: "Wellbeing", key: "wellbeing", name: "Wellbeing", icon: "󰄉", separatorBefore: true, file: "wellbeing/DigitalWellbeingTab.qml" },
         { id: "Idle", key: "idle", name: "Idle", icon: "󰒲", file: "IdleTab.qml" },
         { id: "Themess", key: "themess", name: "Themess", icon: "󰏖", file: "ThemessTab.qml" },
+        { id: "Diagnostics", key: "diagnostics", name: "Diagnostics", icon: "󰃤", file: "DiagnosticsTab.qml" },
         { id: "About", key: "about", name: "About", icon: "󰋽", separatorBefore: true, file: "AboutTab.qml" }
     ]
 
