@@ -22,7 +22,10 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
 
-    mask: Region { item: topBarHole; intersection: Intersection.Xor }
+    mask: Region {
+        item: clipboardWindow.isVisible ? topBarHole : null
+        intersection: clipboardWindow.isVisible ? Intersection.Xor : Intersection.Combine
+    }
 
     anchors {
         top: true

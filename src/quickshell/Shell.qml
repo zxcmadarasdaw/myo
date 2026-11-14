@@ -45,10 +45,10 @@ ShellRoot {
         }
     }
 
-    Main {}
+    Main { onSettingsOpening: widgetRedactor.close() }
     Bar {}
     Lock {}
-    WidgetRedactor {}
+    WidgetRedactor { id: widgetRedactor }
     LockRedactor {}
 
     Launcher {}

@@ -56,7 +56,8 @@ PanelWindow {
     property bool initialized: false
 
     property bool wantsKeyboardFocus: false
-    readonly property bool effectiveKeyboardFocus: wantsKeyboardFocus || (faceLoader.item && (faceLoader.item.wantsKeyboardFocus || faceLoader.item.keyboardFocus || faceLoader.item.isEditingUser)) || false
+    readonly property bool effectiveKeyboardFocus: visible && !isRedacting && wOpacity > 0.001
+        && (wantsKeyboardFocus || (faceLoader.item && (faceLoader.item.wantsKeyboardFocus || faceLoader.item.keyboardFocus || faceLoader.item.isEditingUser)) || false)
 
     property real animX: wX
     property real animY: wY
@@ -117,7 +118,22 @@ PanelWindow {
     WlrLayershell.keyboardFocus: effectiveKeyboardFocus ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
     exclusionMode: ExclusionMode.Ignore
-    focusable: effectiveKeyboardFocus
+    // Keep decorative aura margins out of the Wayland input region. A face
+    // retains its rectangular hit target (including transparent terminals).
+    mask: Region {
+        Region {
+            x: root.auraMargin
+            y: root.auraMargin
+            width: root.visible && !root.isRedacting && root.wOpacity > 0.001 ? root.screenBoxWidth : 0
+            height: root.screenBoxHeight
+        }
+        Region {
+            x: root.auraMargin
+            y: root.auraMargin + root.screenBoxHeight
+            width: root.visible && !root.isRedacting && root.musicDrawerEnabled ? root.screenBoxWidth : 0
+            height: root.musicStripHeight
+        }
+    }
 
     onEffectiveKeyboardFocusChanged: {
         if (effectiveKeyboardFocus && typeof root.requestActivate === "function") {

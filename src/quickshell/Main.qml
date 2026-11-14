@@ -239,7 +239,11 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Overlay
 
     exclusionMode: ExclusionMode.Ignore
-    focusable: true
+    // Visual exit animations must not keep a Wayland input surface alive.
+    readonly property bool acceptsInput: isVisible && !isClosing && targetActive !== "hidden"
+    focusable: acceptsInput
+    onAcceptsInputChanged: console.info("[input] master", currentActive, "input=" + acceptsInput, "closing=" + isClosing)
+    signal settingsOpening()
 
     implicitWidth: masterWindow.screen ? masterWindow.screen.width : 0
     implicitHeight: masterWindow.screen ? masterWindow.screen.height : 0
@@ -247,8 +251,8 @@ PanelWindow {
     visible: isVisible
 
     mask: Region {
-        item: masterWindow.isCurrentDraggable ? maskContent : topBarHole
-        intersection: masterWindow.isCurrentDraggable ? Intersection.Combine : Intersection.Xor
+        item: !masterWindow.acceptsInput ? null : (masterWindow.isCurrentDraggable ? maskContent : topBarHole)
+        intersection: !masterWindow.acceptsInput || masterWindow.isCurrentDraggable ? Intersection.Combine : Intersection.Xor
     }
 
     property var rawBarSettings: (typeof Config !== "undefined" && Config.rawSettings && Config.rawSettings.bar) ? Config.rawSettings.bar : ({})
@@ -593,7 +597,7 @@ PanelWindow {
             id: windowDragHandler
             target: null
             acceptedButtons: Qt.LeftButton
-            enabled: masterWindow.isCurrentDraggable
+            enabled: masterWindow.acceptsInput && masterWindow.isCurrentDraggable
 
             property real startX: 0
             property real startY: 0
@@ -689,6 +693,8 @@ PanelWindow {
         if (newWidget === "hidden" && masterWindow.isClosing) return;
 
         masterWindow.switchGeneration++;
+        switchRetry.stop();
+        switchRetry.attempts = 0;
         let gen = masterWindow.switchGeneration;
         masterWindow.targetActive = newWidget;
 
@@ -713,6 +719,7 @@ PanelWindow {
 
                 let finalizeClose = function() {
                     if (closingGen !== masterWindow.switchGeneration) return;
+                    exitSafetyTimer.stop();
                     masterWindow.isClosing = false;
                     masterWindow.currentActive = "hidden";
                     masterWindow.morphDuration = masterWindow.exitDuration;
@@ -755,25 +762,22 @@ PanelWindow {
 
         let t = getLayout(newWidget);
         if (!t || !t.w || !t.h || t.w < 10 || t.h < 10) {
-            Qt.callLater(function() {
-                if (gen === masterWindow.switchGeneration) {
-                    executeSwitch(newWidget, arg, gen);
-                }
-            });
+            retrySwitch(newWidget, arg, gen);
             return;
         }
 
         let cachedItem = ensureWidgetItem(newWidget, t);
         if (!cachedItem) {
-            Qt.callLater(function() {
-                if (gen === masterWindow.switchGeneration) {
-                    executeSwitch(newWidget, arg, gen);
-                }
-            });
+            retrySwitch(newWidget, arg, gen);
             return;
         }
 
         if (gen !== masterWindow.switchGeneration) return;
+
+        // A cached item can still be visible while its exit is running.
+        // Setting visible=true again does not emit visibleChanged in that case.
+        if (typeof cachedItem.cancelExit === "function") cachedItem.cancelExit();
+        if (newWidget === "guide") settingsOpening();
 
         if (cachedItem.targetMasterWidth !== undefined)  cachedItem.targetMasterWidth  = t.w;
         if (cachedItem.targetMasterHeight !== undefined) cachedItem.targetMasterHeight = t.h;
@@ -832,12 +836,37 @@ PanelWindow {
         }
     }
 
+    function retrySwitch(name, arg, gen) {
+        let comp = componentCache[name];
+        if ((comp && comp.status === Component.Error) || switchRetry.attempts >= 40) {
+            console.warn("[input] failed to open", name, "generation=" + gen);
+            switchWidget("hidden", "");
+            return;
+        }
+        switchRetry.name = name;
+        switchRetry.arg = arg;
+        switchRetry.generation = gen;
+        switchRetry.attempts++;
+        switchRetry.restart();
+    }
+
+    Timer {
+        id: switchRetry
+        interval: 50
+        property string name: ""
+        property string arg: ""
+        property int generation: -1
+        property int attempts: 0
+        onTriggered: masterWindow.executeSwitch(name, arg, generation)
+    }
+
     Timer {
         id: exitSafetyTimer
         interval: 450
         property int scheduledGeneration: -1
         onTriggered: {
             if (scheduledGeneration === masterWindow.switchGeneration && masterWindow.isClosing) {
+                console.warn("[input] exit timeout", masterWindow.currentActive, "generation=" + scheduledGeneration);
                 masterWindow.isClosing = false;
                 masterWindow.currentActive = "hidden";
                 masterWindow.morphDuration = masterWindow.exitDuration;

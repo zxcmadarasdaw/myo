@@ -18,12 +18,15 @@ PanelWindow {
     screen: ProcessExplorerController.screen
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
-    focusable: true
     WlrLayershell.namespace: "qs-process-explorer"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: ProcessExplorerController.isVisible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     anchors { top: true; bottom: true; left: true; right: true }
+    mask: Region {
+        width: win.open ? win.width : 0
+        height: win.open ? win.height : 0
+    }
 
     function s(v) { return Scaler.s(v); }
 

@@ -23,7 +23,10 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
 
-    mask: Region { item: topBarHole; intersection: Intersection.Xor }
+    mask: Region {
+        item: launcherWindow.isVisible ? topBarHole : null
+        intersection: launcherWindow.isVisible ? Intersection.Xor : Intersection.Combine
+    }
 
     anchors {
         top: true

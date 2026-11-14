@@ -15,7 +15,21 @@ Scope {
     id: root
 
     property bool isActive: false
-    onIsActiveChanged: Themess.widgetEditorOpen = isActive
+    onIsActiveChanged: {
+        Themess.widgetEditorOpen = isActive;
+        syncEditMonitor();
+    }
+    // Own the edit lease here, not in an asynchronous layout-file callback.
+    property string editingMonitor: ""
+    function syncEditMonitor() {
+        let win = redactorWindowLoader.item;
+        let next = root.isActive && win ? win.safeMonitorName : "";
+        if (next === editingMonitor) return;
+        if (editingMonitor !== "") WidgetSync.setRedactMode(editingMonitor, false);
+        editingMonitor = next;
+        if (next !== "") WidgetSync.setRedactMode(next, true);
+        console.info("[input] editor monitor=" + next + " active=" + root.isActive);
+    }
     property string targetMonitorName: ""
     property string targetSelectedWidgetId: ""
     readonly property var activeWidgetsModel: (redactorWindowLoader.item && redactorWindowLoader.item.activeWidgetsModel) ? redactorWindowLoader.item.activeWidgetsModel : null
@@ -43,12 +57,16 @@ Scope {
     }
 
     function close() {
+        if (!root.isActive && editingMonitor === "" && targetMonitorName === "" && targetSelectedWidgetId === "") return;
+        // Release the original monitor before clearing targetMonitorName;
+        // that property participates in the window's monitor binding.
+        root.isActive = false;
+        syncEditMonitor();
         if (redactorWindowLoader.item && redactorWindowLoader.item.redactorMode) {
             redactorWindowLoader.item.redactorMode.selectedId = "";
         }
         root.targetSelectedWidgetId = "";
         root.targetMonitorName = "";
-        root.isActive = false;
 
         if (Caching.runDir) {
             Quickshell.execDetached(["bash", "-c", "rm -f '" + Caching.runDir + "/redactor_selected_widget' '" + Caching.runDir + "/redactor_target_monitor'"]);
@@ -106,6 +124,7 @@ Scope {
     Loader {
         id: redactorWindowLoader
         active: root.isActive
+        onLoaded: root.syncEditMonitor()
 
         sourceComponent: Component {
             PanelWindow {
@@ -129,14 +148,15 @@ Scope {
                     return scr || (Quickshell.screens.length > 0 ? Quickshell.screens[0] : null);
                 }
                 readonly property string safeMonitorName: (monitorName || (targetScreen ? targetScreen.name : "default")).replace(/[^a-zA-Z0-9_-]/g, "_")
+                onSafeMonitorNameChanged: root.syncEditMonitor()
                 screen: redactorWindow.targetScreen
 
                 WlrLayershell.namespace: "qs-widget-redactor-" + redactorWindow.safeMonitorName
                 WlrLayershell.layer: WlrLayer.Overlay
-                WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+                WlrLayershell.keyboardFocus: root.isActive ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
                 exclusionMode: ExclusionMode.Ignore
-                focusable: true
+                visible: root.isActive
 
                 anchors.top: true
                 anchors.left: true
@@ -148,24 +168,8 @@ Scope {
 
                 function s(val) { return Scaler.s(val); }
 
-                Timer {
-                    id: exitTimer
-                    interval: 100
-                    repeat: false
-                    onTriggered: root.close()
-                }
-
                 function exitRedactor() {
-                    redactorMode.selectedId = "";
-                    root.targetSelectedWidgetId = "";
-                    WidgetSync.setRedactMode(redactorWindow.safeMonitorName, false);
-                    exitTimer.start();
-                }
-
-                Component.onDestruction: {
-                    redactorMode.selectedId = "";
-                    root.targetSelectedWidgetId = "";
-                    WidgetSync.setRedactMode(redactorWindow.safeMonitorName, false);
+                    root.close();
                 }
 
                 Shortcut {
@@ -3204,9 +3208,6 @@ Scope {
                         if (redactorMode.canvasOn) redactorMode.gridEnabled = !!redactorMode.canvasCfg.snapToGrid;
                         if (redactorMode.selectedId !== "") redactorMode.multiIds = redactorMode.groupMates(redactorMode.selectedId);
                         redactorMode.updateToolbarObscured();
-                        Qt.callLater(() => {
-                            WidgetSync.setRedactMode(redactorWindow.safeMonitorName, true);
-                        });
                         initTimer.restart();
                     }
 

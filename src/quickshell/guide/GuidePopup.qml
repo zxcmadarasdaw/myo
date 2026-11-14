@@ -673,12 +673,25 @@ Item {
 
     function startExit(onFinished) {
         exitCallback = onFinished;
-        closePopup();
+        closeSearch();
+        shellStartupSequence.stop();
+        closeSequence.restart();
+    }
+
+    function cancelExit() {
+        let wasClosing = closeSequence.running || exitCallback !== null;
+        closeSequence.stop();
+        exitCallback = null;
+        if (wasClosing && visible) resetAndPlayIntro();
     }
 
     function closePopup() {
-        closeSearch();
-        closeSequence.restart();
+        // Let the host release input immediately, before animating the exit.
+        if (typeof masterWindow !== "undefined" && masterWindow.switchWidget) {
+            root.dismissHost();
+        } else {
+            root.startExit(null);
+        }
     }
 
     function dismissHost() {
@@ -943,6 +956,7 @@ Item {
             resetAndPlayIntro();
         } else {
             closeSequence.stop();
+            exitCallback = null;
             shellStartupSequence.stop();
             tabSettleTimer.stop();
             searchLoadTimer.stop();

@@ -18,7 +18,10 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
 
-    mask: Region { item: topBarHole; intersection: Intersection.Xor }
+    mask: Region {
+        item: dashboardWindow.isOpen ? topBarHole : null
+        intersection: dashboardWindow.isOpen ? Intersection.Xor : Intersection.Combine
+    }
 
     anchors {
         top: true
