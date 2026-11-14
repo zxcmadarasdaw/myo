@@ -98,6 +98,7 @@ ShellRoot {
     }
 
     Component.onCompleted: {
+        WindowActionsController.initialize();
         Qt.application.organization = "serpantinum";
         Qt.application.domain = "serpantinum.org";
         Qt.application.name = "serpantinum";
@@ -106,5 +107,6 @@ ShellRoot {
         WeatherAlerts.isQuietNow();
         GovAlerts.refresh();
         GpuCompatibility.start();
+        VpnService.start();
     }
 }

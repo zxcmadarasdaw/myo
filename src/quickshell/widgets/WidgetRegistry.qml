@@ -584,16 +584,16 @@ QtObject {
     readonly property var networkSettings: [
         _setting("interfaceName", "choice", "top", { name: I18n.t("widgets.network.interface", "Interface"), optionsSource: "netInterfaces" }),
         _setting("updateInterval", "number", "top", { name: I18n.t("widgets.network.refresh", "Refresh, s"), from: 0.5, to: 10, stepSize: 0.5, decimals: 1, scale: 1000 }),
-        _setting("showLatency", "toggle", "bottom", { name: I18n.t("widgets.network.latency", "Latency (ping)"), variants: ["glass", "graph", "cyber"] }),
-        _setting("pingHost", "text", "bottom", { name: I18n.t("widgets.network.pingHost", "Ping host"), placeholder: "1.1.1.1", width: 160, variants: ["glass", "graph", "cyber"] }),
-        _setting("showTotals", "toggle", "bottom", { name: I18n.t("widgets.network.totals", "Totals"), variants: ["glass"] })
+        _setting("showLatency", "toggle", "bottom", { name: I18n.t("widgets.network.latency", "Latency (ping)"), variants: ["glass", "graph", "cyber", "networkMinimal", "lush"] }),
+        _setting("pingHost", "text", "bottom", { name: I18n.t("widgets.network.pingHost", "Ping host"), placeholder: "1.1.1.1", width: 160, variants: ["glass", "graph", "cyber", "networkMinimal", "lush"] }),
+        _setting("showTotals", "toggle", "bottom", { name: I18n.t("widgets.network.totals", "Totals"), variants: ["glass", "lush"] })
     ]
 
     readonly property var fileDockSettings: [
         _setting("itemsJson", "dockItems", "top", { name: I18n.t("widgets.filedock.items", "Items") }),
         _setting("iconSize", "number", "top", { name: I18n.t("widgets.filedock.iconSize", "Icon size"), from: 24, to: 96, stepSize: 4, decimals: 0 }),
-        _setting("showLabels", "toggle", "bottom", { name: I18n.t("widgets.filedock.labels", "Labels"), variants: ["stack", "expandable", "grid", "cyber"] }),
-        _setting("backgroundOpacity", "number", "bottom", { name: I18n.t("widgets.filedock.background", "Background"), from: 0, to: 1, stepSize: 0.05, decimals: 2, fallback: 0.8, variants: ["floating", "stack", "expandable", "grid", "cyber"] }),
+        _setting("showLabels", "toggle", "bottom", { name: I18n.t("widgets.filedock.labels", "Labels"), variants: ["stack", "expandable", "grid", "cyber", "filedockMinimal", "lush"] }),
+        _setting("backgroundOpacity", "number", "bottom", { name: I18n.t("widgets.filedock.background", "Background"), from: 0, to: 1, stepSize: 0.05, decimals: 2, fallback: 0.8, variants: ["floating", "stack", "expandable", "grid", "cyber", "filedockMinimal", "lush"] }),
         _setting("startExpanded", "toggle", "bottom", { name: I18n.t("widgets.filedock.startExpanded", "Open expanded"), variants: ["stack", "expandable"] })
     ]
 
@@ -732,7 +732,9 @@ QtObject {
             defaultVariant: "bars",
             variants: {
                 "bars": { file: "faces/visualizer/VisualizerFace.qml", icon: "1", label: I18n.t("widgets.variants.bars") },
-                "continuous": { file: "faces/visualizer/VisualizerFaceContinuous.qml", icon: "2", label: I18n.t("widgets.variants.continuous") }
+                "continuous": { file: "faces/visualizer/VisualizerFaceContinuous.qml", icon: "2", label: I18n.t("widgets.variants.continuous") },
+                "minimal":    { file: "faces/visualizer/VisualizerFaceRestrained.qml", icon: "3", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":       { file: "faces/visualizer/VisualizerFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") }
             },
             additionalSettings: [
                 {
@@ -761,7 +763,9 @@ QtObject {
                 "materialAnalog": { file: "faces/clock/ClockFaceMaterialAnalog.qml", icon: "5", label: I18n.t("widgets.variants.materialAnalog") },
                 "lumen":          { file: "faces/clock/ClockFaceMaterialLumen.qml",  icon: "6", label: I18n.t("widgets.variants.lumen") },
                 "lockscreen":     { file: "faces/clock/ClockFaceLockscreen.qml",     icon: "7", label: I18n.t("widgets.variants.lockscreen", "Lockscreen") },
-                "stretched":      { file: "faces/clock/ClockFaceStretched.qml",      icon: "8", label: I18n.t("widgets.variants.stretched", "Stretched") }
+                "stretched":      { file: "faces/clock/ClockFaceStretched.qml",      icon: "8", label: I18n.t("widgets.variants.stretched", "Stretched") },
+                "clockMinimal":   { file: "faces/clock/ClockFaceRestrained.qml",     icon: "9", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":           { file: "faces/clock/ClockFaceLush.qml",           icon: "10", label: I18n.t("widgets.variants.lush", "Lush") }
             }
         },
         "music": {
@@ -781,7 +785,9 @@ QtObject {
                 "full":         { file: "faces/music/MusicFace.qml",             icon: "1", label: I18n.t("widgets.variants.full") },
                 "round":        { file: "faces/music/MusicFaceRound.qml",        icon: "2", label: I18n.t("widgets.variants.round") },
                 "lyrics":       { file: "faces/music/MusicFaceLyrics.qml",       icon: "3", label: I18n.t("widgets.variants.lyrics") },
-                "simpleLyrics": { file: "faces/music/MusicFaceLyricsSimple.qml", icon: "4", label: typeof I18n !== "undefined" ? I18n.t("widgets.variants.simpleLyrics", "Simple Lyrics") : "Simple Lyrics" }
+                "simpleLyrics": { file: "faces/music/MusicFaceLyricsSimple.qml", icon: "4", label: typeof I18n !== "undefined" ? I18n.t("widgets.variants.simpleLyrics", "Simple Lyrics") : "Simple Lyrics" },
+                "musicMinimal": { file: "faces/music/MusicFaceRestrained.qml",   icon: "5", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":         { file: "faces/music/MusicFaceLush.qml",         icon: "6", label: I18n.t("widgets.variants.lush", "Lush") }
             },
             additionalSettings: [
                 { id: "musicDrawer", name: "Audio Studio · полоска", property: "musicDrawer", type: "custom", component: registry.toggleSettingComponent },
@@ -861,7 +867,9 @@ QtObject {
             variants: {
                 "compact": { file: "faces/weather/WeatherFaceCompact.qml", icon: "1", label: I18n.t("widgets.variants.compact") },
                 "full":    { file: "faces/weather/WeatherFaceFull.qml",    icon: "2", label: I18n.t("widgets.variants.full") },
-                "round":   { file: "faces/weather/WeatherFaceRound.qml",   icon: "3", label: I18n.t("widgets.variants.round") }
+                "round":   { file: "faces/weather/WeatherFaceRound.qml",   icon: "3", label: I18n.t("widgets.variants.round") },
+                "minimal": { file: "faces/weather/WeatherFaceRestrained.qml", icon: "4", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":    { file: "faces/weather/WeatherFaceLush.qml",       icon: "5", label: I18n.t("widgets.variants.lush", "Lush") }
             }
         },
         "image": {
@@ -875,7 +883,9 @@ QtObject {
             variants: {
                 "rect":    { file: "faces/image/ImageFaceRect.qml",    icon: "1", label: I18n.t("widgets.variants.rect") },
                 "rounded": { file: "faces/image/ImageFaceRounded.qml", icon: "2", label: I18n.t("widgets.variants.rounded") },
-                "round":   { file: "faces/image/ImageFaceRound.qml",   icon: "3", label: I18n.t("widgets.variants.round") }
+                "round":   { file: "faces/image/ImageFaceRound.qml",   icon: "3", label: I18n.t("widgets.variants.round") },
+                "minimal": { file: "faces/image/ImageFaceRestrained.qml", icon: "4", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":    { file: "faces/image/ImageFaceLush.qml",       icon: "5", label: I18n.t("widgets.variants.lush", "Lush") }
             },
             additionalSettings: [
                 {
@@ -897,7 +907,9 @@ QtObject {
             defaultHeight: 140,
             defaultVariant: "default",
             variants: {
-                "default": { file: "faces/user/UserFace.qml", icon: "1", label: I18n.t("widgets.variants.default") }
+                "default": { file: "faces/user/UserFace.qml", icon: "1", label: I18n.t("widgets.variants.default") },
+                "minimal": { file: "faces/user/UserFaceRestrained.qml", icon: "2", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":    { file: "faces/user/UserFaceLush.qml",       icon: "3", label: I18n.t("widgets.variants.lush", "Lush") }
             }
         },
         "cpu": {
@@ -909,7 +921,9 @@ QtObject {
             defaultVariant: "default",
             variants: {
                 "default": { file: "faces/usage/CpuFace.qml", icon: "1", label: I18n.t("widgets.variants.default") },
-                "circle":  { file: "faces/usage/CpuFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") }
+                "circle":  { file: "faces/usage/CpuFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") },
+                "minimal": { file: "faces/usage/CpuFaceRestrained.qml", icon: "3", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":    { file: "faces/usage/CpuFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") }
             },
             additionalSettings: registry.usageCircleSettings
         },
@@ -922,7 +936,9 @@ QtObject {
             defaultVariant: "default",
             variants: {
                 "default": { file: "faces/usage/RamFace.qml", icon: "1", label: I18n.t("widgets.variants.default") },
-                "circle":  { file: "faces/usage/RamFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") }
+                "circle":  { file: "faces/usage/RamFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") },
+                "minimal": { file: "faces/usage/RamFaceRestrained.qml", icon: "3", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":    { file: "faces/usage/RamFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") }
             },
             additionalSettings: registry.usageCircleSettings
         },
@@ -935,7 +951,9 @@ QtObject {
             defaultVariant: "default",
             variants: {
                 "default": { file: "faces/usage/TempFace.qml", icon: "1", label: I18n.t("widgets.variants.default") },
-                "circle":  { file: "faces/usage/TempFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") }
+                "circle":  { file: "faces/usage/TempFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") },
+                "minimal": { file: "faces/usage/TempFaceRestrained.qml", icon: "3", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":    { file: "faces/usage/TempFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") }
             },
             additionalSettings: registry.usageCircleSettings
         },
@@ -948,7 +966,9 @@ QtObject {
             defaultVariant: "default",
             variants: {
                 "default": { file: "faces/usage/DiskFace.qml", icon: "1", label: I18n.t("widgets.variants.default") },
-                "circle":  { file: "faces/usage/DiskFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") }
+                "circle":  { file: "faces/usage/DiskFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") },
+                "minimal": { file: "faces/usage/DiskFaceRestrained.qml", icon: "3", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":    { file: "faces/usage/DiskFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") }
             },
             additionalSettings: registry.usageCircleSettings
         },
@@ -961,7 +981,9 @@ QtObject {
             defaultVariant: "default",
             variants: {
                 "default": { file: "faces/battery/BatteryFace.qml", icon: "1", label: I18n.t("widgets.variants.default") },
-                "circle":  { file: "faces/battery/BatteryFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") }
+                "circle":  { file: "faces/battery/BatteryFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") },
+                "minimal": { file: "faces/battery/BatteryFaceRestrained.qml", icon: "3", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":    { file: "faces/battery/BatteryFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") }
             },
             additionalSettings: registry.usageCircleSettings
         },
@@ -973,7 +995,9 @@ QtObject {
             defaultHeight: 180,
             defaultVariant: "default",
             variants: {
-                "default": { file: "faces/github/GithubFace.qml", icon: "1", label: typeof I18n !== "undefined" ? I18n.t("widgets.variants.default", "Default") : "Default" }
+                "default": { file: "faces/github/GithubFace.qml", icon: "1", label: typeof I18n !== "undefined" ? I18n.t("widgets.variants.default", "Default") : "Default" },
+                "minimal": { file: "faces/github/GithubFaceRestrained.qml", icon: "2", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":    { file: "faces/github/GithubFaceLush.qml",       icon: "3", label: I18n.t("widgets.variants.lush", "Lush") }
             }
         },
         "notes": {
@@ -984,7 +1008,9 @@ QtObject {
             defaultHeight: 280,
             defaultVariant: "default",
             variants: {
-                "default": { file: "faces/notes/NotesFace.qml", icon: "1", label: typeof I18n !== "undefined" ? I18n.t("widgets.variants.default", "Default") : "Default" }
+                "default": { file: "faces/notes/NotesFace.qml", icon: "1", label: typeof I18n !== "undefined" ? I18n.t("widgets.variants.default", "Default") : "Default" },
+                "minimal": { file: "faces/notes/NotesFaceRestrained.qml", icon: "2", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":    { file: "faces/notes/NotesFaceLush.qml",       icon: "3", label: I18n.t("widgets.variants.lush", "Lush") }
             }
         },
         "timer": {
@@ -997,7 +1023,9 @@ QtObject {
             variants: {
                 "timer":     { file: "faces/timer/TimerFaceTimer.qml",     icon: "1", label: I18n.t("quickactions.timer.tabs.timer", "Timer") },
                 "stopwatch": { file: "faces/timer/TimerFaceStopwatch.qml", icon: "2", label: I18n.t("quickactions.timer.tabs.stopwatch", "Stopwatch") },
-                "pomodoro":  { file: "faces/timer/TimerFacePomodoro.qml",  icon: "3", label: I18n.t("quickactions.timer.tabs.pomodoro", "Pomodoro") }
+                "pomodoro":  { file: "faces/timer/TimerFacePomodoro.qml",  icon: "3", label: I18n.t("quickactions.timer.tabs.pomodoro", "Pomodoro") },
+                "minimal":   { file: "faces/timer/TimerFaceRestrained.qml", icon: "4", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":      { file: "faces/timer/TimerFaceLush.qml",       icon: "5", label: I18n.t("widgets.variants.lush", "Lush") }
             }
         },
         "text": {
@@ -1008,7 +1036,9 @@ QtObject {
             defaultHeight: 90,
             defaultVariant: "default",
             variants: {
-                "default": { file: "faces/text/TextFace.qml", icon: "1", label: I18n.t("widgets.variants.default", "Default") }
+                "default": { file: "faces/text/TextFace.qml", icon: "1", label: I18n.t("widgets.variants.default", "Default") },
+                "minimal": { file: "faces/text/TextFaceRestrained.qml", icon: "2", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":    { file: "faces/text/TextFaceLush.qml",       icon: "3", label: I18n.t("widgets.variants.lush", "Lush") }
             },
             additionalSettings: [
                 {
@@ -1040,7 +1070,9 @@ QtObject {
                 "glass":    { file: "faces/network/NetworkFaceGlass.qml",    icon: "3", label: I18n.t("widgets.variants.glassNetwork", "Glass Network") },
                 "graph":    { file: "faces/network/NetworkFaceGraph.qml",    icon: "4", label: I18n.t("widgets.variants.liveGraph", "Live Graph") },
                 "cyber":    { file: "faces/network/NetworkFaceCyber.qml",    icon: "5", label: I18n.t("widgets.variants.cyberNetwork", "Cyber Network") },
-                "compact":  { file: "faces/network/NetworkFaceCompact.qml",  icon: "6", label: I18n.t("widgets.variants.compactPanel", "Compact Panel") }
+                "compact":  { file: "faces/network/NetworkFaceCompact.qml",  icon: "6", label: I18n.t("widgets.variants.compactPanel", "Compact Panel") },
+                "networkMinimal": { file: "faces/network/NetworkFaceRestrained.qml", icon: "7", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":     { file: "faces/network/NetworkFaceLush.qml",     icon: "8", label: I18n.t("widgets.variants.lush", "Lush") }
             },
             additionalSettings: registry.networkSettings
         },
@@ -1059,7 +1091,9 @@ QtObject {
                 "stack":      { file: "faces/filedock/FileDockStack.qml",      icon: "3", label: I18n.t("widgets.variants.folderStack", "Folder Stack") },
                 "expandable": { file: "faces/filedock/FileDockExpandable.qml", icon: "4", label: I18n.t("widgets.variants.expandableDock", "Expandable Dock") },
                 "grid":       { file: "faces/filedock/FileDockGrid.qml",       icon: "5", label: I18n.t("widgets.variants.grid", "Grid") },
-                "cyber":      { file: "faces/filedock/FileDockCyber.qml",      icon: "6", label: I18n.t("widgets.variants.cyberFiles", "Cyber Files") }
+                "cyber":      { file: "faces/filedock/FileDockCyber.qml",      icon: "6", label: I18n.t("widgets.variants.cyberFiles", "Cyber Files") },
+                "filedockMinimal": { file: "faces/filedock/FileDockRestrained.qml", icon: "7", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":       { file: "faces/filedock/FileDockLush.qml",       icon: "8", label: I18n.t("widgets.variants.lush", "Lush") }
             },
             additionalSettings: registry.fileDockSettings
         },
@@ -1078,7 +1112,9 @@ QtObject {
                 "glass":       { file: "faces/terminal/TerminalGlass.qml",       icon: "2", label: I18n.t("widgets.variants.glassTerminal", "Glass Terminal") },
                 "cyber":       { file: "faces/terminal/TerminalCyber.qml",       icon: "3", label: I18n.t("widgets.variants.cyberTerminal", "Cyber Terminal") },
                 "minimal":     { file: "faces/terminal/TerminalMinimal.qml",     icon: "4", label: I18n.t("widgets.variants.minimal", "Minimal") },
-                "card":        { file: "faces/terminal/TerminalCard.qml",        icon: "5", label: I18n.t("widgets.variants.consoleCard", "Console Card") }
+                "card":        { file: "faces/terminal/TerminalCard.qml",        icon: "5", label: I18n.t("widgets.variants.consoleCard", "Console Card") },
+                "terminalMinimal": { file: "faces/terminal/TerminalRestrained.qml", icon: "6", label: I18n.t("widgets.variants.restrained", "Restrained") },
+                "lush":        { file: "faces/terminal/TerminalLush.qml",        icon: "7", label: I18n.t("widgets.variants.lush", "Lush") }
             },
             additionalSettings: registry.terminalSettings
         }

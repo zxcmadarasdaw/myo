@@ -93,6 +93,7 @@ show_help() {
     echo "  kill                         $(t "cli.kill_desc")"
     echo "  restart                      $(t "cli.restart_desc")"
     echo "  logs [lines]                 shell log (quickshell output, start/crash events)"
+    echo "  vpn [status|test|set|tun|...] VPN subscription (sing-box: local proxy or system TUN)"
     echo "  config <action> [args]       $(t "cli.config_desc")"
     echo "  info <topic>                 $(t "cli.info_desc")"
     echo "  set <topic> [value]          $(t "cli.set_desc")"
@@ -720,6 +721,66 @@ fi
 if [[ "$1" == "settings" ]]; then
     shift
     exec "$SERPANTINUM_DIR/scripts/settings.sh" "$@"
+fi
+
+if [[ "$1" == "vpn" ]]; then
+    # Subscription client (local proxy, no root). The link is handed to python on
+    # stdin, never in its argv (visible in ps) and never written to a log.
+    shift
+    VPN_PY="$SERPANTINUM_DIR/scripts/system/serp_vpn.py"
+    case "${1:-}" in
+        test)
+            if [[ -n "${2:-}" && "$2" != "-" ]]; then
+                printf '%s\n' "$2" | python3 "$VPN_PY" test - "${@:3}"
+                exit $?
+            fi
+            if [[ -t 0 ]]; then
+                read -r -s -p "Subscription link / ссылка подписки: " VPN_LINK
+                echo
+                printf '%s\n' "$VPN_LINK" | python3 "$VPN_PY" test - "${@:2}"
+                exit $?
+            fi
+            exec python3 "$VPN_PY" test - "${@:2}"
+            ;;
+        set)
+            if [[ -t 0 ]]; then
+                read -r -s -p "Subscription link / ссылка подписки: " VPN_LINK
+                echo
+                printf '%s\n' "$VPN_LINK" | python3 "$VPN_PY" set-source "${@:2}"
+                exit $?
+            fi
+            exec python3 "$VPN_PY" set-source "${@:2}"
+            ;;
+        ""|status|update|connect|disconnect|list|ping|select|clear|mode|check|force-off|-h|--help|help)
+            exec python3 "$VPN_PY" "${@:-status}"
+            ;;
+        tun)
+            # Stage 2 shortcuts: tun on | tun off [--force] | tun status
+            VPN_REST=()
+            VPN_FORCE=false
+            for a in "${@:3}"; do
+                if [[ "$a" == "--force" ]]; then VPN_FORCE=true; else VPN_REST+=("$a"); fi
+            done
+            case "${2:-status}" in
+                on)  # `mode tun` reconnects by itself when something was running
+                     python3 "$VPN_PY" mode tun --json >/dev/null || exec python3 "$VPN_PY" mode tun "${VPN_REST[@]}"
+                     if python3 "$VPN_PY" status --json | grep -q '"tunActive": true'; then
+                         exec python3 "$VPN_PY" status "${VPN_REST[@]}"
+                     fi
+                     exec python3 "$VPN_PY" connect "${VPN_REST[@]}" ;;
+                off) if [[ "$VPN_FORCE" == true ]]; then
+                         exec python3 "$VPN_PY" force-off "${VPN_REST[@]}"
+                     fi
+                     exec python3 "$VPN_PY" disconnect "${VPN_REST[@]}" ;;
+                status) exec python3 "$VPN_PY" check "${@:3}" ;;
+                *) echo "usage: serpantinum vpn tun [on|off [--force]|status]"; exit 64 ;;
+            esac
+            ;;
+        *)
+            echo "usage: serpantinum vpn [status|test [link]|set|update|connect|disconnect|list|ping|select <server>|clear|mode proxy|tun|check|force-off|tun on|off [--force]] [--json]"
+            exit 64
+            ;;
+    esac
 fi
 
 if [[ "$1" == "msg" ]]; then

@@ -11,3 +11,4 @@ ApplyPresetConfirmPopup 1.0 ApplyPresetConfirmPopup.qml
 singleton PresetsCache 1.0 PresetsCache.qml
 GeneralTimeSection 1.0 GeneralTimeSection.qml
 GeneralSystemToolsSection 1.0 GeneralSystemToolsSection.qml
+GeneralWindowActionsSection 1.0 GeneralWindowActionsSection.qml

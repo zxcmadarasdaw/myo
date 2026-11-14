@@ -154,6 +154,7 @@ GuideTab {
             GeneralTimeSection { tab: generalTabRoot }
 
             GeneralSystemToolsSection { tab: generalTabRoot }
+            GeneralWindowActionsSection { tab: generalTabRoot }
 
             GeneralLocationSection { id: locationSection; tab: generalTabRoot }
         }

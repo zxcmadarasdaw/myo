@@ -17,16 +17,107 @@ stubbed (offscreen, no Wayland):
     resize, missing program), refuses unapproved commands until the user
     approves them, and asks for the keyboard only after a click;
   * TerminalTrust persists approvals.
+  * Restrained/Lush looks: every new `minimal`/`lush` key (or `<type>Minimal`
+    where `minimal` was taken) is registered in WidgetRegistry.qml with its
+    own icon and an I18n label, its file exists, the keys that were there
+    before still point to their old files, and no new face overshoots
+    (no OutBack/Elastic/Bounce). This part runs without PySide6.
+    With PySide6, every new face loads, on a dark and a light theme, at its
+    minimum and at a large size, as a preview and as a live widget, and
+    previews never start anything.
 Not covered here (needs Fedora + Hyprland): real PTYs (terminal_pty_test.py
 covers them on Linux), layer-shell keyboard focus, compositor hotkeys.
 """
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import tempfile
 import time
+
+ROOT = Path(__file__).resolve().parents[2]
+SRC = ROOT / "src/quickshell"
+
+# ---- Restrained / Lush looks: static checks (no Qt needed) ---------------------------------
+# registry type -> (key of the restrained look, its file, key of the lush look, its file)
+STYLED_VARIANTS = {
+    "visualizer": ("minimal", "visualizer/VisualizerFaceRestrained.qml", "lush", "visualizer/VisualizerFaceLush.qml"),
+    "time":       ("clockMinimal", "clock/ClockFaceRestrained.qml", "lush", "clock/ClockFaceLush.qml"),
+    "music":      ("musicMinimal", "music/MusicFaceRestrained.qml", "lush", "music/MusicFaceLush.qml"),
+    "weather":    ("minimal", "weather/WeatherFaceRestrained.qml", "lush", "weather/WeatherFaceLush.qml"),
+    "image":      ("minimal", "image/ImageFaceRestrained.qml", "lush", "image/ImageFaceLush.qml"),
+    "user":       ("minimal", "user/UserFaceRestrained.qml", "lush", "user/UserFaceLush.qml"),
+    "cpu":        ("minimal", "usage/CpuFaceRestrained.qml", "lush", "usage/CpuFaceLush.qml"),
+    "ram":        ("minimal", "usage/RamFaceRestrained.qml", "lush", "usage/RamFaceLush.qml"),
+    "temp":       ("minimal", "usage/TempFaceRestrained.qml", "lush", "usage/TempFaceLush.qml"),
+    "disk":       ("minimal", "usage/DiskFaceRestrained.qml", "lush", "usage/DiskFaceLush.qml"),
+    "battery":    ("minimal", "battery/BatteryFaceRestrained.qml", "lush", "battery/BatteryFaceLush.qml"),
+    "github":     ("minimal", "github/GithubFaceRestrained.qml", "lush", "github/GithubFaceLush.qml"),
+    "notes":      ("minimal", "notes/NotesFaceRestrained.qml", "lush", "notes/NotesFaceLush.qml"),
+    "timer":      ("minimal", "timer/TimerFaceRestrained.qml", "lush", "timer/TimerFaceLush.qml"),
+    "text":       ("minimal", "text/TextFaceRestrained.qml", "lush", "text/TextFaceLush.qml"),
+    "network":    ("networkMinimal", "network/NetworkFaceRestrained.qml", "lush", "network/NetworkFaceLush.qml"),
+    "filedock":   ("filedockMinimal", "filedock/FileDockRestrained.qml", "lush", "filedock/FileDockLush.qml"),
+    "terminal":   ("terminalMinimal", "terminal/TerminalRestrained.qml", "lush", "terminal/TerminalLush.qml"),
+}
+# `minimal` keys that existed before must keep their faces
+KEPT_MINIMAL = {
+    "time": "clock/ClockFaceMinimal.qml", "music": "music/MusicFaceMinimal.qml",
+    "network": "network/NetworkFaceMinimal.qml", "filedock": "filedock/FileDockMinimal.qml",
+    "terminal": "terminal/TerminalMinimal.qml",
+}
+VARIANT_RE = re.compile(r'^\s*"(\w+)":\s*\{\s*file:\s*"([^"]+)",\s*icon:\s*"([^"]*)",\s*label:\s*(.+?)\s*\},?\s*$')
+
+
+def registry_variants(text, type_name):
+    start = text.index(f'\n        "{type_name}": {{')
+    block = text.index("variants: {", start)
+    out = {}
+    for line in text[block:].splitlines()[1:]:
+        if re.match(r"^\s{12}\}", line):
+            break
+        m = VARIANT_RE.match(line)
+        assert m, f"{type_name}: unparsed variant line: {line!r}"
+        out[m.group(1)] = {"file": m.group(2), "icon": m.group(3), "label": m.group(4)}
+    return out
+
+
+def check_styled_registry():
+    text = (SRC / "widgets/WidgetRegistry.qml").read_text(encoding="utf-8")
+    faces = SRC / "widgets/faces"
+    for type_name, (rkey, rfile, lkey, lfile) in STYLED_VARIANTS.items():
+        variants = registry_variants(text, type_name)
+        for key, rel, label_key, fallback in ((rkey, rfile, "restrained", "Restrained"), (lkey, lfile, "lush", "Lush")):
+            assert key in variants, f"{type_name}: variant {key!r} is not registered"
+            entry = variants[key]
+            assert entry["file"] == "faces/" + rel, (type_name, key, entry["file"])
+            assert (faces / rel).is_file(), f"{type_name}.{key}: {rel} does not exist"
+            assert f'I18n.t("widgets.variants.{label_key}", "{fallback}")' in entry["label"], (type_name, key, entry["label"])
+        icons = [v["icon"] for v in variants.values() if v["icon"] != "♫"]   # music's old entries share ♫
+        assert len(icons) == len(set(icons)), f"{type_name}: icons are not unique: {icons}"
+        assert all((faces.parent / v["file"]).is_file() for v in variants.values()), f"{type_name}: a registered file is missing"
+        if type_name in KEPT_MINIMAL:
+            assert variants["minimal"]["file"] == "faces/" + KEPT_MINIMAL[type_name], (type_name, variants["minimal"])
+    for lang, (r, l) in (("en", ("Restrained", "Lush")), ("ru", ("Сдержанный", "Пышный"))):
+        names = json.loads((ROOT / f"src/assets/languages/{lang}.json").read_text(encoding="utf-8"))["widgets"]["variants"]
+        assert names.get("restrained") == r and names.get("lush") == l, (lang, names.get("restrained"), names.get("lush"))
+    # the new looks never overshoot
+    new_files = [faces / p for spec in STYLED_VARIANTS.values() for p in (spec[1], spec[3])]
+    new_files += list((faces / "common").glob("*.qml")) + [
+        faces / "filedock/FileDockStyledFace.qml", faces / "terminal/TerminalStyledFace.qml",
+        faces / "notes/NotesStyledBase.qml", faces / "timer/TimerStyledBase.qml",
+        faces / "usage/UsageFaceRestrained.qml", faces / "usage/UsageFaceLush.qml"]
+    for f in new_files:
+        body = f.read_text(encoding="utf-8")
+        for bad in ("Easing.OutBack", "Easing.InOutBack", "Easing.OutElastic", "Easing.OutBounce", "SpringAnimation"):
+            assert bad not in body, f"{f.relative_to(SRC)} uses {bad}"
+    return len(STYLED_VARIANTS) * 2
+
+
+STYLED_COUNT = check_styled_registry()
+print(f"PASS: Restrained/Lush: {STYLED_COUNT} variants registered with files, unique icons and I18n labels; no overshoot")
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
@@ -41,8 +132,6 @@ except ImportError:
     print("SKIP: PySide6 is not installed")
     sys.exit(0)
 
-ROOT = Path(__file__).resolve().parents[2]
-SRC = ROOT / "src/quickshell"
 app = QGuiApplication([])
 messages = []
 qInstallMessageHandler(lambda kind, context, message: messages.append(message))
@@ -102,37 +191,116 @@ with tempfile.TemporaryDirectory(prefix="widget-ext-qml-") as directory:
                 "singletons/widgetcontrols/ScreenToggleController.qml"):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(SRC / rel, root / rel)
-    for rel in ("widgets/faces/network", "widgets/faces/filedock", "widgets/faces/terminal"):
+    for rel in ("widgets/faces/network", "widgets/faces/filedock", "widgets/faces/terminal",
+                "widgets/faces/common", "widgets/faces/clock", "widgets/faces/text", "widgets/faces/visualizer",
+                "widgets/faces/image", "widgets/faces/weather", "widgets/faces/battery", "widgets/faces/usage",
+                "widgets/faces/music", "widgets/faces/timer", "widgets/faces/user", "widgets/faces/notes",
+                "widgets/faces/github"):
         shutil.copytree(SRC / rel, root / rel)
+    # real reusables used by the new faces (the rest of reusables/ is stubbed below)
+    for rel in ("reusables/display/ImageBox.qml", "reusables/display/BoundedImage.qml",
+                "reusables/display/LoaderIcon.qml", "reusables/behavior/SubscriptionGate.qml",
+                "reusables/media/Visualizer.qml", "quickactions/actions/NotesFormat.js"):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(SRC / rel, root / rel)
 
     # ---- root singletons (stubs + the two real ones) -----------------------------
     write(root, "qmldir", "singleton NetStats 1.0 singletons/info/NetStats.qml\n"
                           "singleton TerminalTrust 1.0 singletons/system/TerminalTrust.qml\n"
                           "singleton ProcessExplorerController 1.0 singletons/widgetcontrols/ProcessExplorerController.qml\n")
     singleton(root, ".", "Caching",
-              'property string serpantinumDir: "/opt/serpantinum"; '
+              'property string serpantinumDir: "/opt/serpantinum"; property string stateDir: "/state"; '
               'function getStateDir(n) { return "/state/" + n; } '
               'function fileUrl(p) { return "file://" + p; }')
     singleton(root, ".", "Config", "property bool dataReady: true; property var data: ({}); signal settingsLoaded(); "
+                                   "property var rawSettings: ({}); "
                                    "function getSetting(k, f) { return data[k] !== undefined ? data[k] : f; } "
                                    "function setSetting(k, v) { let d = Object.assign({}, data); d[k] = v; data = d; }")
     singleton(root, ".", "Scaler", "function s(v) { return v; }")
     singleton(root, ".", "I18n", "function t(key, fallback) { return typeof fallback === 'string' ? fallback : key; }")
-    colors = ["base", "mantle", "crust", "text", "subtext0", "subtext1", "surface0", "surface1", "surface2",
-              "overlay0", "overlay1", "overlay2", "red", "maroon", "peach", "yellow", "green", "teal",
+    # neutrals follow `light` so the new faces are loaded on a dark and on a light theme
+    neutrals = {"base": ("#1e1e2e", "#eff1f5"), "mantle": ("#181825", "#e6e9ef"), "crust": ("#11111b", "#dce0e8"),
+                "text": ("#cdd6f4", "#4c4f69"), "subtext0": ("#a6adc8", "#6c6f85"), "subtext1": ("#bac2de", "#5c5f77"),
+                "surface0": ("#313244", "#ccd0da"), "surface1": ("#45475a", "#bcc0cc"), "surface2": ("#585b70", "#acb0be")}
+    colors = ["overlay0", "overlay1", "overlay2", "red", "maroon", "peach", "yellow", "green", "teal",
               "sky", "sapphire", "blue", "lavender", "mauve", "pink", "flamingo", "rosewater"]
     singleton(root, ".", "ThemeBackend",
-              " ".join(f'property color {c}: "#{(i * 2654435761) & 0xFFFFFF:06x}";' for i, c in enumerate(colors, 1))
+              "property bool light: false; "
+              + " ".join(f'property color {c}: light ? "{lt}" : "{dk}";' for c, (dk, lt) in neutrals.items())
+              + " ".join(f'property color {c}: "#{(i * 2654435761) & 0xFFFFFF:06x}";' for i, c in enumerate(colors, 1))
               + ' property string fontFamily: "Sans"; property string iconFont: "Sans"; property int borderRadius: 12;'
                 ' property int clampedBorderRadius: 12; property real elementOpacity: 0.8; property bool liquidGlass: false;'
                 ' property bool glassActive: false')
+    # singletons read by the Restrained/Lush faces
+    singleton(root, ".", "GpuCompatibility", "property bool blurAllowed: false; property bool shadersAllowed: false; "
+                                             "property var effective: ({ profile: 'safe', blur: false, shaders: false }); "
+                                             "function observeShader(k, s, l) {}")
+    singleton(root, ".", "Sounds", "function playSfx(n) {}")
+    singleton(root, ".", "Spectrum", "property int barCount: 32; property var barLevels: []; property int consumers: 0; "
+                                     "function registerConsumer() { consumers++; } function unregisterConsumer() { consumers--; }")
+    singleton(root, ".", "DateTime", 'property var now: new Date(2026, 10, 14, 10, 42); property string hour: "10"; '
+                                     'property string minute: "42"; property string amPm: ""; property string dayName: "Saturday"; '
+                                     'property string fullDate: "14 November 2026"')
+    singleton(root, ".", "Weather", 'property string currentTemp: "21.4"; property string currentIcon: "☀"; '
+                                    'property string currentHex: "#f9e2af"; property bool isReady: true; property bool isLoading: false; '
+                                    'property var data: ({ city: "Paris", forecast: [{ desc: "Clear sky", max: 23, min: 12 }] })')
+    singleton(root, ".", "Location", 'property string city: "Paris"')
+    singleton(root, ".", "SysData", "property real cpu: 42; property real ramPercent: 61; property real ramGb: 9.8; "
+                                    "property real temp: 57; property real diskPercent: 73; property real diskGb: 340; "
+                                    "property real diskTotalGb: 476; property int subs: 0; "
+                                    "function subscribe() { subs++; } function unsubscribe() { subs--; }")
+    singleton(root, ".", "SystemInfo", 'property string username: "u"; property string hostname: "box"; '
+                                       'property string avatarPath: ""; property string uptime: "3h 12m"; property bool isDesktop: false')
+    singleton(root, ".", "MprisController", 'property var activePlayer: null; property string trackTitle: ""; '
+                                            'property string trackArtist: ""; property string artUrl: ""; '
+                                            'property bool isPlaying: false; property real livePosition: 0; property string selectedBus: ""')
+    singleton(root, ".", "FocusTimer",
+              "property var calls: []; property int activeMode: 0; property bool isTimerRunning: false; "
+              "property bool isStopwatchRunning: false; property bool isPomoRunning: false; property real timerRemainingMs: 300000; "
+              "property real timerPresetMs: 600000; property real swDisplayMs: 0; property real pomoRemainingMs: 1500000; "
+              "property int pomoState: 0; property int pomoWorkLimit: 25; property int pomoShortBreakLimit: 5; "
+              "property int pomoLongBreakLimit: 15; "
+              "function rec(n, a) { calls = calls.concat([[n].concat(a || [])]); } "
+              "function formatTime(ms, x) { let s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); } "
+              "function toggleMode(m) { rec('toggleMode', [m]); } function resetTimer() { rec('resetTimer'); } "
+              "function stopwatchLapOrReset() { rec('stopwatchLapOrReset'); } function skipPomoPhase() { rec('skipPomoPhase'); } "
+              "function setActiveMode(m) { rec('setActiveMode', [m]); activeMode = m; }")
+    singleton(root, ".", "FloatingController", "property var calls: []; function showNotes(s) { calls = calls.concat([['showNotes']]); }")
     singleton(root, ".", "WidgetSync", "property var calls: []; function setProperty(m, id, p, v) { calls = calls.concat([[m, id, p, v]]); }")
     singleton(root, ".", "AppMatcher", "function resolve(n) { return n; } function entry(n) { return null; }")
 
     # ---- reusables stubs ---------------------------------------------------------------
-    write(root, "reusables/qmldir", "WallpaperBlur 1.0 WallpaperBlur.qml\nGlassFill 1.0 GlassFill.qml\nClickButton 1.0 ClickButton.qml\n")
+    write(root, "reusables/qmldir", "WallpaperBlur 1.0 WallpaperBlur.qml\nGlassFill 1.0 GlassFill.qml\nClickButton 1.0 ClickButton.qml\n"
+                                    "ImageBox 1.0 display/ImageBox.qml\nBoundedImage 1.0 display/BoundedImage.qml\n"
+                                    "LoaderIcon 1.0 display/LoaderIcon.qml\nSubscriptionGate 1.0 behavior/SubscriptionGate.qml\n"
+                                    "Visualizer 1.0 media/Visualizer.qml\nStyledText 1.0 StyledText.qml\n"
+                                    "IconButton 1.0 IconButton.qml\nInput 1.0 Input.qml\nNumberSelector 1.0 NumberSelector.qml\n")
+    write(root, "reusables/StyledText.qml", "import QtQuick\nText {}")
+    write(root, "reusables/IconButton.qml", """import QtQuick
+Item {
+    property int size; property int cornerRadius; property string buttonIcon; property string iconFont; property int iconFontSize
+    property color accentColor; property color textColor; property real bgOpacity
+    implicitWidth: 30; implicitHeight: 30
+    signal clicked()
+}""")
+    write(root, "reusables/Input.qml", """import QtQuick
+Item {
+    property string text; property string placeholderText; property color accentColor; property color baseColor
+    property real bgOpacity; property int cornerRadius; property int fontPixelSize; property bool hasError; property int horizontalPadding
+    property bool isBusy; property string leadingIcon; property bool showClearButton; property color subTextColor; property color textColor
+    implicitWidth: 120; implicitHeight: 30
+    signal accepted()
+}""")
+    write(root, "reusables/NumberSelector.qml", """import QtQuick
+Item {
+    property real value; property real from; property real to; property real stepSize; property int decimals
+    property color accentColor; property color baseColor; property color buttonColor; property color buttonTextColor
+    property color textColor; property int cornerRadius; property int fontPixelSize; property int iconFontSize
+    implicitWidth: 120; implicitHeight: 30
+}""")
     write(root, "reusables/WallpaperBlur.qml", "import QtQuick\nItem { property real radius }")
-    write(root, "reusables/GlassFill.qml", "import QtQuick\nItem { property bool active: false; property real radius; property color tintColor; property real tintAmount }")
+    write(root, "reusables/GlassFill.qml", "import QtQuick\nItem { property bool active: false; property real radius; property color tintColor; property real tintAmount; "
+                                           "property real shadow; property real press; property real pulse }")
     write(root, "reusables/ClickButton.qml", """import QtQuick
 Rectangle {
     property string buttonText; property string subText; property string buttonIcon; property string iconFont
@@ -150,6 +318,8 @@ Rectangle {
               'property var launched: []; property var envMap: ({ HOME: "/home/u" }); function env(n) { return envMap[n] || ""; } '
               'function execDetached(argv) { launched = launched.concat([argv]); } '
               'function iconPath(n, f) { return ""; } property var screens: []')
+    write(root, "Quickshell/Wayland/qmldir", "module Quickshell.Wayland\nWlrLayer 1.0 WlrLayer.qml\n")
+    write(root, "Quickshell/Wayland/WlrLayer.qml", "import QtQuick\nQtObject {}")
     write(root, "Quickshell/Hyprland/qmldir", "module Quickshell.Hyprland\n")
     singleton(root, "Quickshell/Hyprland", "Hyprland", "property var focusedMonitor: null; property var focusedWorkspace: null")
     write(root, "Quickshell/Io/qmldir", "module Quickshell.Io\nProcess 1.0 Process.qml\nSplitParser 1.0 SplitParser.qml\n"
@@ -181,10 +351,12 @@ QtObject {
     id: f
     property string path: ""
     property bool printErrors: true
+    property bool preload: true
     property bool blockLoading: false
     property bool watchChanges: false
     signal loaded()
     signal loadFailed(int error)
+    signal fileChanged()
     function text() { return files.read(f.path); }
     function setText(t) { files.save(f.path, t); }
     function reload() { Qt.callLater(function() { if (files.exists(f.path)) f.loaded(); else f.loadFailed(1); }); }
@@ -213,6 +385,57 @@ QtObject {
     networking = NetworkingStub()
     qmlRegisterSingletonInstance(NetworkingStub, "Quickshell.Networking", 1, 0, "Networking", networking)
 
+    # Quickshell.Services.UPower (battery faces): a discharging laptop battery at 64 %
+    QML_IMPORT_NAME = "Quickshell.Services.UPower"
+
+    @QmlElement
+    @QmlUncreatable("enum only")
+    class UPowerDeviceState(QObject):
+        @QEnum
+        class State(Enum):
+            Unknown = 0
+            Charging = 1
+            Discharging = 2
+            Empty = 3
+            FullyCharged = 4
+
+    class BatteryStub(QObject):
+        @Property(bool, constant=True)
+        def ready(self):
+            return True
+
+        @Property(bool, constant=True)
+        def isLaptopBattery(self):
+            return True
+
+        @Property(float, constant=True)
+        def percentage(self):
+            return 0.64
+
+        @Property(int, constant=True)
+        def state(self):
+            return 2
+
+        @Property(float, constant=True)
+        def timeToEmpty(self):
+            return 7200.0
+
+        @Property(float, constant=True)
+        def timeToFull(self):
+            return 0.0
+
+    class UPowerStub(QObject):
+        def __init__(self):
+            super().__init__()
+            self._device = BatteryStub(self)
+
+        @Property(QObject, constant=True)
+        def displayDevice(self):
+            return self._device
+
+    upower = UPowerStub()
+    qmlRegisterSingletonInstance(UPowerStub, "Quickshell.Services.UPower", 1, 0, "UPower", upower)
+
     write(root, "Harness.qml", """import QtQuick
 import QtQuick.Window
 import Quickshell
@@ -232,7 +455,25 @@ Window {
         made[key] = o;
         return "ok";
     }
-    function drop(key) { if (made[key]) { made[key].destroy(); delete made[key]; } return "ok"; }
+    function drop(key) { if (made[key]) { made[key].destroy(); delete made[key]; } if (hosts[key]) { hosts[key].destroy(); delete hosts[key]; } return "ok"; }
+    // Restrained/Lush faces: one host per face, sized, live or not, with face properties
+    property var hosts: ({})
+    Component { id: hostComp; Item { property bool liveDesktopWidget: false; property string widgetId: "w2"; property string widgetMonitor: "DP-1" } }
+    function makeAt(key, url, live, props, w, h) {
+        let c = Qt.createComponent(url);
+        if (c.status !== Component.Ready) return "ERROR " + c.errorString();
+        let hostItem = hostComp.createObject(host.contentItem, { liveDesktopWidget: live, width: w, height: h });
+        let o = c.createObject(hostItem, JSON.parse(props));
+        if (!o) { hostItem.destroy(); return "ERROR create " + url; }
+        made[key] = o;
+        hosts[key] = hostItem;
+        return "ok";
+    }
+    function resize(key, w, h) { hosts[key].width = w; hosts[key].height = h; return "ok"; }
+    function setLight(on) { ThemeBackend.light = on; return "ok"; }
+    function focusCalls() { return JSON.stringify(FocusTimer.calls); }
+    function floatingCalls() { return JSON.stringify(FloatingController.calls); }
+    function counters() { return JSON.stringify({ spectrum: Spectrum.consumers, sys: SysData.subs }); }
     function get(key, prop) { return JSON.stringify(made[key][prop]); }
     function set(key, prop, value) { made[key][prop] = JSON.parse(value); return "ok"; }
     function call(key, fn, args) { let r = made[key][fn].apply(made[key], JSON.parse(args)); return JSON.stringify(r === undefined ? null : r); }
@@ -346,51 +587,59 @@ Window {
     passed.append("NetStats parsing, speeds, default route, consumer-driven sampling, ping host validation")
 
     # ---- Network faces ---------------------------------------------------------------------
-    for v in ("Original", "Minimal", "Glass", "Graph", "Cyber", "Compact"):
+    NET_VARIANTS = ("Original", "Minimal", "Glass", "Graph", "Cyber", "Compact", "Restrained", "Lush")
+    for v in NET_VARIANTS:
         url = f"widgets/faces/network/NetworkFace{v}.qml"
         assert j("make", "p" + v, url, False) == "ok"
         assert j("make", "l" + v, url, True) == "ok"
     pump(0.3)
     assert j("get", "lGlass", "isLive") is True and j("get", "pGlass", "isLive") is False
-    for v in ("Original", "Minimal", "Glass", "Graph", "Cyber", "Compact"):
+    assert j("get", "lLush", "isLive") is True and j("get", "pRestrained", "isLive") is False
+    for v in NET_VARIANTS:
         j("drop", "p" + v); j("drop", "l" + v)
     pump(0.1)
-    passed.append("Network: 6 variants load as preview and live")
+    passed.append(f"Network: {len(NET_VARIANTS)} variants load as preview and live")
 
     # ---- File Dock -----------------------------------------------------------------------------
-    for v in ("Floating", "Minimal", "Stack", "Expandable", "Grid", "Cyber"):
+    DOCK_VARIANTS = ("Floating", "Minimal", "Stack", "Expandable", "Grid", "Cyber", "Restrained", "Lush")
+    for v in DOCK_VARIANTS:
         assert j("make", "fp" + v, f"widgets/faces/filedock/FileDock{v}.qml", False) == "ok"
     pump(0.2)
-    assert j("get", "fpGrid", "count") == 4                       # XDG defaults until edited
-    j("call", "fpGrid", "openItem", "[0]")
+    for v in ("Grid", "Restrained", "Lush"):
+        assert j("get", "fp" + v, "count") == 4                   # XDG defaults until edited
+        j("call", "fp" + v, "openItem", "[0]")
     assert j("launched") == [], "a preview must not open anything"
-    assert j("make", "dock", "widgets/faces/filedock/FileDockGrid.qml", True) == "ok"
-    pump(0.2)
-    procs_before = len(j("procs"))
-    j("call", "dock", "addPath", json.dumps(["/home/u/My Files; rm -rf ~", True]))
-    j("call", "dock", "addPath", json.dumps(["relative/path", False]))     # refused: not absolute
-    assert j("get", "dock", "count") == 5
-    items = json.loads(j("get", "dock", "itemsJson"))
-    assert items[-1]["path"] == "/home/u/My Files; rm -rf ~"
-    j("call", "dock", "moveItem", "[4, 0]")
-    j("call", "dock", "openItem", "[0]")
-    assert j("launched") == [["xdg-open", "/home/u/My Files; rm -rf ~"]], j("launched")
-    j("call", "dock", "removeAt", "[0]")
-    assert j("get", "dock", "count") == 4
-    assert all("rm -rf" not in i["path"] for i in json.loads(j("get", "dock", "itemsJson")))
-    assert len(j("launched")) == 1, "removing a shortcut must not run anything"
-    assert len(j("procs")) == procs_before, "removing a shortcut must not start a process"
-    assert any(c[2] == "itemsJson" and c[1] == "w1" for c in j("syncCalls")), "list persisted through WidgetSync"
-    for v in ("Floating", "Minimal", "Stack", "Expandable", "Grid", "Cyber"):
+    for dock_variant in ("Grid", "Lush", "Restrained"):           # the old face and the two new looks
+        j("clearLaunched")
+        assert j("make", "dock", f"widgets/faces/filedock/FileDock{dock_variant}.qml", True) == "ok"
+        pump(0.2)
+        procs_before = len(j("procs"))
+        j("call", "dock", "addPath", json.dumps(["/home/u/My Files; rm -rf ~", True]))
+        j("call", "dock", "addPath", json.dumps(["relative/path", False]))     # refused: not absolute
+        assert j("get", "dock", "count") == 5, dock_variant
+        items = json.loads(j("get", "dock", "itemsJson"))
+        assert items[-1]["path"] == "/home/u/My Files; rm -rf ~"
+        j("call", "dock", "moveItem", "[4, 0]")
+        j("call", "dock", "openItem", "[0]")
+        assert j("launched") == [["xdg-open", "/home/u/My Files; rm -rf ~"]], (dock_variant, j("launched"))
+        j("call", "dock", "removeAt", "[0]")
+        assert j("get", "dock", "count") == 4
+        assert all("rm -rf" not in i["path"] for i in json.loads(j("get", "dock", "itemsJson")))
+        assert len(j("launched")) == 1, "removing a shortcut must not run anything"
+        assert len(j("procs")) == procs_before, "removing a shortcut must not start a process"
+        assert any(c[2] == "itemsJson" and c[1] == "w1" for c in j("syncCalls")), "list persisted through WidgetSync"
+        j("drop", "dock")
+        pump(0.1)
+    for v in DOCK_VARIANTS:
         j("drop", "fp" + v)
-    j("drop", "dock")
-    passed.append("File Dock: 6 variants; shortcuts only; xdg-open with the path as one argument; persisted")
+    passed.append(f"File Dock: {len(DOCK_VARIANTS)} variants; shortcuts only; xdg-open with the path as one argument; persisted")
 
     # ---- Terminal: previews ----------------------------------------------------------------------
-    for v in ("Transparent", "Glass", "Cyber", "Minimal", "Card"):
+    TERM_VARIANTS = ("Transparent", "Glass", "Cyber", "Minimal", "Card", "Restrained", "Lush")
+    for v in TERM_VARIANTS:
         assert j("make", "tp" + v, f"widgets/faces/terminal/Terminal{v}.qml", False) == "ok"
     pump(0.5)
-    for v in ("Transparent", "Glass", "Cyber", "Minimal", "Card"):
+    for v in TERM_VARIANTS:
         info = j("coreInfo", "tp" + v)
         assert info["status"] == "preview", info
         assert "user@serpantinum" in info["rows"][0] and "user@serpantinum" in info["html"], info["rows"][:2]
@@ -399,9 +648,9 @@ Window {
     pump(0.5)
     assert j("coreInfo", "tpCard")["status"] == "preview"
     assert not any("serp_pty.py" in " ".join(p["command"]) for p in j("procs")), "previews never start a PTY"
-    for v in ("Transparent", "Glass", "Cyber", "Minimal", "Card"):
+    for v in TERM_VARIANTS:
         j("drop", "tp" + v)
-    passed.append("Terminal: 5 variants render previews without starting a process")
+    passed.append(f"Terminal: {len(TERM_VARIANTS)} variants render previews without starting a process")
 
     # ---- Terminal: live --------------------------------------------------------------------------
     def pty():
@@ -458,6 +707,82 @@ Window {
     assert pty() is None, "destroying the widget stops the PTY"
     passed.append("Terminal live: protocol, input, DSR reply, focus on click, pause, trust gate, monitor/missing states")
 
+    # the new terminal looks wire the same core: live start, keyboard only after a click, stop on destroy
+    for v in ("Restrained", "Lush"):
+        assert j("make", "term", f"widgets/faces/terminal/Terminal{v}.qml", True) == "ok"
+        until(lambda: pty() is not None, f"Terminal{v}: live terminal starts serp_pty.py")
+        assert j("get", "term", "wantsKeyboardFocus") is False, "no keyboard before a click"
+        j("coreSet", "term", "engaged", "true")
+        assert j("get", "term", "wantsKeyboardFocus") is True
+        j("set", "term", "command", '"htop2"')
+        until(lambda: j("coreInfo", "term")["status"] == "untrusted", f"Terminal{v}: unapproved command blocks the start")
+        j("drop", "term")
+        pump(0.3)
+        assert pty() is None, f"Terminal{v}: destroying the widget stops the PTY"
+    passed.append("Terminal Restrained/Lush live: start, focus on click, trust gate, stop on destroy")
+
+    # ---- Restrained / Lush: every new face, both themes, small and large, preview and live ------
+    styled = sorted({p for spec in STYLED_VARIANTS.values() for p in (spec[1], spec[3])})
+    launched_before = len(j("launched"))
+    procs_before = len(j("procs"))
+    loaded = 0
+    for light in (False, True):
+        j("setLight", light)
+        for rel in styled:
+            url = "widgets/faces/" + rel
+            key = "s_" + rel.replace("/", "_")
+            assert j("makeAt", key + "p", url, False, json.dumps({"previewMode": True}), 320, 200) == "ok", rel
+            assert j("makeAt", key + "l", url, True, "{}", 420, 260) == "ok", rel
+            min_w = max(40, j("get", key + "l", "minWidth"))
+            min_h = max(40, j("get", key + "l", "minHeight"))
+            pump(0.05)
+            j("resize", key + "l", min_w, min_h)       # smallest size the editor allows
+            pump(0.05)
+            j("resize", key + "l", 1100, 700)          # and a large one
+            pump(0.05)
+            j("resize", key + "p", min_w, min_h)
+            pump(0.05)
+            loaded += 2
+        pump(0.6)                                      # let the appear animations finish
+        for rel in styled:
+            key = "s_" + rel.replace("/", "_")
+            assert abs(j("get", key + "l", "opacity") - 1) < 1e-6, f"{rel}: appear animation did not finish"
+            j("drop", key + "p"); j("drop", key + "l")
+        pump(0.1)
+    j("setLight", False)
+    new_launches = j("launched")[launched_before:]
+    assert new_launches == [], f"loading the new faces ran something: {new_launches}"
+    new_procs = [p for p in j("procs")[procs_before:] if p["running"]]
+    assert not any("serp_pty.py" in " ".join(p["command"]) for p in new_procs), "a styled preview started a PTY"
+    assert j("counters") == {"spectrum": 0, "sys": 0}, j("counters")     # subscriptions released on destroy
+    passed.append(f"Restrained/Lush: {len(styled)} faces load on dark and light themes, at minimum and large sizes, "
+                  f"preview and live ({loaded} instances); nothing launched; subscriptions released")
+
+    # previews ignore input, live faces act
+    j("makeAt", "tp", "widgets/faces/timer/TimerFaceLush.qml", False, json.dumps({"previewMode": True}), 360, 280)
+    j("call", "tp", "toggle", "[]"); j("call", "tp", "secondary", "[]"); j("call", "tp", "selectMode", "[2]")
+    assert j("focusCalls") == [], "a timer preview must not touch FocusTimer"
+    j("drop", "tp")
+    j("makeAt", "tl", "widgets/faces/timer/TimerFaceRestrained.qml", True, "{}", 360, 280)
+    j("call", "tl", "toggle", "[]"); j("call", "tl", "selectMode", "[2]"); j("call", "tl", "secondary", "[]")
+    assert j("focusCalls") == [["toggleMode", 0], ["setActiveMode", 2], ["skipPomoPhase"]], j("focusCalls")
+    j("drop", "tl")
+    files.data["/state/quickactions/notes.json"] = json.dumps([
+        {"id": 1, "title": "Groceries", "content": "milk\neggs", "updatedAt": 1, "pinned": False},
+        {"id": 2, "title": "Pinned", "content": "top", "updatedAt": 2, "pinned": True}])
+    j("makeAt", "nl", "widgets/faces/notes/NotesFaceLush.qml", True, "{}", 320, 300)
+    until(lambda: len(j("get", "nl", "sortedNotes")) == 2, "notes face reads notes.json")
+    assert [n["title"] for n in j("get", "nl", "sortedNotes")] == ["Pinned", "Groceries"], "pinned first"
+    j("call", "nl", "openNotes", "[]")
+    assert j("floatingCalls") == [["showNotes"]]
+    j("drop", "nl")
+    j("makeAt", "np", "widgets/faces/notes/NotesFaceRestrained.qml", False, json.dumps({"previewMode": True}), 320, 300)
+    j("call", "np", "openNotes", "[]")
+    assert j("floatingCalls") == [["showNotes"]], "a notes preview must not open the panel"
+    j("drop", "np")
+    pump(0.1)
+    passed.append("Restrained/Lush: timer and notes previews ignore input; live faces drive FocusTimer and the notes panel")
+
     # ---- Process Explorer controller: settings and hotkey --------------------------------------
     assert j("peProp", "hotkey") == "SUPER + SHIFT + P" and j("peProp", "material") == "standard"
     assert j("peProp", "interval") == 2
@@ -508,7 +833,8 @@ Window {
     assert j("peProp", "material") == "standard"
     passed.append("Process Explorer: hotkey validation (no Lua injection), hyprctl rebind only on Hyprland, settings clamped")
 
-    noise = ("QQmlComponent: Created graphical object was not placed", "Font family", "propagateSizeHints")
+    noise = ("QQmlComponent: Created graphical object was not placed", "Font family", "propagateSizeHints",
+             "QFontEngineFT: Failed to create FreeType font engine")   # icon glyphs without Nerd Fonts on the test machine
     errors = [m for m in messages if not any(n in m for n in noise)]
     assert not errors, "\n".join(errors)
     for p in passed:

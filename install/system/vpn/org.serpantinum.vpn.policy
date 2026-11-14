@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Serpantinum VPN (TUN): the root helper, run through pkexec.
+     Installed to /usr/share/polkit-1/actions/ by install/modules/vpn.sh.
+     Only the installed, root-owned helper path is covered; everybody else needs the
+     admin password, and 49-serpantinum-vpn.rules allows it for the installing user only. -->
+<policyconfig>
+  <vendor>Serpantinum</vendor>
+  <action id="org.serpantinum.vpn.helper">
+    <description>Apply the Serpantinum VPN configuration</description>
+    <description xml:lang="ru">Применить настройки VPN Serpantinum</description>
+    <message>Authentication is required to change the system VPN (TUN) configuration</message>
+    <message xml:lang="ru">Для изменения настроек системного VPN (TUN) требуется аутентификация</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/serpantinum/serp-vpn-root</annotate>
+  </action>
+</policyconfig>

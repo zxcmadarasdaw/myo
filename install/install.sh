@@ -62,6 +62,7 @@ source "$MODULES_DIR/deploy.sh"
 source "$MODULES_DIR/version.sh"
 source "$MODULES_DIR/config.sh"
 source "$MODULES_DIR/service.sh"
+source "$MODULES_DIR/vpn.sh"
 source "$MODULES_DIR/ui.sh"
 source "$MODULES_DIR/verify.sh"
 
@@ -114,6 +115,7 @@ init_serpantinum_config "$PROJECT_ROOT" "$WALLPAPER_DIR" "$INSTALL_STATE" "$IS_R
 configure_ski_defaults
 
 setup_services
+install_vpn_service
 hand_over_from_easyeffects
 write_version_state "$TARGET_VERSION" "$TARGET_COMMIT" "$TELEMETRY_ID" "$ENABLE_TELEMETRY" "${SELECTED_COMPOSITORS[*]}" "$OPT_SDDM" "$SDDM_WAYLAND" "$INSTALL_FULL_WALLPAPERS"
 

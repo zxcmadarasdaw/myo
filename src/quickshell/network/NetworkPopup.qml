@@ -519,6 +519,11 @@ Item {
     }
 
     Keys.onEscapePressed: (event) => {
+        if (vpnBlock.listOpen) {
+            vpnBlock.listOpen = false;
+            event.accepted = true;
+            return;
+        }
         if (popupWindowRoot.pendingWifiId !== "") {
             popupWindowRoot.pendingWifiId = "";
             popupWindowRoot.pendingWifiSsid = "";
@@ -1460,8 +1465,17 @@ Item {
     property alias powerAnimBlockerTimer: powerAnimBlocker
     property alias orbitModel: orbitDisplayModel
 
+    // VPN card above the Internet card; its server list overlays the area below.
+    VpnBlock {
+        id: vpnBlock
+        anchors.fill: parent
+        z: 20
+        window: popupWindowRoot
+    }
+
     Item {
         anchors.fill: parent
+        anchors.topMargin: vpnBlock.cardHeight + vpnBlock.gap   // the window is taller by the same amount
         visible: popupWindowRoot.visible
         enabled: popupWindowRoot.visible
         opacity: popupWindowRoot.exitOpacity * popupWindowRoot.easeOut(popupWindowRoot.animWin(popupWindowRoot.introState, 0.0, 0.12))

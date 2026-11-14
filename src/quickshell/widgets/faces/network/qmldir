@@ -6,3 +6,5 @@ NetworkFaceGlass 1.0 NetworkFaceGlass.qml
 NetworkFaceGraph 1.0 NetworkFaceGraph.qml
 NetworkFaceCyber 1.0 NetworkFaceCyber.qml
 NetworkFaceCompact 1.0 NetworkFaceCompact.qml
+NetworkFaceRestrained 1.0 NetworkFaceRestrained.qml
+NetworkFaceLush 1.0 NetworkFaceLush.qml

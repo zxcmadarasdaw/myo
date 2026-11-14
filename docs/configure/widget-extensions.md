@@ -57,6 +57,34 @@ The panel and its sampler exist only while it is open: no CPU cost and no keyboa
 
 Settings (Super+H) → General, *Process Explorer* rows: hotkey (Hyprland; applied to the running session with `hyprctl`, your Hyprland files are not edited), material (*Standard*, *Liquid Glass*, *Mica*, *Neon Glass*), refresh interval.
 
+## Restrained and Lush looks
+
+Every widget type has two more variants in the widget editor. They only change the look; the data, settings and actions are the same as the type's other variants, and the existing variants are unchanged.
+
+- **Restrained** — 1 px hairlines, no shadows or gradients, light type, radius of at most 3 px, muted theme colours, a short fade (OutCubic) when it appears and no movement.
+- **Lush** — layered gradient glass (with the wallpaper blur when the GPU profile allows it), a soft halo, thin corner ornaments, glowing display type, accent colours of the theme; it fades in and settles with OutCubic/OutQuint, never overshooting.
+
+All colours come from the current theme (`ThemeBackend`), so both looks follow dark and light themes; on light themes the glow is darker and weaker so it stays visible.
+
+| Widget | Restrained key | Lush key |
+|---|---|---|
+| Visualizer | `minimal` | `lush` |
+| Clock | `clockMinimal` (`minimal` is the existing Minimal clock) | `lush` |
+| Music | `musicMinimal` (`minimal` exists) | `lush` |
+| Weather, Picture, User, CPU, RAM, Temperature, Disk, Battery, GitHub, Notes, Timer, Text | `minimal` | `lush` |
+| Network | `networkMinimal` (`minimal` is *Minimal Speed*) | `lush` |
+| File Dock | `filedockMinimal` (`minimal` is *Minimal Icons*) | `lush` |
+| Terminal | `terminalMinimal` (`minimal` exists) | `lush` |
+
+Notes on behaviour:
+- **Timer** shows the mode that is active in the quick-actions timer (timer, stopwatch, pomodoro); the mode names on top switch it.
+- **Notes** lists the quick-actions notes (pinned first); a click opens the notes panel. Editing stays in the panel.
+- **User**: sleep, reboot and power off must be held until the button fills; a short click does nothing.
+- **File Dock** and **Terminal** keep the same safety rules as above (shortcuts only, `xdg-open` with the path as one argument; commands only after approval; previews start nothing).
+- Network: latency/ping host work in both looks, totals in *Lush*. File Dock: labels and background opacity work in both looks.
+
+The shared pieces live in `src/quickshell/widgets/faces/common/` (`MinimalCard`, `LushCard`, `LushOrnament`, `LushGlowText`, `FaceRing`, `FaceButton`, `HoldAction`, the appear animations, `FaceTone` for theme-derived colours).
+
 ## Updating without losing settings
 
 Update as usual: `git pull` in your Serpantinum checkout, then run the installer again (`serpantinum updates` tells you when a new version exists). Settings, layouts and widget properties live in your config/state directories and are kept. Updates do not overwrite compositor configuration, so on Hyprland the shell checks at startup whether a key already opens the Process Explorer and binds the configured one for the running session if not. On Sway and MangoWC with an older keybinds file, add the line yourself:
@@ -102,6 +130,12 @@ Automated tests (`install/tests/`) cover the logic offscreen; these need a real 
 - [ ] A command written into `layout.json` by hand shows the approval prompt.
 - [ ] *Paused* and removing the widget stop the process (`pgrep -f serp_pty`).
 - [ ] Two terminals on two monitors.
+
+**Restrained / Lush**
+- [ ] Every widget type offers both looks in the editor; switching back restores the previous variant's look.
+- [ ] Each look on a dark and a light theme, at the smallest and a large size: no clipped text, glow visible on light themes.
+- [ ] Lush with blur on and off (GPU profile); no stutter while several Lush widgets are on screen.
+- [ ] User: hold sleep/reboot/poweroff — a short click does nothing.
 
 **Process Explorer**
 - [ ] Super+Shift+P opens on the focused monitor; Esc / hotkey / outside click closes; keyboard free afterwards.

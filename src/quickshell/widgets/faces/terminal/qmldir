@@ -5,3 +5,6 @@ TerminalGlass 1.0 TerminalGlass.qml
 TerminalCyber 1.0 TerminalCyber.qml
 TerminalMinimal 1.0 TerminalMinimal.qml
 TerminalCard 1.0 TerminalCard.qml
+TerminalStyledFace 1.0 TerminalStyledFace.qml
+TerminalRestrained 1.0 TerminalRestrained.qml
+TerminalLush 1.0 TerminalLush.qml

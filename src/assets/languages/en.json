@@ -1812,7 +1812,9 @@
       "lumen": "Lumen",
       "lyrics": "Lyrics",
       "simpleLyrics": "Simple Lyrics",
-      "circle": "Circle"
+      "circle": "Circle",
+      "restrained": "Restrained",
+      "lush": "Lush"
     },
     "presets": {
       "minimal": {
@@ -1861,7 +1863,25 @@
       "circle": "Circle"
     },
     "notes": {
-      "empty": "No notes yet"
+      "empty": "No notes yet",
+      "untitled": "Untitled",
+      "open": "Open notes"
+    },
+    "timer": {
+      "focus": "Focus",
+      "shortBreak": "Short break",
+      "longBreak": "Long break",
+      "reset": "Reset",
+      "lap": "Lap",
+      "skip": "Skip",
+      "startPause": "Start / pause"
+    },
+    "user": {
+      "lock": "Lock",
+      "night": "Good night",
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening"
     },
     "text": {
       "placeholder": "Enter text"
@@ -2090,6 +2110,13 @@
       "download_failed": "Could not download the Serpantinum core services, skipping. You can install them later from github.com/ilyamiro/serpantinum-core.",
       "checksum_failed": "The core services download failed its checksum check, skipping.",
       "unsupported_arch": "Prebuilt core services packages exist only for x86_64, skipping."
+    },
+    "vpn": {
+      "installing": "Installing the VPN service (TUN mode): root helper, systemd unit, polkit rule...",
+      "installed": "Installed the VPN service; {user} may start and stop it without a password.",
+      "skipped": "systemd or polkit not found, skipping the VPN service (the proxy mode still works).",
+      "bad_user": "Unusual user name '{user}', not writing a polkit rule; skipping the VPN service.",
+      "failed": "Failed to install the VPN service. TUN mode will not be available (the proxy mode still works)."
     }
   },
   "datetime": {
@@ -2097,6 +2124,59 @@
     "just_now": "Just now",
     "minutes_ago": "{mins} min ago",
     "yesterday": "Yesterday {time}"
+  },
+  "vpn": {
+    "state": {
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "none": "No subscription",
+      "missing": "sing-box is not installed",
+      "error": "Error"
+    },
+    "busy": {
+      "update": "Downloading and checking the subscription…",
+      "connect": "Connecting…",
+      "disconnect": "Disconnecting…",
+      "mode": "Switching mode…",
+      "force": "Turning the VPN off…"
+    },
+    "hint": {
+      "none": "Paste a subscription link below and press Save"
+    },
+    "errors": {
+      "empty_link": "Paste a subscription link first.",
+      "backend": "The VPN helper failed (is python3 installed?)."
+    },
+    "proxy_at": "HTTP/SOCKS5 proxy",
+    "servers_count": "Servers: {count}",
+    "servers": "Servers",
+    "choose": "Choose a server",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "placeholder": "Subscription link (https://…, vless://…) · Ctrl+V",
+    "placeholder_saved": "Subscription saved · paste a new link to replace it",
+    "link": "Subscription link",
+    "paste": "Paste",
+    "save": "Save",
+    "update": "Update",
+    "copy": "Copy",
+    "copy_proxy": "Copy proxy address",
+    "ping": "Measure ping",
+    "forget": "Remove",
+    "forget_confirm": "Remove?",
+    "timeout": "timeout",
+    "ms": "ms",
+    "other_country": "Other",
+    "no_servers_yet": "No servers yet. Press Update.",
+    "tun_on": "All traffic of this computer goes through the VPN",
+    "force_off": "Force off",
+    "mode": {
+      "proxy": "Proxy",
+      "tun": "TUN · whole system",
+      "proxy_desc": "Only apps set to use the proxy",
+      "tun_desc": "All apps, through the system service",
+      "tun_missing": "TUN mode needs the serpantinum-vpn service: run the Serpantinum installer again."
+    }
   },
   "common": {
     "select": "Select..."

@@ -5,3 +5,6 @@ FileDockStack 1.0 FileDockStack.qml
 FileDockExpandable 1.0 FileDockExpandable.qml
 FileDockGrid 1.0 FileDockGrid.qml
 FileDockCyber 1.0 FileDockCyber.qml
+FileDockStyledFace 1.0 FileDockStyledFace.qml
+FileDockRestrained 1.0 FileDockRestrained.qml
+FileDockLush 1.0 FileDockLush.qml

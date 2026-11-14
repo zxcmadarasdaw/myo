@@ -343,6 +343,12 @@ Item {
         if (!win) return;
         let nid = (typeof win === "object") ? win.nativeId : win;
         if (nid === undefined || nid === null || nid === "") return;
+        // A hidden window must leave the special workspace before activation.
+        // Keep the ordinary focus path and other compositors unchanged.
+        if (typeof win === "object" && win.workspaceLabel === "special:serpantinum-minimized") {
+            WindowActionsController.restore(String(nid));
+            return;
+        }
         let addr = root._formatHyprAddress(nid);
         if (typeof Hyprland !== "undefined") {
             if (Hyprland.usingLua !== false) {

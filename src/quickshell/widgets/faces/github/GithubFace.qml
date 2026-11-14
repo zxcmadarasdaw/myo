@@ -22,6 +22,11 @@ Item {
     property real maxAspect: maxWidth / minHeight
     property bool isRound: false
 
+    // Look, set by the variant files: "default" is this face as it always was;
+    // "restrained" and "lush" only change colours, background and cell shape.
+    property string look: "default"
+    readonly property bool styledLook: look === "restrained" || look === "lush"
+
     property string username: ""
     property var rawContributionsList: []
     property var weeks: []
@@ -126,6 +131,19 @@ Item {
     }
 
     function getColorForLevel(lvl) {
+        if (root.look === "restrained") {
+            // quiet ramp: the text colour at rising strength
+            let ink = ThemeBackend.text;
+            let steps = [0.06, 0.22, 0.4, 0.62, 0.88];
+            return Qt.alpha(ink, steps[Math.max(0, Math.min(4, lvl))]);
+        }
+        if (root.look === "lush") {
+            // accent ramp from the theme's mauve into blue
+            if (lvl <= 0) return Qt.alpha(ThemeBackend.text, 0.07);
+            let t = Math.max(1, Math.min(4, lvl));
+            let c = Qt.tint(ThemeBackend.mauve, Qt.alpha(ThemeBackend.blue, (t - 1) / 3 * 0.75));
+            return Qt.alpha(c, 0.35 + t * 0.16);
+        }
         let accent = (typeof ThemeBackend !== "undefined" && ThemeBackend.green) ? ThemeBackend.green : Qt.color("#a6e3a1");
         let baseSurface = (typeof ThemeBackend !== "undefined" && ThemeBackend.surface1) ? ThemeBackend.surface1 : Qt.color("#313244");
         if (lvl <= 0) return Qt.alpha(baseSurface, ThemeBackend.elementOpacity);
@@ -465,7 +483,8 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: Qt.alpha(ThemeBackend.surface0, ThemeBackend.elementOpacity)
+        // the styled looks draw their own card behind this one (see GithubFaceLush.qml)
+        color: root.styledLook ? "transparent" : Qt.alpha(ThemeBackend.surface0, ThemeBackend.elementOpacity)
         radius: ThemeBackend.clampedBorderRadius !== undefined ? ThemeBackend.clampedBorderRadius : ThemeBackend.borderRadius
         clip: true
 
@@ -473,6 +492,7 @@ Item {
             z: -1
             anchors.fill: parent
             radius: parent.radius
+            visible: !root.styledLook
         }
 
         ColumnLayout {
@@ -772,11 +792,14 @@ Item {
                                             z: cellBox.isHovered ? 2 : 1
                                             width: root.cellSize
                                             height: root.cellSize
-                                            radius: Math.max(2, Math.min(Scaler.s(4), Math.round(root.cellSize * 0.22)))
+                                            radius: root.look === "restrained" ? 1
+                                                : root.look === "lush" ? Math.round(root.cellSize * 0.32)
+                                                : Math.max(2, Math.min(Scaler.s(4), Math.round(root.cellSize * 0.22)))
                                             color: cellBox.dayObj === null ? "transparent" : (tileMa.pressed ? Qt.darker(cellBox.baseColor, 1.12) : (cellBox.isHovered ? Qt.lighter(cellBox.baseColor, 1.12) : cellBox.baseColor))
                                             Behavior on color { ColorAnimation { duration: 150 } }
 
-                                            scale: (cellBox.dayObj === null ? 1.0 : (tileMa.pressed ? 1.08 : (cellBox.isHovered ? 1.04 : 1.0))) * cellBox.popScale
+                                            scale: root.look === "restrained" ? 1.0
+                                                : (cellBox.dayObj === null ? 1.0 : (tileMa.pressed ? 1.08 : (cellBox.isHovered ? 1.04 : 1.0))) * cellBox.popScale
                                             Behavior on scale {
                                                 NumberAnimation {
                                                     duration: 250

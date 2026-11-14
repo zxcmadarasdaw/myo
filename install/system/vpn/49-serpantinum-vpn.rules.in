@@ -1,0 +1,23 @@
+// Serpantinum VPN (TUN). Installed to /etc/polkit-1/rules.d/49-serpantinum-vpn.rules by
+// install/modules/vpn.sh with @USER@ replaced by the user who ran the installer.
+// That user, in an active local session, may without a password:
+//   - start / stop / restart / kill / reset-failed serpantinum-vpn.service (and nothing else);
+//   - run the root helper /usr/libexec/serpantinum/serp-vpn-root through pkexec.
+// Every other user and every other unit keeps the default policy.
+polkit.addRule(function(action, subject) {
+    if (subject.user !== "@USER@" || !subject.local || !subject.active) {
+        return polkit.Result.NOT_HANDLED;
+    }
+    if (action.id === "org.serpantinum.vpn.helper") {
+        return polkit.Result.YES;
+    }
+    if (action.id === "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") === "serpantinum-vpn.service") {
+        var verb = action.lookup("verb");
+        if (verb === "start" || verb === "stop" || verb === "restart" ||
+            verb === "kill" || verb === "reset-failed") {
+            return polkit.Result.YES;
+        }
+    }
+    return polkit.Result.NOT_HANDLED;
+});
