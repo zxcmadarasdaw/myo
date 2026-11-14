@@ -74,7 +74,7 @@ VpnSheet {
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    enabled: !VpnService.busy && !VpnService.forcing && !parent.isOn
+                                    enabled: !VpnService.busy && !VpnService.sbInstalling && !VpnService.forcing && !parent.isOn
                                     onClicked: {
                                         if (!parent.usable) {
                                             VpnService.error = sh.tr("mode.tun_missing",

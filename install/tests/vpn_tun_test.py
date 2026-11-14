@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import vpn_test as base          # noqa: E402  (fixtures, Env, the client module as base.vpn)
@@ -160,7 +161,7 @@ class RootEnv:
         self.sys = os.path.join(self.tmp, "sys")
         for d in (self.tools, self.sys):
             os.makedirs(d)
-        _, singbox_py = make_exe(self.tools, "sing-box", FAKE_SINGBOX_TUN)
+        self.singbox, singbox_py = make_exe(self.tools, "sing-box", FAKE_SINGBOX_TUN)
         systemctl, _ = make_exe(self.sys, "systemctl", FAKE_SYSTEMCTL)
         pkexec, _ = make_exe(self.sys, "pkexec", FAKE_PKEXEC)
         os.environ.update(SERP_VPN_ROOT_DIR_TEST=self.etc, SERP_VPN_ROOT_TOOLS=self.tools,
@@ -312,6 +313,9 @@ class HelperApply(unittest.TestCase):
 class TunLifecycle(unittest.TestCase):
     def setUp(self):
         self.root = RootEnv()
+        hardware = patch.multiple(vpn, SYSTEM_SINGBOX=(self.root.singbox,), TUN_TOOLS={}, TUN_DEVICE=self.root.etc)
+        hardware.start()
+        self.addCleanup(hardware.stop)
         self.sub = base.SubServer()
         self.sub.body = base.LINK_LIST.encode()
         vpn.set_source(self.sub.url("tok-tun"))

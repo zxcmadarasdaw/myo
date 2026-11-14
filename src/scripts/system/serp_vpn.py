@@ -62,6 +62,7 @@ script. sing-box listens on 127.0.0.1 only (mixed HTTP/SOCKS5 proxy + Clash API
 protected by a random secret).
 """
 import base64
+import importlib.util
 import ipaddress
 import json
 import os
@@ -328,6 +329,20 @@ MESSAGES = {
     "sb_not_working": ("The downloaded sing-box does not run on this system ({detail}). Nothing was installed.",
                        "Скачанный sing-box не запускается в этой системе ({detail}). Ничего не установлено."),
     "sb_bad_path": ("This file is not a working sing-box ({detail}).", "Этот файл не является рабочим sing-box ({detail})."),
+    "sb_no_digest": ("GitHub did not publish a SHA-256 digest for {detail}.",
+                     "На GitHub нет контрольной суммы SHA-256 для {detail}."),
+    "setup_file": ("Could not read this VPN configuration file: {detail}.",
+                   "Не удалось прочитать файл конфигурации VPN: {detail}."),
+    "setup_packages": ("Fedora could not install the VPN components: {detail}",
+                       "Fedora не смогла установить компоненты VPN: {detail}"),
+    "setup_admin": ("System packages require the Serpantinum package helper, DNF5 and a polkit session.",
+                    "Для системных пакетов нужны помощник установки Serpantinum, DNF5 и сеанс polkit."),
+    "setup_auth": ("System package authorization was denied or no graphical polkit agent is running.",
+                   "Авторизация установки отклонена или графический агент polkit не запущен."),
+    "setup_tun": ("The TUN device (/dev/net/tun) is unavailable.", "Устройство TUN (/dev/net/tun) недоступно."),
+    "setup_storage": ("Could not write the VPN files: {detail}.", "Не удалось записать файлы VPN: {detail}."),
+    "setup_connected": ("Disconnect the current VPN before preparing a replacement.",
+                        "Перед настройкой другого VPN отключите текущее подключение."),
 }
 
 
@@ -1100,9 +1115,9 @@ def _strip_ansi(s):
     return re.sub(r"\x1b\[[0-9;]*m", "", s)
 
 
-def singbox_check(cfg):
+def singbox_check(cfg, binary=None):
     """(ok, detail). Raises VpnError("no_singbox") when sing-box is missing."""
-    binary = singbox_bin()
+    binary = binary or singbox_bin()
     if not binary:
         raise VpnError("no_singbox")
     fd, path = tempfile.mkstemp(prefix="serp-vpn-check-", suffix=".json")    # mode 600
@@ -1208,7 +1223,7 @@ def _source_text():
     return read_text(os.path.join(config_dir(), "source")).strip()
 
 
-def update(auto=False):
+def update(auto=False, prepared=None, restart=True):
     source = _source_text()
     if not source:                          # nothing is created for users who never use the VPN
         if auto:
@@ -1216,16 +1231,21 @@ def update(auto=False):
         raise VpnError("no_source")
     settings = load_settings()
     last = read_json(os.path.join(state_dir(), "last_update.json"), {})
+    if auto and not singbox_bin():
+        return {"ok": True, "skipped": "no_singbox"}
     if auto and last.get("ok") and time.time() - float(last.get("time", 0)) < settings["updateHours"] * 3600:
         return {"ok": True, "skipped": "fresh"}
     entry = {"time": time.time(), "ok": False}
     try:
-        text, info = load_source_text(source, settings)
-        parsed = parse_subscription(text)
-        cfg = build_config(parsed["servers"], settings)
-        ok, detail = singbox_check(cfg)
-        if not ok:
-            raise VpnError("check_failed", detail)
+        if prepared is None:
+            text, info = load_source_text(source, settings)
+            parsed = parse_subscription(text)
+            cfg = build_config(parsed["servers"], settings)
+            ok, detail = singbox_check(cfg)
+            if not ok:
+                raise VpnError("check_failed", detail)
+        else:
+            parsed, info, cfg = prepared
     except VpnError as e:
         entry.update(e.as_dict())
         entry["keptOld"] = os.path.exists(os.path.join(state_dir(), "config.json"))
@@ -1242,7 +1262,7 @@ def update(auto=False):
                  skippedCount=len(parsed["errors"]), skipped=parsed["errors"][:20], info=info)
     write_private(os.path.join(state_dir(), "last_update.json"), json.dumps(entry, ensure_ascii=False))
     _record_sub_update(entry)
-    if vpn_running():
+    if restart and vpn_running():
         try:
             restart_proxy()
         except VpnError as e:
@@ -1829,12 +1849,13 @@ def status():
             api_ok = False
     has_config = os.path.exists(os.path.join(state_dir(), "config.json"))
     binary, binary_source = singbox_location()
+    readiness = setup_status(settings, binary, running)
     if running:
         state = "connected" if api_ok else "error"
+    elif readiness["state"] != "ready" and has_source:
+        state = "missing"
     elif not has_source:
         state = "none"
-    elif not binary:
-        state = "missing"
     elif not has_config:
         state = "error"
     else:
@@ -1843,7 +1864,8 @@ def status():
     pings = read_json(os.path.join(state_dir(), "pings.json"), {})
     out = {
         "state": state, "running": running, "hasSource": has_source, "hasConfig": has_config,
-        "singbox": bool(binary), "installHint": INSTALL_HINT, "singboxSource": binary_source,
+        "singbox": readiness["binaryReady"], "setup": readiness, "installHint": INSTALL_HINT,
+        "singboxSource": binary_source,
         "singboxPath": binary, "subscription": _active_sub_name(has_source),
         "proxy": f"127.0.0.1:{settings['proxyPort']}", "current": current,
         "currentServer": server_summary(cur) if cur else None,
@@ -1864,7 +1886,8 @@ def status():
     elif state == "error":
         out["error"] = msg("api_failed", _log_tail(os.path.join(state_dir(), "sing-box.log")) or "-")
     elif state == "missing":
-        out["error"] = msg("no_singbox")
+        out["error"] = readiness["error"] or (msg("sb_not_working", readiness["path"])
+                        if readiness["state"] == "repair" else msg("no_singbox"))
     elif last and not last.get("ok"):
         out["warning"] = last.get("message", "")
     return out
@@ -1949,7 +1972,8 @@ def _subs_raw():
                 and os.path.exists(os.path.join(config_dir(), "subs", it["id"])):
             items.append({"id": it["id"], "name": _clean_name(it.get("name")),
                           "created": float(it.get("created") or 0),
-                          "lastUpdate": it.get("lastUpdate") if isinstance(it.get("lastUpdate"), dict) else {}})
+                          "lastUpdate": it.get("lastUpdate") if isinstance(it.get("lastUpdate"), dict) else {},
+                          **({"kind": "file"} if it.get("kind") == "file" else {})})
     ids = [it["id"] for it in items]
     active = d.get("active") if d.get("active") in ids else (ids[0] if ids else "")
     return {"active": active, "items": items}
@@ -2002,7 +2026,7 @@ def subs_list(migrate=True):
     d = load_subs(migrate)
     items = []
     for it in d["items"]:
-        out = dict(it, **_sub_hint(it["id"]))
+        out = dict(it, **({} if it.get("kind") == "file" else _sub_hint(it["id"])))
         out["name"] = it["name"] or _default_name(d, it["id"])
         out["active"] = it["id"] == d["active"]
         items.append(out)
@@ -2030,7 +2054,7 @@ def _name_from_update(sid, entry):
             save_subs(d)
 
 
-def _switch_with_rollback(d, sid):
+def _switch_with_rollback(d, sid, prepared=None):
     """Makes sid active and updates; on failure the previous active link, its result and config stay."""
     prev_active = d["active"]
     prev_source = read_text(os.path.join(config_dir(), "source"))
@@ -2040,7 +2064,7 @@ def _switch_with_rollback(d, sid):
     save_subs(d)
     write_private(os.path.join(config_dir(), "source"), read_text(sub_link_file(sid)))
     try:
-        return update()
+        return update(prepared=prepared, restart=prepared is None)
     except VpnError:
         d2 = _subs_raw()
         d2["active"] = prev_active if prev_active in [it["id"] for it in d2["items"]] else d2["active"]
@@ -2062,7 +2086,7 @@ def _switch_with_rollback(d, sid):
         raise
 
 
-def sub_add(text, name=""):
+def sub_add(text, name="", prepared=None, local_file=False):
     text = (text or "").strip()
     if not text:
         raise VpnError("empty")
@@ -2072,8 +2096,10 @@ def sub_add(text, name=""):
     sid = _new_sub_id(d)
     write_private(sub_link_file(sid), text + "\n")
     d["items"].append({"id": sid, "name": name, "created": time.time()})
+    if local_file:
+        d["items"][-1]["kind"] = "file"
     try:
-        entry = _switch_with_rollback(d, sid)
+        entry = _switch_with_rollback(d, sid, prepared)
     except VpnError:
         d2 = _subs_raw()
         d2["items"] = [it for it in d2["items"] if it["id"] != sid]
@@ -2219,16 +2245,191 @@ def _emit(event):
 def singbox_install(as_json):
     sb = _singbox_module()
     emit = _emit if as_json else (lambda e: None)
+    if vpn_running():
+        raise VpnError("setup_connected")
     try:
         res = sb.install(emit)
     except sb.SingboxError as e:
         raise VpnError(e.code, e.detail)
     except OSError as e:
-        raise VpnError("sb_unreachable", e.strerror or type(e).__name__)
+        raise VpnError("setup_storage", e.strerror or type(e).__name__) from None
     settings = load_settings()
     settings["singboxPath"] = res["path"]
     save_settings(settings)
     return res
+
+
+PACKAGE_HELPER = "/usr/libexec/serpantinum/serp-vpn-packages"
+SYSTEM_SINGBOX = ("/usr/bin/sing-box", "/usr/local/bin/sing-box")
+TUN_DEVICE = "/dev/net/tun"
+TUN_TOOLS = {"iproute": ("/usr/sbin/ip", "/usr/bin/ip"), "nftables": ("/usr/sbin/nft", "/usr/bin/nft")}
+
+
+def system_singbox():
+    # Same precedence as the root helper.
+    return next((p for p in SYSTEM_SINGBOX if _executable(p)), "")
+
+
+def setup_status(settings, binary, running=False):
+    sb = _singbox_module()
+    tun = settings["mode"] == "tun"
+    path = system_singbox() if tun else binary
+    checked = sb.probe(path, timeout=2) if path and not running else {}
+    version = re.match(r"^(\d+)\.(\d+)\.", checked.get("version", ""))
+    binary_ready = running or (checked.get("ok", False) and
+                               (not tun or (version is not None and tuple(map(int, version.groups())) >= (1, 12))))
+    exists = bool(path) or any(os.path.lexists(p) for p in (SYSTEM_SINGBOX if tun else
+                                                           (managed_singbox(), settings["singboxPath"])))
+    can_install = (_executable(PACKAGE_HELPER) and _executable("/usr/bin/dnf5") and
+                   bool(_tool("SERP_VPN_PKEXEC", "pkexec")))
+    deps = []
+    error = ""
+    if tun and not running:
+        if not tun_installed() or not _tool("SERP_VPN_PKEXEC", "pkexec"):
+            error = msg("tun_not_installed")
+        elif not os.path.exists(TUN_DEVICE):
+            error = msg("setup_tun")
+        deps = [pkg for pkg, paths in TUN_TOOLS.items() if not any(_executable(p) for p in paths)]
+    return {"state": "blocked" if error else "ready" if binary_ready and not deps else
+            "repair" if exists and not binary_ready else "missing",
+            "error": error, "path": path, "binaryReady": binary_ready, "systemInstall": can_install,
+            "packages": deps, "version": checked.get("version", ""), "arch": sb.arch_name(),
+            "pipewire": bool(shutil.which("pipewire")),
+            "yaml": importlib.util.find_spec("yaml") is not None}
+
+
+def install_fedora_packages(packages, emit, action="install"):
+    pkexec = _tool("SERP_VPN_PKEXEC", "pkexec")
+    if not pkexec or not _executable(PACKAGE_HELPER) or not _executable("/usr/bin/dnf5"):
+        raise VpnError("setup_admin")
+    emit({"event": "stage", "stage": "packages", "packages": packages})
+    # No timeout or cancellation across an RPM transaction. DNF handles download retries.
+    rc, out, _ = _run([pkexec, "--disable-internal-agent", PACKAGE_HELPER,
+                       action, *packages], timeout=None)
+    try:
+        result = json.loads(out.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        result = {}
+    if rc in (126, 127) and not result:
+        raise VpnError("setup_auth")
+    if rc or result.get("ok") is not True:
+        raise VpnError("setup_packages", _strip_ansi(result.get("detail") or f"DNF5 ({rc})"))
+
+
+def read_setup_file(path):
+    try:
+        if path.startswith("file:"):
+            url = urllib.parse.urlsplit(path)
+            if url.netloc or url.query or url.fragment:
+                raise ValueError("local file required")
+            path = urllib.request.url2pathname(url.path)
+        if not os.path.isfile(path):
+            raise ValueError("not a regular file")
+        with open(path, "rb") as f:
+            raw = f.read(5 * 1024 * 1024 + 1)
+        if len(raw) > 5 * 1024 * 1024:
+            raise VpnError("too_large")
+        text = raw.decode("utf-8-sig").strip()
+        if is_url(unwrap_source(text)):
+            raise ValueError("a configuration file must contain the profile")
+        return text
+    except (OSError, ValueError) as e:
+        raise VpnError("setup_file", type(e).__name__) from None
+
+
+def check_setup_config(cfg, settings, binary):
+    """Check without touching the running network or echoing provider data."""
+    if settings["mode"] == "tun":
+        rc, out, _ = _run([helper_path(), "check-input"], json.dumps(tun_payload(cfg, settings)), timeout=15)
+        try:
+            checked = json.loads(out)["config"] if rc == 0 else None
+        except (ValueError, KeyError):
+            checked = None
+        if not checked or not singbox_check(checked, binary)[0]:
+            raise VpnError("check_failed", "TUN / sing-box check")
+    if not singbox_check(cfg, binary)[0]:
+        raise VpnError("check_failed", "sing-box check")
+
+
+def vpn_setup(source, name, emit, *, file_path="", system=False, allow_yaml=False):
+    emit({"event": "stage", "stage": "system"})
+    if vpn_running() or tun_state() in ("activating", "deactivating"):
+        raise VpnError("setup_connected")
+    settings = load_settings_readonly()
+    tun = settings["mode"] == "tun"
+    health = setup_status(settings, singbox_bin())
+    if health["error"]:
+        raise VpnError("tun_not_installed" if not tun_installed() or
+                       not _tool("SERP_VPN_PKEXEC", "pkexec") else "setup_tun")
+    emit({"event": "stage", "stage": "binary"})
+    binary = health["path"] if health["binaryReady"] else ""
+    sb = _singbox_module()
+    if not binary and not tun:
+        binary = next((p for p in sb.candidates() if p != health["path"] and sb.probe(p, timeout=2)["ok"]), "")
+    if not binary and not (tun or system) and not health["arch"]:
+        raise VpnError("sb_arch", os.uname().machine if hasattr(os, "uname") else "?")
+
+    new_source = bool(file_path or source.strip())
+    source = read_setup_file(file_path) if file_path else source.strip() or _source_text()
+    prepared = None
+    if source:
+        emit({"event": "stage", "stage": "profile"})
+        try:
+            text, info = (source, {}) if file_path else load_source_text(source, settings)
+        except ValueError:
+            raise VpnError("fetch_failed", "URL") from None
+        try:
+            parsed = parse_subscription(text)
+        except VpnError as e:
+            if e.code == "no_servers":
+                # Parser errors can contain values supplied by the provider.
+                raise VpnError(e.code, "") from None
+            if e.code != "need_yaml" or not allow_yaml:
+                raise
+            install_fedora_packages(["python3-pyyaml"], emit)
+            importlib.invalidate_caches()
+            parsed = parse_subscription(text)
+        cfg = build_config(parsed["servers"], settings)
+        prepared = parsed, info, cfg
+    elif file_path:
+        raise VpnError("empty")
+
+    def validate(binary_to_check):
+        emit({"event": "stage", "stage": "config"})
+        check_setup_config(cfg, settings, binary_to_check)
+
+    archive = False
+    if not binary:
+        if tun or system:
+            rpm_installed = _run(["/usr/bin/rpm", "-q", "sing-box"], timeout=5)[0] == 0
+            action = "upgrade" if rpm_installed and health["version"] else "repair" if rpm_installed else "install"
+            install_fedora_packages(["sing-box"], emit, action=action)
+            binary = system_singbox()
+        else:
+            archive = True
+            binary = sb.install(emit, validate=validate if prepared else None)["path"]
+    if health["packages"]:
+        install_fedora_packages(health["packages"], emit)
+    if not archive:
+        emit({"event": "stage", "stage": "test"})
+    health = setup_status(settings, binary)
+    if not health["binaryReady"] or health["packages"] or health["error"]:
+        raise VpnError("sb_not_working", health["error"] or ", ".join(health["packages"]) or "version")
+
+    if prepared and not archive:
+        validate(binary)
+
+    result = {"ok": True, "path": binary, "version": health["version"], "setupComplete": True}
+    choose_binary = not tun and binary != singbox_bin()
+    saved_settings = _merge_settings(read_json(os.path.join(config_dir(), "settings.json"), {}))
+    if choose_binary or (prepared and not saved_settings["secret"]):
+        if choose_binary:
+            settings["singboxPath"] = binary
+        save_settings(settings)
+    if prepared:
+        result.update(sub_add(source, name, prepared, local_file=bool(file_path)) if new_source else
+                      update(prepared=prepared, restart=False))
+    return result
 
 
 def singbox_use(path):
@@ -2415,6 +2616,16 @@ def main(argv):
             data = singbox_info()
         elif cmd == "singbox-install":
             data = singbox_install(as_json)
+        elif cmd == "setup":
+            name = next((a[7:] for a in rest if a.startswith("--name=")), "")
+            file_path = next((a[7:] for a in rest if a.startswith("--file=")), "")
+            try:
+                data = vpn_setup(sys.stdin.read(), name, _emit if as_json else (lambda _: None),
+                                 file_path=file_path, system="--system" in rest, allow_yaml="--yaml" in rest)
+            except _singbox_module().SingboxError as e:
+                raise VpnError(e.code, e.detail) from None
+            except OSError as e:
+                raise VpnError("setup_storage", e.strerror or type(e).__name__) from None
         elif cmd == "singbox-use":
             data = singbox_use(rest[0] if rest else "")
         else:

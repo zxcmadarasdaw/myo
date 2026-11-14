@@ -2189,6 +2189,28 @@
     "yesterday": "Yesterday {time}"
   },
   "vpn": {
+    "setup": {
+      "required": "Setup required",
+      "hint": "Open setup and enter your VPN link.",
+      "connect": "Connect",
+      "install": "Install and configure VPN",
+      "repair": "Check and repair VPN",
+      "file": "Local file",
+      "choose_file": "Choose VPN configuration file",
+      "file_selected": "File selected · Clear",
+      "system_package": "Install sing-box RPM via polkit",
+      "tun_rpm": "TUN uses the system sing-box RPM.",
+      "archive_plan": "sing-box from SagerNet GitHub, installed for this user.",
+      "rpm_plan": "System packages via polkit: {packages}",
+      "yaml_plan": "Clash YAML may require python3-pyyaml via polkit.",
+      "done": "VPN setup complete",
+      "check_system": "Checking system…",
+      "check_binary": "Checking sing-box…",
+      "read_profile": "Reading VPN profile…",
+      "install_packages": "Authorizing and installing signed RPM packages…",
+      "check_config": "Checking VPN configuration…",
+      "retry_wait": "Retry in {seconds} s"
+    },
     "state": {
       "connected": "Connected",
       "disconnected": "Disconnected",

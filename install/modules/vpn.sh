@@ -2,6 +2,7 @@
 # VPN, TUN mode (stage 2): root helper, systemd unit and polkit files.
 # Installs:
 #   /usr/libexec/serpantinum/serp-vpn-root               (root:root 755, from src/scripts/system/serp_vpn_root.py)
+#   /usr/libexec/serpantinum/serp-vpn-packages           (root:root 755, admin authentication required)
 #   /etc/systemd/system/serpantinum-vpn.service          (not enabled; the shell starts it on demand)
 #   /usr/share/polkit-1/actions/org.serpantinum.vpn.policy
 #   /etc/polkit-1/rules.d/49-serpantinum-vpn.rules       (only for the user running the installer)
@@ -9,6 +10,7 @@
 # sing-box itself is not installed here (see docs/configure/vpn.md).
 
 VPN_HELPER_DST="/usr/libexec/serpantinum/serp-vpn-root"
+VPN_PACKAGES_DST="/usr/libexec/serpantinum/serp-vpn-packages"
 VPN_UNIT_DST="/etc/systemd/system/serpantinum-vpn.service"
 VPN_POLICY_DST="/usr/share/polkit-1/actions/org.serpantinum.vpn.policy"
 VPN_RULES_DST="/etc/polkit-1/rules.d/49-serpantinum-vpn.rules"
@@ -38,7 +40,16 @@ install_vpn_service() {
         return 0
     fi
 
+    # A minimal Fedora Hyprland session needs a GUI polkit agent for pkexec.
+    if command -v dnf5 >/dev/null && command -v Hyprland >/dev/null \
+        && ! rpm -q --whatprovides PolicyKit-authentication-agent >/dev/null 2>&1; then
+        if ! sudo dnf5 install -y lxqt-policykit; then
+            FAILED_PKGS+=("lxqt-policykit")
+        fi
+    fi
+
     if sudo install -Dm755 -o root -g root "$root/src/scripts/system/serp_vpn_root.py" "$VPN_HELPER_DST" \
+        && sudo install -Dm755 -o root -g root "$root/src/scripts/system/serp_vpn_packages.py" "$VPN_PACKAGES_DST" \
         && sudo install -Dm644 -o root -g root "$sys_dir/serpantinum-vpn.service" "$VPN_UNIT_DST" \
         && sudo install -Dm644 -o root -g root "$sys_dir/org.serpantinum.vpn.policy" "$VPN_POLICY_DST" \
         && sudo mkdir -p "$(dirname "$VPN_RULES_DST")" \

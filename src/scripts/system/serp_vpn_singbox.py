@@ -6,12 +6,10 @@ needs root and nothing is run through a shell.
 Install = the official release from GitHub (SagerNet/sing-box), for this machine's
 architecture, into ~/.local/share/serpantinum/vpn/bin/sing-box:
 
-  1. the release is found through the GitHub API; when the API is unreachable, through
-     the redirect of github.com/.../releases/latest (then no checksum is known);
+  1. the release and its published digest are found through the GitHub API;
   2. the archive is downloaded with progress lines on stdout, a stall timeout, up to
      four attempts that resume with an HTTP Range request, and SIGTERM to cancel;
-  3. its SHA-256 is compared with the digest GitHub publishes for the asset (when the
-     API gave one); a mismatch deletes the file;
+  3. its SHA-256 must match the published digest before anything can run;
   4. only the `sing-box` file is read out of the tar (no paths from the archive are
      used), written with mode 755, and accepted only when `sing-box version` runs and
      reports a version. Then it replaces the previous managed binary atomically.
@@ -21,6 +19,7 @@ from /usr/bin or /usr/local/bin (installed by dnf), on purpose: a root service n
 runs a file a user process could have written.
 """
 import hashlib
+import http.client
 import json
 import os
 import platform
@@ -34,10 +33,10 @@ import tarfile
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 RELEASE_API = "https://api.github.com/repos/SagerNet/sing-box/releases/latest"
-RELEASE_PAGE = "https://github.com/SagerNet/sing-box/releases/latest"
 DOWNLOAD_BASE = "https://github.com/SagerNet/sing-box/releases/download"
 USER_AGENT = "serpantinum-vpn"
 CONNECT_TIMEOUT = 20          # seconds to get an answer
@@ -129,7 +128,14 @@ def candidates():
 
 def _opener():
     # the user's own HTTPS_PROXY/https_proxy is honoured (urllib reads it from the environment)
-    return urllib.request.build_opener()
+    return urllib.request.build_opener(HttpsRedirect())
+
+
+class HttpsRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if req.type == "https" and urllib.parse.urlsplit(newurl).scheme != "https":
+            raise SingboxError("sb_tls", "HTTPS redirect required")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def _get(url, timeout=CONNECT_TIMEOUT, headers=None):
@@ -164,12 +170,11 @@ def asset_name(version, arch):
     return f"sing-box-{version}-linux-{arch}.tar.gz"
 
 
-def release_info(arch, api_url=None, page_url=None):
+def release_info(arch, api_url=None):
     """{"version", "name", "url", "size", "sha256", "source"} of the latest stable release."""
-    want_api = api_url or os.environ.get("SERP_VPN_SINGBOX_API") or RELEASE_API
-    api_error = None
+    override = api_url or os.environ.get("SERP_VPN_SINGBOX_API")
     try:
-        with _get(want_api, headers={"Accept": "application/vnd.github+json"}) as r:
+        with _get(override or RELEASE_API, headers={"Accept": "application/vnd.github+json"}) as r:
             data = json.loads(r.read(4 * 1024 * 1024).decode("utf-8"))
         tag = str(data.get("tag_name") or "")
         version = tag[1:] if tag.startswith("v") else tag
@@ -180,37 +185,18 @@ def release_info(arch, api_url=None, page_url=None):
             if a.get("name") == name:
                 digest = str(a.get("digest") or "")
                 sha = digest[7:].lower() if digest.lower().startswith("sha256:") else ""
-                if sha and not re.fullmatch(r"[0-9a-f]{64}", sha):
-                    sha = ""
+                if not re.fullmatch(r"[0-9a-f]{64}", sha):
+                    raise SingboxError("sb_no_digest", name)
                 url = str(a.get("browser_download_url") or "")
-                if not url.startswith("https://") and not os.environ.get("SERP_VPN_SINGBOX_API"):
+                if not override and url != f"{DOWNLOAD_BASE}/v{version}/{name}":
                     raise SingboxError("sb_no_asset", name)
                 return {"version": version, "name": name, "url": url, "size": int(a.get("size") or 0),
                         "sha256": sha, "source": "api"}
         raise SingboxError("sb_no_asset", name)
-    except SingboxError as e:
-        if e.code == "sb_no_asset":
-            raise
-        api_error = e
-    except ValueError:
-        api_error = SingboxError("sb_no_release", "json")
-    except (urllib.error.URLError, OSError) as e:
-        api_error = _net_error(e)
-    # API unreachable or rate-limited: the release page redirects to .../tag/vX.Y.Z
-    try:
-        with _get(page_url or os.environ.get("SERP_VPN_SINGBOX_PAGE") or RELEASE_PAGE) as r:
-            final = r.geturl()
-        m = re.search(r"/tag/v?(\d+\.\d+\.\d+)$", final or "")
-        if not m:
-            raise api_error
-        version = m.group(1)
-        name = asset_name(version, arch)
-        return {"version": version, "name": name, "url": f"{DOWNLOAD_BASE}/v{version}/{name}", "size": 0,
-                "sha256": "", "source": "page"}
-    except SingboxError:
-        raise
-    except (urllib.error.URLError, OSError):
-        raise api_error
+    except (ValueError, TypeError, AttributeError):
+        raise SingboxError("sb_no_release", "JSON") from None
+    except (OSError, http.client.HTTPException) as e:
+        raise _net_error(e) from None
 
 
 # ---- download ----------------------------------------------------------------------------
@@ -240,7 +226,6 @@ def _set_stall_timeout(response):
 def download(url, dest, expected_size, emit, attempts=ATTEMPTS, sleep=time.sleep):
     """Downloads url to dest (resuming on retries). Calls emit(dict) with progress. Returns bytes written."""
     done = 0
-    total = expected_size or 0
     last_error = None
     started = time.monotonic()
     for attempt in range(1, attempts + 1):
@@ -250,11 +235,19 @@ def download(url, dest, expected_size, emit, attempts=ATTEMPTS, sleep=time.sleep
         try:
             with _get(url, headers=headers) as r:
                 status = getattr(r, "status", 200)
+                total = expected_size
                 if done > 0 and status != 206:          # the server ignored Range: start over
                     done = 0
                 length = r.headers.get("Content-Length")
-                if length and length.isdigit():
-                    total = (done + int(length)) if status == 206 else int(length)
+                if status == 206:
+                    match = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)", r.headers.get("Content-Range", ""))
+                    if (not match or int(match[1]) != done or int(match[2]) + 1 != int(match[3])
+                            or (expected_size and int(match[3]) != expected_size)):
+                        done = 0
+                        raise SingboxError("sb_incomplete", "Content-Range")
+                    total = int(match[3])
+                elif not total and length and length.isdigit():
+                    total = int(length)
                 if total > MAX_ARCHIVE:
                     raise SingboxError("sb_too_large", _human(total))
                 _set_stall_timeout(r)
@@ -262,7 +255,7 @@ def download(url, dest, expected_size, emit, attempts=ATTEMPTS, sleep=time.sleep
                 window = []                                  # (time, bytes) of the last 3 s, for the speed
                 with open(dest, "ab" if done > 0 else "wb") as f:
                     while True:
-                        chunk = r.read(64 * 1024)
+                        chunk = r.read1(64 * 1024)
                         if not chunk:
                             break
                         f.write(chunk)
@@ -279,16 +272,19 @@ def download(url, dest, expected_size, emit, attempts=ATTEMPTS, sleep=time.sleep
                             emit({"event": "progress", "done": done, "total": total, "speed": int(speed),
                                   "attempt": attempt})
                             last_emit = now
-            if total and done < total:
-                raise SingboxError("sb_incomplete", f"{_human(done)} / {_human(total)}")
+            if total and done != total:
+                detail = f"{_human(done)} / {_human(total)}"
+                if done > total:
+                    done = 0
+                raise SingboxError("sb_incomplete", detail)
             emit({"event": "progress", "done": done, "total": total or done, "speed": 0, "attempt": attempt,
                   "seconds": round(time.monotonic() - started, 1)})
             return done
         except SingboxError as e:
-            if e.code == "sb_too_large":
+            if e.code in ("sb_too_large", "sb_tls"):
                 raise
             last_error = e
-        except (urllib.error.URLError, OSError) as e:
+        except (OSError, http.client.HTTPException) as e:
             last_error = _net_error(e)
             if isinstance(e, urllib.error.HTTPError):
                 if e.code in (401, 403, 404, 410):
@@ -316,7 +312,7 @@ def extract_binary(archive, out_path):
     try:
         with tarfile.open(archive, "r:gz") as tar:
             member = None
-            for m in tar.getmembers():
+            for m in tar:
                 if m.isfile() and os.path.basename(m.name) == "sing-box":
                     member = m
                     break
@@ -336,8 +332,8 @@ def extract_binary(archive, out_path):
     os.chmod(out_path, 0o755)
 
 
-def install(emit, arch=None, api_url=None):
-    """Full install; returns {"ok", "path", "version", "sha256", "verified", ...}. Raises SingboxError."""
+def install(emit, arch=None, api_url=None, validate=None):
+    """Install atomically after the version and optional profile checks pass."""
     arch = arch or arch_name()
     if not arch:
         raise SingboxError("sb_arch", platform.machine() or "?")
@@ -353,18 +349,19 @@ def install(emit, arch=None, api_url=None):
         download(rel["url"], archive, rel["size"], emit)
         emit({"event": "stage", "stage": "verify"})
         digest = sha256_file(archive)
-        if rel["sha256"] and digest != rel["sha256"]:
+        if digest != rel["sha256"]:
             raise SingboxError("sb_checksum", digest[:12] + "… ≠ " + rel["sha256"][:12] + "…")
         emit({"event": "stage", "stage": "extract"})
         tmp_bin = os.path.join(work, "sing-box")
         extract_binary(archive, tmp_bin)
         emit({"event": "stage", "stage": "test"})
         checked = probe(tmp_bin)
-        if not checked["ok"]:
-            raise SingboxError("sb_not_working", checked["error"])
+        if not checked["ok"] or checked["version"] != rel["version"]:
+            raise SingboxError("sb_not_working", checked["error"] or "version mismatch")
+        if validate is not None:
+            validate(tmp_bin)
         final = managed_path()
         os.replace(tmp_bin, final)
-        os.chmod(final, 0o755)
         return {"ok": True, "path": final, "version": checked["version"], "release": rel["version"],
                 "sha256": digest, "verified": bool(rel["sha256"]), "source": rel["source"]}
     finally:

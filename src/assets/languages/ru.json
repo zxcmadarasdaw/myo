@@ -2382,6 +2382,28 @@
     }
   },
   "vpn": {
+    "setup": {
+      "required": "Требуется настройка",
+      "hint": "Откройте настройки и вставьте VPN-ссылку.",
+      "connect": "Подключиться",
+      "install": "Установить и настроить VPN",
+      "repair": "Проверить и восстановить VPN",
+      "file": "Локальный файл",
+      "choose_file": "Выбрать файл конфигурации VPN",
+      "file_selected": "Файл выбран · Сбросить",
+      "system_package": "Установить RPM sing-box через polkit",
+      "tun_rpm": "Для TUN используется системный RPM sing-box.",
+      "archive_plan": "sing-box с GitHub SagerNet будет установлен для текущего пользователя.",
+      "rpm_plan": "Системные пакеты через polkit: {packages}",
+      "yaml_plan": "Для Clash YAML может потребоваться python3-pyyaml через polkit.",
+      "done": "Настройка VPN завершена",
+      "check_system": "Проверка системы…",
+      "check_binary": "Проверка sing-box…",
+      "read_profile": "Чтение профиля VPN…",
+      "install_packages": "Авторизация и установка подписанных RPM…",
+      "check_config": "Проверка конфигурации VPN…",
+      "retry_wait": "Повтор через {seconds} с"
+    },
     "state": {
       "connected": "Подключено",
       "disconnected": "Отключено",

@@ -14,18 +14,13 @@ A subscription client in the network panel (**Super+N**), in the spirit of Hiddi
 
 ## Install sing-box
 
-sing-box is not installed by the Serpantinum installer. There are three ways to get it; the **sing-box** sheet of the VPN tab (it opens by itself when sing-box is missing, or from **Connection → sing-box**) offers all of them:
+Open **Super+N → VPN**, enter a link or choose a local profile, then click **Install and configure VPN**. Serpantinum checks the current mode and sing-box, shows progress and validates the profile before saving it. A working installation is reused. After setup, choose a server and press **Connect** to start the VPN.
 
-- **Download** (no root): the official release for this machine's architecture from `github.com/SagerNet/sing-box` goes into `~/.local/share/serpantinum/vpn/bin/sing-box`. The sheet shows the stage, the size, the speed and the attempt (up to 4, with a pause between them). **Cancel** stops the download and installs nothing. The archive is compared with the SHA-256 that GitHub publishes for the release; when no checksum is available the sheet says so. The file is used only after `sing-box version` runs successfully. Without internet you get a clear *no connection* error, never a half-installed file. Proxy mode only: TUN mode runs as root and uses only the system package.
-- **Use an installed one**: copies found on this computer are listed; you can also type a path. A file is accepted only if `sing-box version` runs. **Automatic** goes back to the default search.
-- **System package** (needed for TUN mode), in a terminal:
+- **Proxy** uses the architecture-specific SagerNet GitHub archive and requires the published SHA-256. During the download you can see bytes, speed and retries, or cancel. The verified binary is placed in `~/.local/share/serpantinum/vpn/bin/sing-box` after the version and configuration checks succeed.
+- **TUN** uses a signed system package. On Fedora the Serpantinum installer supplies a polkit helper for the panel. It uses the official SagerNet RPM repository for the transaction and asks for administrator authentication. The panel also offers that source for Proxy if GitHub fails. PyYAML is requested only when the profile actually requires it.
+- **Connection → sing-box** still lists installed binaries and accepts a path for Proxy. A working binary has to answer `sing-box version`.
 
-```bash
-sudo dnf config-manager addrepo --from-repofile=https://sing-box.app/sing-box.repo
-sudo dnf install sing-box
-```
-
-Clash YAML subscriptions also need PyYAML (`sudo dnf install python3-pyyaml`); the panel says so when it is missing.
+When updating an existing Fedora installation of Serpantinum, run the updated Serpantinum installer to register the package helper and policy. The installer supplies `lxqt-policykit` on minimal Fedora Hyprland systems that lack a packaged authentication agent. Hyprland starts the agent at sign-in. If a Live session loses the binary at reboot, reopening the VPN tab offers setup again.
 
 ## Use
 
@@ -66,6 +61,7 @@ Accepted input:
 - an `https://` subscription link (base64 list, Clash YAML or sing-box JSON);
 - import links of other clients (`hiddify://import/…`, `sing-box://import-remote-profile?url=…`);
 - one or more server links: `vless://`, `vmess://`, `trojan://`, `ss://`, `hysteria2://`/`hy2://`, `tuic://`, `hysteria://`, `socks://`.
+- a local file containing sing-box JSON, Clash YAML or a text list of supported server links. The panel copies the profile into private storage, so you can move the original file afterward.
 
 `happ://` links are encrypted by the Happ app and cannot be read; paste the original `https://` link instead.
 
@@ -230,7 +226,9 @@ VPN Control Studio:
 - [ ] OBS recording and switching workspaces with the panel open: no stuck input.
 
 Proxy and subscriptions:
-- [ ] Without sing-box: the sing-box sheet opens, Copy puts the dnf command into the clipboard, nothing crashes.
+- [ ] Without sing-box: the power button shows setup required. Paste a link, install and import, then confirm a server can be selected before pressing Connect.
+- [ ] Block GitHub: Retry retains the original input. Try the official RPM with polkit and confirm the system binary is detected. Cancel the authorization and check that the existing profile still works.
+- [ ] In Fedora Live, reboot without persistence and verify setup is offered again when the binary is gone.
 - [ ] Paste with Ctrl+V and with the button, then Save: the server count appears, and `ls -l ~/.config/serpantinum/vpn` shows `-rw-------`.
 - [ ] `ps aux | grep serp_vpn` while saving: the link is not visible.
 - [ ] Connect: `curl -x socks5h://127.0.0.1:2080 https://ifconfig.me` shows the server's address. Disconnect stops sing-box (`pgrep sing-box` is empty).

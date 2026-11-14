@@ -9,3 +9,4 @@ VpnSingboxSheet 1.0 VpnSingboxSheet.qml
 VpnPill 1.0 VpnPill.qml
 VpnIconButton 1.0 VpnIconButton.qml
 VpnSpinner 1.0 VpnSpinner.qml
+VpnSetupProgress 1.0 VpnSetupProgress.qml

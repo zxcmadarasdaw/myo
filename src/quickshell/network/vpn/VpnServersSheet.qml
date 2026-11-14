@@ -4,8 +4,8 @@ import "../../"
 
 // Server picker: only the servers of the active subscription, grouped by the country the
 // backend found for them (flag only when that country is known; "Unknown" otherwise).
-// Delay is shown only after it was measured. Choosing a server switches to it (and
-// connects when off); the IP/location nodes update only after the new exit IP is read.
+// Delay is shown only after it was measured. Choosing a server switches to it during
+// an active connection. The IP/location nodes update after the new exit IP is read.
 VpnSheet {
     id: sh
     title: tr("picker.title", "Choose a server")
@@ -187,7 +187,7 @@ VpnSheet {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        enabled: !VpnService.busy && VpnService.vpnState !== "missing"
+                        enabled: !VpnService.busy && !VpnService.sbInstalling && !VpnService.setupNeeded
                         onClicked: {
                             VpnService.select(srv.modelData.tag);
                             sh.closeRequested();

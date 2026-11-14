@@ -18,7 +18,7 @@ Item {
     readonly property var st: VpnAppearance.style
     readonly property string phase: VpnService.phase
     readonly property string vpnState: VpnService.vpnState
-    readonly property bool missing: vpnState === "missing"
+    readonly property bool missing: VpnService.setupNeeded && !VpnService.connected
 
     function s(v) { return Scaler.s(v); }
     function tr(key, en) { return I18n.t("vpn." + key, en); }
@@ -39,7 +39,7 @@ Item {
     }
 
     function primary() {
-        if (missing) { openSheet("singbox"); return; }
+        if (missing) { openSheet("subs"); subsSheet.focusAdd(); return; }
         if (!VpnService.hasSource || VpnService.servers.length === 0) { openSheet("subs"); return; }
         if (phase === "connected") VpnService.disconnect();
         else if (phase === "disconnected" || phase === "error") VpnService.connect();
@@ -60,7 +60,7 @@ Item {
     }
 
     readonly property string phaseText: {
-        if (missing) return tr("state.missing", "sing-box is not installed");
+        if (missing) return tr("setup.required", "Setup required");
         if (vpnState === "none" && phase === "disconnected") return tr("state.none", "No subscription");
         switch (phase) {
         case "connected": return tr("state.connected", "Connected");
@@ -95,7 +95,7 @@ Item {
         if (firstWarning) return { text: firstWarning.message, level: "warn" };
         if (phase === "connected" && VpnService.mode === "tun") return { text: tr("tun_on", "All traffic of this computer goes through the VPN"), level: "info" };
         if (phase === "connected") return { text: tr("proxy_at", "HTTP/SOCKS5 proxy") + "  " + VpnService.proxy, level: "info" };
-        if (missing) return { text: tr("hint.missing", "Download sing-box or choose an installed one to connect."), level: "info" };
+        if (missing) return { text: tr("setup.hint", "Open setup and enter your VPN link."), level: "info" };
         if (vpnState === "none") return { text: tr("hint.add", "Add a VPN subscription to start."), level: "info" };
         if (VpnService.warning !== "") return { text: VpnService.warning, level: "warn" };
         return { text: "", level: "info" };
@@ -172,6 +172,7 @@ Item {
     NumberAnimation on intro { id: introAnim; running: false; from: 0; to: 1; duration: 900; easing.type: Easing.OutCubic }
     onActiveChanged: {
         if (active) {
+            if (VpnService.sbSetup && VpnService.sbInstalling) sheet = "subs";
             if (st.animate !== false) introAnim.restart();
             else intro = 1;
         } else {
@@ -268,7 +269,7 @@ Item {
                 readonly property real rad: shape === "circle" ? width / 2 : shape === "pill" ? height / 2 : d * 0.3
                 readonly property bool on: studio.phase === "connected"
                 readonly property bool working: studio.phase === "connecting" || studio.phase === "disconnecting"
-                readonly property bool usable: !VpnService.busy && !VpnService.forcing && !working
+                readonly property bool usable: !VpnService.busy && !VpnService.sbInstalling && !VpnService.forcing && !working
                 property real litLevel: on ? 1 : 0
                 Behavior on litLevel { NumberAnimation { duration: power.on ? 450 : 700; easing.type: Easing.OutCubic } }
                 scale: (powerMouse.pressed ? 0.96 : (powerMouse.containsMouse ? 1.03 : 1.0)) * (0.92 + 0.08 * studio.intro)
@@ -364,8 +365,9 @@ Item {
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: Math.min(implicitWidth, power.width * 0.8)
                         horizontalAlignment: Text.AlignHCenter
-                        elide: Text.ElideRight
-                        text: studio.missing ? studio.tr("btn.setup", "Set up")
+                        elide: studio.missing ? Text.ElideNone : Text.ElideRight
+                        wrapMode: studio.missing ? Text.WordWrap : Text.NoWrap
+                        text: studio.missing ? studio.tr("setup.required", "Setup required")
                             : (!VpnService.hasSource ? studio.tr("btn.add", "Add")
                             : power.on ? studio.tr("btn.on", "ON")
                             : studio.phase === "connecting" ? studio.tr("btn.connecting", "…")
@@ -635,6 +637,8 @@ Item {
         objectName: "vpnSheet_subs"
         open: studio.sheet === "subs"
         onCloseRequested: studio.sheet = ""
+        onConnectedRequested: studio.sheet = ""
+        onServersRequested: studio.openSheet("servers")
     }
     VpnConnectionSheet {
         objectName: "vpnSheet_conn"

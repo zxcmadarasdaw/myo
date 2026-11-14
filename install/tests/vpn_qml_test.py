@@ -273,6 +273,7 @@ Window {
                                 subs: VpnService.subs, activeSub: VpnService.activeSub,
                                 sb: { installing: VpnService.sbInstalling, stage: VpnService.sbStage, done: VpnService.sbDone,
                                       total: VpnService.sbTotal, speed: VpnService.sbSpeed, attempt: VpnService.sbAttempt,
+                                      canCancel: VpnService.sbCanCancel,
                                       error: VpnService.sbError, result: VpnService.sbResult, checksum: VpnService.sbChecksum } });
     }
     function ui() {
@@ -464,7 +465,7 @@ try:
     status_off = dict(STATUS_NONE, state="disconnected", hasSource=True, hasConfig=True, count=len(SERVERS),
                       current=SERVERS[0]["tag"], currentServer=SERVERS[0], subscription="Home VPN",
                       lastUpdate={"time": 1763100000, "ok": True, "servers": 4})
-    finish("status --json", status_off)
+    answer_status(status_off, lambda: j("svc")["state"] == "disconnected", "fresh status after add")
     until(lambda: running("list --json"), "server list requested")
     finish("list --json", {"ok": True, "servers": SERVERS})
     if running("subs --json"):
@@ -611,6 +612,43 @@ try:
             finish(needle, status_off if needle == "status --json" else
                    ({"ok": True, "servers": SERVERS} if needle == "list --json" else {"active": "aaaaaaaa", "items": [SUB_A]}))
     passed.append("subscriptions: switch / rename / remove run sub-use / sub-rename / sub-remove with the id")
+
+    # Actual setup action, with a failed first attempt and the retained link on retry.
+    answer_status(dict(STATUS_NONE, setup={"state": "missing", "binaryReady": False, "yaml": True}),
+                  lambda: j("ui")["phaseText"] == S["setup.required"], "missing engine status")
+    do("primary")
+    until(lambda: sheet_state("subs") == (True, True), "missing engine opens the input sheet")
+    setup_sheet = win.findChild(QObject, "mainStudio").findChild(QObject, "vpnSheet_subs")
+    setup_button = setup_sheet.findChild(QObject, "vpnSetupAction")
+    assert setup_button is not None
+    assert not setup_button.property("visible")
+    assert setup_sheet.findChild(QObject, "vpnSetupLink").setProperty("text", link)
+    assert setup_sheet.property("hasInput"), setup_sheet.property("hasInput")
+    until(lambda: setup_button.property("visible"), "install action under the input")
+    assert setup_button.property("text") == S["setup.install"]
+    setup_button.clicked.emit()
+    until(lambda: running("setup --json") and running("setup --json")[0]["stdinClosed"], "setup receives source")
+    assert running("setup --json")[0]["written"] == [link + "\n"]
+    assert link not in str(running("setup --json")[0]["cmd"])
+    finish("setup --json", {"ok": False, "error": {"code": "sb_http", "message": "HTTP 503"}}, 1)
+    until(lambda: setup_button.property("text") == S["sb.retry"], "retry stays in the same sheet")
+    setup_button.clicked.emit()
+    until(lambda: running("setup --json") and running("setup --json")[0]["stdinClosed"], "setup retry")
+    assert running("setup --json")[0]["written"] == [link + "\n"]
+    j("stream", "setup --json", json.dumps({"event": "stage", "stage": "packages"}))
+    assert not j("svc")["sb"]["canCancel"]
+    finish("setup --json", {"ok": True, "path": "/usr/bin/sing-box", "setupComplete": True,
+                           "active": "aaaaaaaa", "items": [SUB_A]})
+    answer_status(dict(status_off, setup={"state": "ready", "binaryReady": True, "yaml": True}),
+                  lambda: setup_button.property("text") == S["setup.connect"], "setup offers explicit connection")
+    assert not running("connect --json")
+    assert str(j("call", "back", "", "")) == "true"
+    until(lambda: not setup_button.property("visible"), "closed setup action is invisible")
+    assert not setup_sheet.property("enabled")
+    for needle in ("singbox-info", "subs --json", "list --json"):
+        if running(needle):
+            finish(needle, {"ok": True, "candidates": [], "items": [SUB_A], "servers": SERVERS})
+    passed.append("one-click setup: missing engine, stdin, retry, progress, explicit connect, closed sheet releases input")
 
     # ---- sing-box download: progress, retry, cancel, success ------------------------------------
     do("openSheet", "singbox")

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import Quickshell.Io
 import "../../"
 
@@ -13,19 +14,43 @@ VpnSheet {
     property string editing: ""                // id being renamed
     property string confirmRemove: ""
     property bool clearOnSuccess: false
+    property url localFile: ""
+    property bool submittedSetup: false
+    readonly property bool hasInput: localFile.toString() !== "" || linkInput.text.trim() !== ""
+    readonly property bool failedSetup: submittedSetup && VpnService.sbSetup && VpnService.sbError !== ""
+    readonly property bool yamlPossible: VpnService.setup.yaml === false && VpnService.setup.systemInstall === true
+    readonly property bool readyToConnect: submittedSetup && VpnService.sbResult !== null && VpnService.sbResult.setupComplete === true
+                                           && !VpnService.sbInstalling && VpnService.canConnect
+    signal connectedRequested()
+    signal serversRequested()
 
     function tr(key, en) { return I18n.t("vpn." + key, en); }
     function focusAdd() { Qt.callLater(() => sh.linkInput.forceActiveFocus()); }
-    function add() {
+    function applySetup() {
+        if (sh.readyToConnect) {
+            sh.submittedSetup = false;
+            sh.connectedRequested();
+            VpnService.connect();
+        } else {
+            sh.add(false);
+        }
+    }
+    function add(system) {
+        if (VpnService.sbInstalling || VpnService.busy) return;
+        if (!VpnService.connected && (VpnService.setupNeeded || failedSetup || system || localFile.toString() !== "" || yamlPossible)) {
+            submittedSetup = VpnService.prepareVpn(linkInput.text, nameInput.text, localFile.toString(), system, yamlPossible);
+            return;
+        }
         let t = sh.linkInput.text.trim();
         if (t === "") {
             VpnService.error = tr("errors.empty_link", "Paste a subscription link first.");
             return;
         }
-        clearOnSuccess = true;
-        VpnService.addSub(t, sh.nameInput.text);
+        clearOnSuccess = VpnService.addSub(t, sh.nameInput.text);
     }
     function pasteLink() {
+        localFile = "";
+        submittedSetup = false;
         sh.linkInput.forceActiveFocus();
         let before = sh.linkInput.text;
         sh.linkInput.selectAll();
@@ -39,8 +64,9 @@ VpnSheet {
         return Qt.formatDateTime(new Date(t * 1000), "dd.MM.yyyy HH:mm");
     }
     function describe(it) {
-        let src = it.kind === "url" ? (it.host || "") : it.kind === "links"
-            ? tr("subs.links", "{count} links").replace("{count}", it.count || 0) : tr("subs.app", "app link");
+        let src = it.kind === "url" ? (it.host || "") : it.kind === "file" ? tr("setup.file", "Local file")
+            : it.kind === "links" ? tr("subs.links", "{count} links").replace("{count}", it.count || 0)
+            : tr("subs.app", "app link");
         let lu = it.lastUpdate || null;
         if (!lu || !lu.time) return { text: src + " · " + tr("subs.never", "not updated yet"), error: false };
         if (lu.ok === false)
@@ -51,6 +77,17 @@ VpnSheet {
 
     onOpenChanged: if (!open) { editing = ""; confirmRemove = ""; }
 
+    FileDialog {
+        id: configPicker
+        title: sh.tr("setup.choose_file", "Choose VPN configuration file")
+        nameFilters: ["VPN (*.json *.yaml *.yml *.txt *.conf)", "All files (*)"]
+        onAccepted: {
+            sh.linkInput.text = "";
+            sh.localFile = selectedFile;
+            sh.submittedSetup = false;
+        }
+    }
+
     Connections {
         target: VpnService
         function onBusyChanged() {
@@ -60,6 +97,13 @@ VpnSheet {
                     sh.nameInput.text = "";
                 }
                 sh.clearOnSuccess = false;
+            }
+        }
+        function onSbInstallingChanged() {
+            if (!VpnService.sbInstalling && sh.submittedSetup && VpnService.sbResult && VpnService.sbResult.setupComplete) {
+                sh.linkInput.text = "";
+                sh.nameInput.text = "";
+                sh.localFile = "";
             }
         }
     }
@@ -82,6 +126,7 @@ VpnSheet {
 
     component Field: Rectangle {
         property alias input: ti
+        property string inputName: ""
         property string placeholder: ""
         property string icon: ""
         radius: Scaler.s(10)
@@ -114,6 +159,7 @@ VpnSheet {
         }
         TextInput {
             id: ti
+            objectName: parent.inputName
             anchors.fill: parent
             anchors.leftMargin: parent.icon !== "" ? Scaler.s(32) : Scaler.s(10)
             anchors.rightMargin: Scaler.s(10)
@@ -140,6 +186,7 @@ VpnSheet {
             spacing: Scaler.s(8)
             Field {
                 id: linkField
+                inputName: "vpnSetupLink"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 icon: "󰌷"
@@ -147,28 +194,100 @@ VpnSheet {
                 Component.onCompleted: {
                     input.inputMethodHints = Qt.ImhNoPredictiveText | Qt.ImhNoAutoUppercase | Qt.ImhUrlCharactersOnly;
                 }
+                enabled: !VpnService.sbInstalling
             }
             Field {
                 id: nameField
                 Layout.preferredWidth: Scaler.s(130)
                 Layout.fillHeight: true
                 placeholder: sh.tr("subs.name", "Name (optional)")
+                enabled: !VpnService.sbInstalling
             }
             VpnIconButton {
                 Layout.preferredWidth: Scaler.s(36); Layout.preferredHeight: Scaler.s(36)
                 icon: "󰆒"
                 tip: sh.tr("paste", "Paste")
-                enabled: !VpnService.busy
+                enabled: !VpnService.busy && !VpnService.sbInstalling
                 onClicked: sh.pasteLink()
             }
             VpnPill {
                 implicitHeight: Scaler.s(36)
+                visible: !VpnService.setupNeeded && !sh.readyToConnect && !sh.failedSetup
                 text: sh.tr("subs.add", "Add")
                 icon: "󰐕"
                 busy: VpnService.busy && VpnService.busyAction === "sub-add"
-                enabled: !VpnService.busy && sh.linkInput.text.trim() !== ""
-                onClicked: sh.add()
+                enabled: !VpnService.busy && !VpnService.sbInstalling && sh.hasInput
+                onClicked: sh.add(false)
             }
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            VpnPill {
+                text: sh.tr("setup.choose_file", "Choose VPN configuration file")
+                enabled: !VpnService.sbInstalling && !VpnService.busy && !VpnService.connected
+                filled: false
+                onClicked: configPicker.open()
+            }
+            VpnPill {
+                visible: sh.localFile.toString() !== ""
+                text: sh.tr("setup.file_selected", "File selected · Clear")
+                enabled: !VpnService.sbInstalling
+                filled: false
+                onClicked: sh.localFile = ""
+            }
+        }
+        Text {
+            Layout.fillWidth: true
+            visible: !VpnService.sbInstalling && ((VpnService.setupNeeded && (sh.hasInput || VpnService.hasSource))
+                                                   || (sh.yamlPossible && sh.hasInput))
+            text: {
+                if (VpnService.setup.error) return VpnService.setup.error;
+                let packages = (VpnService.setup.packages || []).slice();
+                let rpm = VpnService.mode === "tun" && VpnService.setup.binaryReady !== true;
+                if (rpm) packages.unshift("sing-box");
+                let parts = [];
+                if (VpnService.setupNeeded && VpnService.mode === "proxy")
+                    parts.push(sh.tr("setup.archive_plan", "sing-box from SagerNet GitHub, installed for this user."));
+                if (packages.length > 0) parts.push(sh.tr("setup.rpm_plan", "System packages via polkit: {packages}").replace("{packages}", packages.join(", ")));
+                if (sh.yamlPossible && sh.hasInput) parts.push(sh.tr("setup.yaml_plan", "Clash YAML may require python3-pyyaml via polkit."));
+                return parts.join("\n");
+            }
+            wrapMode: Text.Wrap
+            font.family: ThemeBackend.fontFamily
+            font.pixelSize: Scaler.s(11)
+            color: Qt.alpha(VpnAppearance.style.text || "#ffffff", 0.7)
+        }
+        VpnPill {
+            objectName: "vpnSetupAction"
+            Layout.fillWidth: true
+            implicitHeight: Scaler.s(40)
+            visible: !VpnService.sbInstalling && (sh.readyToConnect || ((VpnService.setupNeeded || sh.failedSetup)
+                     && (sh.hasInput || VpnService.hasSource)))
+            enabled: !VpnService.busy && (sh.readyToConnect || (!VpnService.connected && VpnService.setup.state !== "blocked"))
+            text: sh.readyToConnect ? sh.tr("setup.connect", "Connect")
+                : sh.failedSetup ? sh.tr("sb.retry", "Retry")
+                : VpnService.setup.state === "repair" ? sh.tr("setup.repair", "Check and repair VPN")
+                : sh.tr("setup.install", "Install and configure VPN")
+            onClicked: sh.applySetup()
+        }
+        VpnPill {
+            visible: sh.readyToConnect && VpnService.servers.length > 1
+            text: sh.tr("picker.title", "Choose a server")
+            filled: false
+            onClicked: sh.serversRequested()
+        }
+        VpnPill {
+            visible: !VpnService.sbInstalling && sh.failedSetup && !VpnService.setup.binaryReady
+                     && VpnService.mode === "proxy" && VpnService.setup.systemInstall === true
+            enabled: !VpnService.busy && (sh.hasInput || VpnService.hasSource)
+            text: sh.tr("setup.system_package", "Install sing-box RPM via polkit")
+            filled: false
+            onClicked: sh.add(true)
+        }
+        VpnSetupProgress {
+            Layout.fillWidth: true
+            visible: VpnService.sbSetup && sh.submittedSetup
+            showAnimation: sh.open
         }
         Text {
             Layout.fillWidth: true
@@ -330,6 +449,10 @@ VpnSheet {
     property alias nameInput: nameField.input
     Connections {
         target: linkField.input
-        function onAccepted() { sh.add(); }
+        function onAccepted() { if (sh.hasInput && !sh.readyToConnect && !VpnService.setupNeeded && !sh.failedSetup) sh.add(false); }
+        function onTextEdited() {
+            sh.localFile = "";
+            if (!VpnService.sbInstalling) sh.submittedSetup = false;
+        }
     }
 }

@@ -2,11 +2,6 @@ import QtQuick
 import QtQuick.Layouts
 import "../../"
 
-// sing-box: what is in use, download the official release from GitHub (live progress,
-// speed, attempt, Cancel, Retry; checksum from the release's published digest when there
-// is one), choose a sing-box already on this computer or a file by path, or install the
-// system package with dnf (TUN mode accepts only /usr/bin or /usr/local/bin).
-// "Installed" is shown only after the backend ran the new binary (`sing-box version`).
 VpnSheet {
     id: sh
     title: "sing-box"
@@ -15,26 +10,6 @@ VpnSheet {
     function tr(key, en) { return I18n.t("vpn." + key, en); }
     readonly property var info: VpnService.sbInfo
     readonly property bool installing: VpnService.sbInstalling
-
-    function mb(v) { return (v / 1048576).toFixed(1); }
-    readonly property string stageText: {
-        switch (VpnService.sbStage) {
-        case "release": return tr("sb.stage.release", "Looking up the latest release…");
-        case "download": return tr("sb.stage.download", "Downloading…");
-        case "verify": return tr("sb.stage.verify", "Checking the checksum…");
-        case "extract": return tr("sb.stage.extract", "Unpacking…");
-        case "test": return tr("sb.stage.test", "Testing the program…");
-        default: return "";
-        }
-    }
-    readonly property string progressText: {
-        let parts = [];
-        if (VpnService.sbTotal > 0) parts.push(mb(VpnService.sbDone) + " / " + mb(VpnService.sbTotal) + " " + tr("sb.mb", "MB"));
-        else if (VpnService.sbDone > 0) parts.push(mb(VpnService.sbDone) + " " + tr("sb.mb", "MB"));
-        if (VpnService.sbSpeed > 0) parts.push(mb(VpnService.sbSpeed) + " " + tr("sb.mbps", "MB/s"));
-        if (VpnService.sbAttempt > 1) parts.push(tr("sb.attempt", "attempt {n} of 4").replace("{n}", VpnService.sbAttempt));
-        return parts.join("  ·  ");
-    }
 
     onOpenChanged: if (open) VpnService.singboxInfo()
 
@@ -88,7 +63,7 @@ VpnSheet {
                     Text {
                         Layout.fillWidth: true
                         visible: sh.info.works === true && sh.info.tunUsable === false
-                        text: sh.tr("sb.tun_note", "TUN mode uses only a system sing-box (/usr/bin). For TUN, install the package with dnf below.")
+                        text: sh.tr("setup.tun_rpm", "TUN uses the system sing-box RPM.")
                         wrapMode: Text.Wrap
                         font.family: ThemeBackend.fontFamily
                         font.pixelSize: Scaler.s(10)
@@ -97,94 +72,7 @@ VpnSheet {
                 }
             }
 
-            // download
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: Scaler.s(6)
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Scaler.s(8)
-                    Text {
-                        Layout.fillWidth: true
-                        text: sh.installing ? sh.stageText
-                            : VpnService.sbResult
-                                ? sh.tr("sb.installed", "Installed sing-box {version}").replace("{version}", VpnService.sbResult.version || "")
-                                  + " · " + (VpnService.sbResult.verified ? sh.tr("sb.verified", "checksum verified")
-                                                                          : sh.tr("sb.unverified", "no official checksum; checked by running it"))
-                            : sh.tr("sb.download_desc", "Download the official release from GitHub (SagerNet/sing-box) for this computer.")
-                        wrapMode: Text.Wrap
-                        font.family: ThemeBackend.fontFamily
-                        font.pixelSize: Scaler.s(11)
-                        color: VpnService.sbResult && !sh.installing ? ThemeBackend.green : (VpnAppearance.style.text || "#eef1f6")
-                    }
-                    VpnPill {
-                        visible: !sh.installing
-                        icon: "󰇚"
-                        text: VpnService.sbError !== "" ? sh.tr("sb.retry", "Retry")
-                            : (sh.info.source === "managed" ? sh.tr("sb.update", "Update") : sh.tr("sb.download", "Download"))
-                        onClicked: VpnService.installSingbox()
-                    }
-                    VpnPill {
-                        visible: sh.installing
-                        text: sh.tr("sb.cancel", "Cancel")
-                        accent: ThemeBackend.red
-                        filled: false
-                        onClicked: VpnService.cancelInstall()
-                    }
-                }
-                Rectangle {                              // progress bar
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: Scaler.s(6)
-                    visible: sh.installing
-                    radius: height / 2
-                    color: Qt.alpha(VpnAppearance.style.text || "#ffffff", 0.08)
-                    Rectangle {
-                        height: parent.height
-                        radius: height / 2
-                        width: VpnService.sbTotal > 0 ? parent.width * Math.min(1, VpnService.sbDone / VpnService.sbTotal) : parent.width * 0.15
-                        color: VpnAppearance.style.active || "#7fd4ff"
-                        Behavior on width { NumberAnimation { duration: 240 } }
-                        // indeterminate: slides while the size is unknown
-                        x: VpnService.sbTotal > 0 ? 0 : slide.pos * (parent.width - width)
-                        QtObject { id: slide; property real pos: 0 }
-                        SequentialAnimation {
-                            running: sh.installing && VpnService.sbTotal <= 0 && sh.visible
-                            loops: Animation.Infinite
-                            NumberAnimation { target: slide; property: "pos"; from: 0; to: 1; duration: 900; easing.type: Easing.InOutSine }
-                            NumberAnimation { target: slide; property: "pos"; from: 1; to: 0; duration: 900; easing.type: Easing.InOutSine }
-                        }
-                    }
-                }
-                Text {
-                    Layout.fillWidth: true
-                    visible: sh.installing && sh.progressText !== ""
-                    text: sh.progressText
-                    font.family: ThemeBackend.fontFamily
-                    font.pixelSize: Scaler.s(10)
-                    color: Qt.alpha(VpnAppearance.style.text || "#ffffff", 0.6)
-                }
-                Text {
-                    Layout.fillWidth: true
-                    visible: sh.installing && VpnService.sbStage !== "release" && VpnService.sbStage !== ""
-                    text: VpnService.sbChecksum ? sh.tr("sb.will_verify", "The archive will be checked against the SHA-256 published with the release.")
-                                                : sh.tr("sb.no_digest", "The release has no published checksum: the program is checked by running it.")
-                    wrapMode: Text.Wrap
-                    font.family: ThemeBackend.fontFamily
-                    font.pixelSize: Scaler.s(10)
-                    color: Qt.alpha(VpnAppearance.style.text || "#ffffff", 0.45)
-                }
-                Text {
-                    Layout.fillWidth: true
-                    visible: VpnService.sbError !== "" && !sh.installing
-                    text: VpnService.sbError
-                    wrapMode: Text.Wrap
-                    font.family: ThemeBackend.fontFamily
-                    font.pixelSize: Scaler.s(11)
-                    color: ThemeBackend.red
-                }
-            }
-
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Qt.alpha(VpnAppearance.style.border || "#ffffff", 0.1) }
+            VpnSetupProgress { Layout.fillWidth: true; standalone: true; showAnimation: sh.open }
 
             // already on this computer
             Text {
@@ -283,31 +171,11 @@ VpnSheet {
 
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Qt.alpha(VpnAppearance.style.border || "#ffffff", 0.1) }
 
-            // system package
-            Text {
-                Layout.fillWidth: true
-                text: sh.tr("sb.dnf", "System package (needed for TUN mode), in a terminal:")
-                wrapMode: Text.Wrap
-                font.family: ThemeBackend.fontFamily
-                font.pixelSize: Scaler.s(11)
-                color: Qt.alpha(VpnAppearance.style.text || "#ffffff", 0.7)
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: Scaler.s(8)
-                Text {
-                    Layout.fillWidth: true
-                    text: VpnService.installHint
-                    wrapMode: Text.WrapAnywhere
-                    font.family: "monospace"
-                    font.pixelSize: Scaler.s(10)
-                    color: Qt.alpha(VpnAppearance.style.text || "#ffffff", 0.8)
-                }
-                VpnPill {
-                    text: sh.tr("copy", "Copy")
-                    filled: false
-                    onClicked: VpnService.copyText(VpnService.installHint)
-                }
+            VpnPill {
+                visible: VpnService.setup.systemInstall === true && VpnService.setup.binaryReady === false
+                enabled: !VpnService.sbInstalling && !VpnService.busy && !VpnService.connected
+                text: sh.tr("setup.system_package", "Install sing-box RPM via polkit")
+                onClicked: VpnService.prepareVpn("", "", "", true, false)
             }
         }
     }

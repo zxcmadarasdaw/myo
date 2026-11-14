@@ -21,6 +21,7 @@ import sys
 import tarfile
 import threading
 import unittest
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -332,6 +333,25 @@ class SingboxInstall(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.bindir, "sing-box")))
         self.assertEqual(os.listdir(self.bindir), [])
 
+    def test_missing_digest_never_fetches_executable(self):
+        self.gh.digest = ""
+        with self.assertRaises(sb.SingboxError) as ctx:
+            self.install()
+        self.assertEqual(ctx.exception.code, "sb_no_digest")
+        self.assertFalse(any(path.startswith("/dl/") for path, _ in self.gh.requests))
+
+    def test_profile_validation_precedes_binary_replacement(self):
+        old = Path(self.install()["path"])
+        old.write_bytes(b"previous binary")
+        with self.assertRaises(vpn.VpnError):
+            sb.install(self.events.append, arch="amd64", validate=lambda _: self.reject_profile())
+        self.assertEqual(old.read_bytes(), b"previous binary")
+        self.assertEqual(sorted(os.listdir(self.bindir)), ["sing-box"])
+
+    @staticmethod
+    def reject_profile():
+        raise vpn.VpnError("check_failed")
+
     def test_only_the_binary_is_taken_from_the_archive(self):
         self.gh.archive = make_tar([("../../evil", b"x"), ("/etc/passwd-test", b"x"),
                                     ("sing-box-1.12.9-linux-amd64/sing-box", FAKE_BIN.encode())])
@@ -397,6 +417,72 @@ class SingboxInstall(unittest.TestCase):
         self.assertTrue(lines[-1]["ok"], p.stdout + p.stderr)
         self.assertTrue(any(e.get("event") == "progress" for e in lines[:-1]))
         self.assertEqual(vpn.load_settings()["singboxPath"], os.path.join(self.bindir, "sing-box"))
+
+
+class OneClickSetup(unittest.TestCase):
+    def setUp(self):
+        self.env = base.Env(singbox=None)
+        self.addCleanup(self.env.close)
+        self.sb_path = Path(self.env.tmp) / "bin" / "sing-box"
+        env = patch.dict(os.environ, {"SERP_VPN_BIN_DIR": str(self.sb_path.parent), "PATH": self.env.tmp})
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("SERP_VPN_SINGBOX", None)
+        self.events = []
+
+    def install(self, emit, validate=None):
+        self.sb_path.parent.mkdir(exist_ok=True)
+        if validate:
+            validate(str(self.sb_path))
+        self.sb_path.write_text("test executable", encoding="utf-8")
+        self.sb_path.chmod(0o755)
+        return {"path": str(self.sb_path)}
+
+    def test_download_import_reuse_and_live_disappearance(self):
+        with patch.object(sb, "probe", return_value={"ok": True, "version": "1.14.4"}), \
+             patch.object(sb, "install", side_effect=self.install) as download, \
+             patch.object(vpn, "singbox_check", return_value=(True, "")), \
+             patch.object(vpn, "connect") as connect, patch.object(sb, "candidates", return_value=[]):
+            self.assertEqual(vpn.status()["setup"]["state"], "missing")
+            first = vpn.vpn_setup(base.LINK_LIST, "Local links", self.events.append)
+            self.assertEqual(first["servers"], len(base.LINKS))
+            self.assertEqual(vpn.status()["setup"]["state"], "ready")
+            second = vpn.vpn_setup(base.VLESS_REALITY, "Selected", self.events.append)
+            self.assertEqual(second["servers"], 1)
+            self.assertEqual(download.call_count, 1)
+            connect.assert_not_called()
+            self.sb_path.unlink()
+            self.assertEqual(vpn.status()["setup"]["state"], "missing")
+
+    def test_file_import_and_failed_config_preserves_previous_source(self):
+        local = Path(self.env.tmp) / "profile with spaces.txt"
+        local.write_text(base.LINK_LIST, encoding="utf-8")
+        with patch.object(sb, "probe", return_value={"ok": True, "version": "1.14.4"}), \
+             patch.object(sb, "install", side_effect=self.install), \
+             patch.object(vpn, "singbox_check", return_value=(True, "")) as check, \
+             patch.object(sb, "candidates", return_value=[]):
+            result = vpn.vpn_setup("", "File", self.events.append, file_path=local.as_uri())
+            self.assertEqual(result["items"][0]["kind"], "file")
+            before = (Path(self.env.state) / "config.json").read_bytes()
+            check.return_value = False, "secret-from-provider"
+            with self.assertRaises(vpn.VpnError) as ctx:
+                vpn.vpn_setup(base.VLESS_REALITY, "Broken", self.events.append)
+            self.assertNotIn("secret-from-provider", str(ctx.exception.as_dict()))
+            self.assertEqual(vpn.subs_list()["active"], result["active"])
+            self.assertEqual((Path(self.env.state) / "config.json").read_bytes(), before)
+
+    def test_fedora_dependencies_use_a_fixed_polkit_request(self):
+        with patch.object(vpn, "_tool", return_value="/usr/bin/pkexec"), \
+             patch.object(vpn, "_executable", return_value=True), \
+             patch.object(vpn, "_run", return_value=(0, '{"ok":true}', "")) as run:
+            vpn.install_fedora_packages(["python3-pyyaml"], self.events.append)
+            run.assert_called_once_with(["/usr/bin/pkexec", "--disable-internal-agent", vpn.PACKAGE_HELPER,
+                                         "install", "python3-pyyaml"], timeout=None)
+            self.assertEqual(self.events[-1]["stage"], "packages")
+            run.return_value = 126, "", "dismissed"
+            with self.assertRaises(vpn.VpnError) as ctx:
+                vpn.install_fedora_packages(["sing-box"], self.events.append)
+            self.assertEqual(ctx.exception.code, "setup_auth")
 
 
 class SingboxChoice(unittest.TestCase):

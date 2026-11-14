@@ -27,9 +27,10 @@ Item {
     property string busyAction: ""
     property bool pinging: false
     property bool panelOpen: false     // set by the network panel: pings run only while it is open
-    property bool pendingConnect: false
 
     readonly property bool connected: vpnState === "connected"
+    readonly property var setup: status.setup || ({})
+    readonly property bool setupNeeded: setup.state ? setup.state !== "ready" : vpnState === "missing"
     readonly property bool hasSource: status.hasSource === true
     readonly property var currentServer: status.currentServer || null
     readonly property string proxy: status.proxy || "127.0.0.1:2080"
@@ -66,7 +67,7 @@ Item {
         if (error !== "" && ["connect", "select", "disconnect", "mode"].indexOf(errorAction) >= 0) return "error";
         return "disconnected";
     }
-    readonly property bool canConnect: !busy && !forcing && hasSource && vpnState !== "missing" && servers.length > 0
+    readonly property bool canConnect: !busy && !sbInstalling && !forcing && hasSource && !setupNeeded && servers.length > 0
     readonly property string subscriptionName: status.subscription || ""
     readonly property var lastUpdate: status.lastUpdate || ({})
 
@@ -91,6 +92,11 @@ Item {
     property string sbVersion: ""
     property bool sbChecksum: false
     property string sbError: ""
+    property string sbErrorCode: ""
+    property string sbRetryDetail: ""
+    property int sbRetryWait: 0
+    property bool sbSetup: false
+    readonly property bool sbCanCancel: sbInstalling && ["release", "download"].indexOf(sbStage) >= 0
     property var sbResult: null               // last successful install
 
     function start() {
@@ -118,7 +124,7 @@ Item {
     // ---- actions (one at a time) --------------------------------------------------------
 
     function run(action, args, input) {
-        if (actionProc.running) return false;
+        if (actionProc.running || sbInstalling) return false;
         error = "";
         errorAction = "";
         awaiting = "";
@@ -161,11 +167,10 @@ Item {
         forceProc.running = true;
     }
 
-    // Choosing a server switches the connection; when disconnected it also connects.
+    // Choosing a server changes the selection. The power button starts the VPN.
     function select(tag) {
-        if (!tag || busy) return;
+        if (!tag || busy || sbInstalling) return;
         current = tag;                 // immediate feedback; status confirms
-        pendingConnect = !connected;
         ipState = "";                  // first: bindings see "ok" only together with an exitIp
         exitIp = null;                 // the old address no longer applies
         run("select", [tag], "");
@@ -200,24 +205,45 @@ Item {
         if (!sbInfoProc.running) sbInfoProc.running = true;
     }
     function installSingbox() {
-        if (sbProc.running) return;
+        return startInstall(false, [], "");
+    }
+    function prepareVpn(link, name, path, system, yaml) {
+        let args = [];
+        if ((name || "").trim() !== "") args.push("--name=" + name.trim());
+        if (path) args.push("--file=" + path);
+        if (system) args.push("--system");
+        if (yaml) args.push("--yaml");
+        return startInstall(true, args, link || "");
+    }
+    function startInstall(setup, args, input) {
+        if (sbProc.running || busy || forcing) return false;
+        stopPing();
+        error = "";
+        sbSetup = setup;
         sbCancelled = false;
         sbError = "";
+        sbErrorCode = "";
+        sbRetryDetail = "";
+        sbRetryWait = 0;
         sbResult = null;
-        sbStage = "release";
+        sbStage = setup ? "system" : "release";
         sbDone = 0; sbTotal = 0; sbSpeed = 0; sbAttempt = 1;
         sbInstalling = true;
+        sbProc.input = input;
+        sbProc.command = ["python3", script, setup ? "setup" : "singbox-install"].concat(args).concat(["--json"]);
+        sbProc.stdinEnabled = true;
         sbProc.running = true;
+        return true;
     }
     function cancelInstall() {
-        if (!sbProc.running) return;
+        if (!sbCanCancel || !sbProc.running) return;
         sbCancelled = true;
         sbProc.running = false;        // SIGTERM: the script removes its partial download
     }
     function useSingbox(path) { run("singbox-use", [path || ""], ""); }
 
     function ping() {
-        if (pingProc.running || !panelOpen || servers.length === 0) return;
+        if (pingProc.running || sbInstalling || !panelOpen || servers.length === 0) return;
         if (vpnState === "missing" || vpnState === "none") return;
         pinging = true;
         pingProc.running = true;
@@ -279,7 +305,6 @@ Item {
                 if (d.ok === false && d.error) {
                     root.error = d.error.message || d.error.code || "";
                     root.errorAction = actionProc.action;
-                    root.pendingConnect = false;
                 } else if (d.restartError) {
                     root.error = d.restartError;
                     root.errorAction = actionProc.action;
@@ -302,14 +327,8 @@ Item {
                 root.error = I18n.t("vpn.errors.backend", "The VPN helper failed (is python3 installed?).");
                 root.errorAction = action;
             }
-            let again = action === "select" && root.pendingConnect && root.error === "";
-            root.pendingConnect = false;
-            if (again) {
-                root.connect();
-                return;
-            }
             if (root.error === "") {
-                if (action === "connect" || action === "select" || (action === "mode" && root.connected)) root.awaiting = "on";
+                if (action === "connect" || (action === "select" && root.connected) || (action === "mode" && root.connected)) root.awaiting = "on";
                 else if (action === "disconnect") root.awaiting = "off";
                 if (awaitTimeout.running || root.awaiting !== "") awaitTimeout.restart();
                 if (action === "select" && root.connected) ipDelay.restart();
@@ -385,14 +404,20 @@ Item {
     // Live progress: one JSON object per line (stage / progress / retry), the result last.
     Process {
         id: sbProc
-        command: ["python3", root.script, "singbox-install", "--json"]
+        property string input: ""
         environment: root.procEnv
+        onStarted: {
+            if (input !== "") write(input + "\n");
+            input = "";
+            stdinEnabled = false;
+        }
         stdout: SplitParser {
             onRead: (line) => {
                 let e;
                 try { e = JSON.parse(line); } catch (err) { return; }
                 if (e.event === "stage") {
                     root.sbStage = e.stage || "";
+                    root.sbRetryWait = 0;
                     if (e.version) root.sbVersion = e.version;
                     if (e.total) root.sbTotal = e.total;
                     if (e.checksum !== undefined) root.sbChecksum = e.checksum === true;
@@ -401,27 +426,41 @@ Item {
                     if (e.total) root.sbTotal = e.total;
                     root.sbSpeed = e.speed || 0;
                     root.sbAttempt = e.attempt || root.sbAttempt;
+                    root.sbRetryWait = 0;
                 } else if (e.event === "retry") {
                     root.sbAttempt = e.attempt || root.sbAttempt;
                     root.sbSpeed = 0;
+                    root.sbRetryWait = e.wait || 0;
+                    root.sbRetryDetail = e.detail || e.code || "";
                 } else if (e.ok === true && e.path) {
                     root.sbResult = e;
                     root.sbStage = "done";
                 } else if (e.ok === false && e.error) {
                     root.sbError = e.error.message || e.error.code || "";
+                    root.sbErrorCode = e.error.code || "";
                 }
             }
         }
         onExited: (code) => {
-            root.sbInstalling = false;
+            input = "";
             if (root.sbCancelled) {
                 root.sbError = I18n.t("vpn.singbox.cancelled", "Download cancelled. Nothing was installed.");
                 root.sbStage = "";
             } else if (!root.sbResult && root.sbError === "") {
                 root.sbError = I18n.t("vpn.errors.backend", "The VPN helper failed (is python3 installed?).");
             }
+            root.actionSeq++;
+            if (root.sbResult && root.sbSetup) {
+                if (root.sbResult.items !== undefined) {
+                    root.subs = root.sbResult.items;
+                    root.activeSub = root.sbResult.active || "";
+                }
+                root.loadSubs();
+                listProc.running = true;
+            }
             root.refresh();
             root.singboxInfo();
+            root.sbInstalling = false;
         }
     }
 
@@ -439,7 +478,7 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: {
                 let d = root.parseLast(this.text);
-                if (!d || d.ok === false) return;
+                if (!d || d.ok === false || statusProc.seq !== root.actionSeq) return;
                 root.status = d;
                 root.vpnState = d.state || "";
                 if (!root.busy && statusProc.seq === root.actionSeq) {
