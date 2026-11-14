@@ -27,8 +27,9 @@ Item {
     property bool isRound: false
 
     // ---- look (set by the variant files) ----
-    property string look: "restrained"    // restrained | lush
+    property string look: "restrained"    // restrained | lush | atelier
     readonly property bool lush: look === "lush"
+    property string faceStyle: "matte"     // Atelier look only (AtelierStyles.js)
 
     // ---- settings (wProps), same names as FileDockFace ----
     property string itemsJson: ""
@@ -167,7 +168,15 @@ Item {
     Loader {
         anchors.fill: parent
         z: -1
-        sourceComponent: root.lush ? lushBg : minimalBg
+        sourceComponent: root.look === "atelier" ? atelierBg : root.lush ? lushBg : minimalBg
+    }
+    Component {
+        id: atelierBg
+        AtelierCard {
+            kit: AtelierKit { style: root.faceStyle }
+            showHeader: false
+            emphasised: root.hoverIndex >= 0
+        }
     }
     Component {
         id: minimalBg

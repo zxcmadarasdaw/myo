@@ -44,6 +44,20 @@ Other settings: shell, monospace font, size, colours (Theme, Classic, Matrix, Cy
 
 Terminals are not available on the lock screen; previews in the widget picker show a static sample and start nothing.
 
+### Fastfetch Media
+
+1. Add a **Terminal** widget and set **Mode → Fastfetch** in its widget settings.
+2. Open **Super + H → Display → Widgets → Terminal · Fastfetch Media**. Choose a local file, turn on **Use custom media instead of distro logo**, and open **Preview** to see the layout with live Fastfetch data.
+3. Choose one of the six themes, then adjust the layout, media dimensions, alignment, zoom, opacity, corner radius and playback. Wider layouts switch to vertical when the widget is narrow. Minimal displays OS, CPU, GPU and memory. The other layouts also include kernel, uptime, disks, shell, WM and terminal.
+
+The editor accepts PNG, JPEG, GIF, WebP and local video containers including MP4 and WebM. Actual codec and animated WebP support come from Qt. The optional animated-image frame limit caps how often the image is drawn on the GPU. GIF and WebP decoding still follows source timing and playback speed. GPU safe mode, performance mode and the recording-light profile suppress video and pause animated images.
+
+Video sound is opt-in. One visible terminal owns the media audio output at a time. Enable **Allow mixing with wallpaper audio** to hear both together. Hidden widgets release their audio output, and the pause setting also suspends playback while hidden. A failed or missing file restores standard Fastfetch. The standalone `fastfetch` command and its config still work from interactive terminals.
+
+Themess packages can include a `fastfetch.json`, for example `{"appearance":{"theme":"glass_noir","layout":"floating","width":48,"opacity":0.9}}`. The package carries appearance settings. The local media path, enable switch, playback and audio preferences stay in the user's settings.
+
+On Fedora, test a local MP4 and a GIF in the preview and on the desktop. Resize the widget, hide it, switch workspaces, lock and unlock, and restart Quickshell. Play a video with audio while wallpaper audio is active and check both positions of the mixing control. In Interactive mode, type a command, select output with the mouse, and paste text to confirm focus still works.
+
 ## Process Explorer
 
 Press **Super+Shift+P** (Hyprland, Sway, MangoWC) or run `serpantinum msg toggle processes`. Close with **Esc**, the same hotkey, the close button or a click outside.

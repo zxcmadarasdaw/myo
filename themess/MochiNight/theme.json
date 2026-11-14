@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "name": "Mochi Night",
+  "author": "Serpantinum",
+  "description": "Cozy matte night: graphite surfaces, soft pink and lavender, a thin top bar and a few quiet widgets along the edges, away from the face in the video. No glass, no blur.",
+  "components": {
+    "palette": "palette.json",
+    "materials": "materials.json",
+    "panels": "panels.json",
+    "animations": "animations.json",
+    "canvas": "canvas.json",
+    "dock": "dock.json",
+    "launcher": "launcher.json",
+    "notifications": "notifications.json",
+    "studio": "studio.json",
+    "widgets": "widgets.json",
+    "wallpaper": "@shared/error-girl/error-girl.mp4"
+  }
+}

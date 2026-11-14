@@ -44,6 +44,8 @@ WallpaperTabState {
 
             WallpaperDirRow { id: wallpaperDirRow; tab: wallpaperTabRoot }
 
+            WallpaperAudioSection { rootObj: wallpaperTabRoot.rootObj }
+
             Loader {
                 Layout.fillWidth: true
                 active: wallpaperTabRoot.deferredStage >= 1

@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Services.Pipewire
 
 import "AudioCache.js" as AudioCache
+import "AudioStream.js" as AudioStream
 
 Singleton {
     id: root
@@ -44,16 +45,7 @@ Singleton {
     }
 
     function isSerpantinumStream(node) {
-        if (!node || !node.properties) return false;
-        let p = node.properties;
-        let appId = p["application.id"] || "";
-        let appName = p["application.name"] || "";
-        if (appId === "serpantinum-sfx" || appId === "serpantinum" || appId === "org.serpantinum.sfx") return true;
-        if (appName === "serpantinum-sfx" || appName === "serpantinum") return true;
-        if (p["node.group"] === "serpantinum-audio" || p["node.link-group"] === "serpantinum-audio") return true;
-        let mediaFile = p["media.filename"] || p["media.name"] || "";
-        if (mediaFile.indexOf("assets/sounds/") !== -1) return true;
-        return false;
+        return !!node?.properties && AudioStream.isSerpantinumStream(node.properties);
     }
 
     readonly property var outputs: {

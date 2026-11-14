@@ -1,5 +1,6 @@
 TerminalFace 1.0 TerminalFace.qml
 TerminalCore 1.0 TerminalCore.qml
+FastfetchMediaPane 1.0 FastfetchMediaPane.qml
 TerminalTransparent 1.0 TerminalTransparent.qml
 TerminalGlass 1.0 TerminalGlass.qml
 TerminalCyber 1.0 TerminalCyber.qml

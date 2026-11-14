@@ -1,0 +1,85 @@
+[
+  {
+    "id": "mochi_clock",
+    "type": "time",
+    "variant": "atelier",
+    "faceStyle": "elegant",
+    "anchor": "top left",
+    "x": 64,
+    "y": 96,
+    "w": 420,
+    "h": 190
+  },
+  {
+    "id": "mochi_weather",
+    "type": "weather",
+    "variant": "atelier",
+    "faceStyle": "minimal",
+    "anchor": "top left",
+    "x": 64,
+    "y": 306,
+    "w": 320,
+    "h": 112
+  },
+  {
+    "id": "mochi_music",
+    "type": "music",
+    "variant": "atelier",
+    "faceStyle": "matte",
+    "anchor": "bottom left",
+    "x": 64,
+    "y": 72,
+    "w": 470,
+    "h": 150,
+    "musicDrawer": true,
+    "musicAnimations": false,
+    "musicVisualizer": false,
+    "musicMaterial": "minimal"
+  },
+  {
+    "id": "mochi_spectrum",
+    "type": "visualizer",
+    "variant": "atelier",
+    "faceStyle": "minimal",
+    "onlyWhilePlaying": true,
+    "anchor": "bottom left",
+    "x": 64,
+    "y": 236,
+    "w": 470,
+    "h": 64
+  },
+  {
+    "id": "mochi_cpu",
+    "type": "cpu",
+    "variant": "atelier",
+    "faceStyle": "compact",
+    "anchor": "top right",
+    "x": 64,
+    "y": 96,
+    "w": 300,
+    "h": 54
+  },
+  {
+    "id": "mochi_ram",
+    "type": "ram",
+    "variant": "atelier",
+    "faceStyle": "compact",
+    "anchor": "top right",
+    "x": 64,
+    "y": 162,
+    "w": 300,
+    "h": 54
+  },
+  {
+    "id": "mochi_net",
+    "type": "network",
+    "variant": "atelier",
+    "faceStyle": "compact",
+    "showTotals": false,
+    "anchor": "top right",
+    "x": 64,
+    "y": 228,
+    "w": 300,
+    "h": 64
+  }
+]

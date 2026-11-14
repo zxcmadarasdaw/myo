@@ -22,6 +22,21 @@ Desktop music widgets now expose the existing music popup through an **Audio Stu
 - When the engine stops, apps go back to the default device.
 - Settings survive a reboot. The engine keeps them in `~/.local/state/serpantinum/audio.state`, and the music popup reads them back from there.
 
+## Video wallpaper audio
+
+Open **Super + H → Theme → Wallpapers → Audio** to enable the soundtrack, set its volume and choose the monitor whose wallpaper can play sound. Wallpaper audio and Smart Audio start disabled. The primary mode uses Qt's primary output. A disconnected selected monitor stays silent until it returns.
+
+Smart Audio can mute the wallpaper or lower it to the configured percentage. The reduced setting caps the normal volume. Use the separate switches for playback and for calls or microphone capture. The wallpaper video continues playing and its volume returns about half a second after the other activity ends. The lock screen has a separate mute switch.
+
+Smart Audio reads events from `pw-dump --monitor` (Fedora package `pipewire-utils`). It checks for running, routed streams and ignores corked playback, muted media, sink monitor captures and Serpantinum's own streams. Call detection uses active microphone capture or a playback stream with a voice role. A program that keeps an unmuted stream running while sending silent samples can still count as active. Wallpaper Studio's edited copies are exported without audio. Use the original video to hear its soundtrack.
+
+### Fedora check
+
+1. Set an MP4 with AAC audio or a WebM with Opus audio as wallpaper. Enable sound, move the volume slider, toggle **Mute**, then select a video without audio. Verify the track indicator and that video keeps playing.
+2. Switch between two video wallpapers on two monitors. Change the audio source, unplug the selected monitor and reconnect it. Confirm only the chosen monitor's current wallpaper plays sound. Switch workspaces and lock and unlock the session.
+3. Test both Smart Audio modes with Spotify, a browser video, a game and a Discord call. Pause or stop the app and check that wallpaper volume returns. Test each activity switch independently, microphone-only capture, and a screen share using just desktop audio.
+4. Restart Serpantinum and verify the settings and single audio source. After exiting Serpantinum, verify that the wallpaper stream and its `pw-dump` subscription have closed.
+
 ## Voice chat apps
 
 Voice chat apps skip the engine and play directly on your device, so their sound is not processed. Without this, the people in your call would hear their own voices when you share your screen with audio: the share leaves out the voice chat app, but the engine's processed mix contains its sound too, so it would be captured and sent back to them.

@@ -19,6 +19,10 @@ stdout, one JSON object per line:
   {"t": "error", "msg": "..."}
 
 --cmd runs COMMAND with `sh -c`; without it an interactive shell starts.
+--then-shell (with --cmd) runs COMMAND once and then replaces itself with the
+interactive shell on the same PTY, so the user types right below the output
+(the "Fastfetch + shell" mode). If --require PROG is missing in this mode the
+shell still opens, after a one-line install hint.
 --repeat N re-runs --cmd every N seconds, clearing the screen before each
 run (the "command monitor" mode). Closing stdin hangs up the PTY and exits;
 the shell side never runs anything the user did not configure.
@@ -51,12 +55,15 @@ def emit(obj):
 
 def parse_args(argv):
     opts = {"shell": "auto", "cmd": None, "require": None, "repeat": 0.0,
-            "cols": 80, "rows": 24, "cwd": None}
+            "cols": 80, "rows": 24, "cwd": None, "then_shell": False}
     i = 0
     while i < len(argv):
         key = argv[i]
         val = argv[i + 1] if i + 1 < len(argv) else None
-        if key in ("--shell", "--cmd", "--require", "--cwd") and val is not None:
+        if key == "--then-shell":
+            opts["then_shell"] = True
+            i += 1
+        elif key in ("--shell", "--cmd", "--require", "--cwd") and val is not None:
             opts[key[2:]] = val
             i += 2
         elif key in ("--cols", "--rows") and val is not None:
@@ -277,10 +284,17 @@ def main(argv):
         emit({"t": "error", "msg": "pseudo-terminals are not available on this system"})
         return 2
     opts = parse_args(argv)
+    then_shell = opts["then_shell"] and bool(opts["cmd"]) and opts["repeat"] <= 0
     if opts["require"] and shutil.which(opts["require"]) is None:
-        emit({"t": "missing", "prog": opts["require"]})
-        return 127
-    if opts["cmd"]:
+        if not then_shell:
+            emit({"t": "missing", "prog": opts["require"]})
+            return 127
+        prog = "".join(c for c in opts["require"] if c.isalnum() or c in "-_.")
+        opts["cmd"] = "printf '%s\\n' '" + prog + " is not installed: sudo dnf install " + prog + "'"
+    if then_shell:
+        # "$0" is the shell path, passed as an argument rather than spliced into the text.
+        target = ["/bin/sh", "-c", opts["cmd"] + '\nexec "$0"', pick_shell(opts["shell"])]
+    elif opts["cmd"]:
         target = ["/bin/sh", "-c", opts["cmd"]]
     else:
         target = [pick_shell(opts["shell"])]

@@ -19,6 +19,10 @@ hl.bind(mainMod .. " + Left", hl.dsp.focus({ direction = "left" }))
 hl.bind(mainMod .. " + Right", hl.dsp.focus({ direction = "right" }))
 hl.bind(mainMod .. " + Up", hl.dsp.focus({ direction = "up" }))
 hl.bind(mainMod .. " + Down", hl.dsp.focus({ direction = "down" }))
+-- Previous / next workspace. Super+Left/Right already move focus between windows, so
+-- these use Alt; "r-1"/"r+1" stay on the current monitor.
+hl.bind(mainMod .. " + ALT + Left", hl.dsp.focus({ workspace = "r-1" }))
+hl.bind(mainMod .. " + ALT + Right", hl.dsp.focus({ workspace = "r+1" }))
 
 hl.bind(mainMod .. " + Q", hl.dsp.window.close())
 hl.bind(mainMod .. " + ALT + F", hl.dsp.window.fullscreen({ mode = "maximized", action = "toggle" }))

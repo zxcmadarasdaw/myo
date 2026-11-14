@@ -14,21 +14,53 @@ A subscription client in the network panel (**Super+N**), in the spirit of Hiddi
 
 ## Install sing-box
 
-sing-box is not installed by the Serpantinum installer. On Fedora:
+sing-box is not installed by the Serpantinum installer. There are three ways to get it; the **sing-box** sheet of the VPN tab (it opens by itself when sing-box is missing, or from **Connection → sing-box**) offers all of them:
+
+- **Download** (no root): the official release for this machine's architecture from `github.com/SagerNet/sing-box` goes into `~/.local/share/serpantinum/vpn/bin/sing-box`. The sheet shows the stage, the size, the speed and the attempt (up to 4, with a pause between them). **Cancel** stops the download and installs nothing. The archive is compared with the SHA-256 that GitHub publishes for the release; when no checksum is available the sheet says so. The file is used only after `sing-box version` runs successfully. Without internet you get a clear *no connection* error, never a half-installed file. Proxy mode only: TUN mode runs as root and uses only the system package.
+- **Use an installed one**: copies found on this computer are listed; you can also type a path. A file is accepted only if `sing-box version` runs. **Automatic** goes back to the default search.
+- **System package** (needed for TUN mode), in a terminal:
 
 ```bash
 sudo dnf config-manager addrepo --from-repofile=https://sing-box.app/sing-box.repo
 sudo dnf install sing-box
 ```
 
-Without it the panel shows *sing-box is not installed* together with this command (with a **Copy** button) and does nothing else. Clash YAML subscriptions also need PyYAML (`sudo dnf install python3-pyyaml`); the panel says so when it is missing.
+Clash YAML subscriptions also need PyYAML (`sudo dnf install python3-pyyaml`); the panel says so when it is missing.
 
 ## Use
 
-1. Open the network panel (**Super+N**). The VPN block is at the top, above the Internet card.
-2. Paste the link into the field (**Ctrl+V** or the paste button), then **Save** (or Enter). The subscription is downloaded, parsed and checked with `sing-box check`.
-3. **Connect**. The block shows *Connected*, the current server with its country and ping, and the proxy address.
-4. Click the server chip to see countries with their best ping. Click a country to see its servers with ping, then click a server to switch to it (when disconnected, this also connects).
+The network panel (**Super+N**) has two tabs, **Internet** and **VPN**. Switch with a click, **Ctrl+Tab** or **Ctrl+PgUp/PgDown**. **Esc** closes an open sheet first, then the panel.
+
+The VPN tab is a large ON/OFF button with lines to four cards:
+
+- **IP address**: the exit address, read *through the VPN* after it connects (`serpantinum vpn ipcheck`). Before that it shows *Checked after connecting*. Nothing is guessed.
+- **Location**: the country of the exit IP with its flag. Before the check it shows the country from the server name and marks it *not verified*, or *Unknown* when the name has none. When the exit IP is in a different country than the name says, the card says so.
+- **Select server**: opens the server picker.
+- **Protocol**: VLESS, Trojan… and the mode (proxy address or TUN).
+
+The button shows the real state: *Disconnected*, *Connecting…*, *Connected* (only after `status` confirmed that sing-box answers), *Disconnecting…* and *Error*. After an error the reason is shown under the button, and the button can be pressed again. If a status never arrives, the button stops spinning after 8 seconds.
+
+1. **+ Add VPN subscription** (or the button itself while there is nothing to connect to). Paste the link and optionally give it a name. The subscription is downloaded, parsed and checked with `sing-box check`; if this fails, nothing is saved.
+2. Press the button to connect.
+3. **Select server**: the countries of *this subscription's* servers only, each with its best measured delay, then its servers. A delay is shown only when it was measured (*no answer* otherwise). Servers without a recognisable country are under *Unknown*.
+
+### Subscriptions
+
+Several subscriptions can be saved; one is active. The bar at the bottom shows the active one with its server count and the time of the last update. Its sheet lets you switch, rename, update and remove them. The link itself is never shown again after it is saved; only its host is.
+
+### Appearance
+
+**Super+H → Theme → VPN** (or the palette button in the VPN tab) edits the look of the tab, with a live preview that also shows in the open panel:
+
+- six themes (Obsidian Glass, Liquid Noir, Midnight Blue, Graphite, Soft Neon, Pure Minimal) and your own saved ones;
+- material (Matte Dark, Premium Glass, Liquid Glass, Obsidian, Minimal, Neon) with opacity, blur, border and corner radius;
+- eight colours, each with a colour picker and a HEX field;
+- lines: Straight, Curved, Circuit, Flow or Minimal, their width, glow and animation speed, or no animation at all;
+- layout: Auto (Compact on small windows), Centered, Vertical, Horizontal, Compact, Expanded; button shape and font weight.
+
+**Apply** stores the look, **Cancel** drops the preview, **Reset** goes back to the theme's own values, **Save as custom theme** keeps it under a name. The look is stored in the shell settings under `vpnAppearance`. It never contains a link, server or token.
+
+Themess packages can carry a `vpn.json` with the same fields. Only the theme id and the style values above are accepted, so a package cannot carry or overwrite subscriptions, and your own saved themes are kept.
 
 Accepted input:
 - an `https://` subscription link (base64 list, Clash YAML or sing-box JSON);
@@ -52,7 +84,7 @@ To send all of the system's traffic through the VPN instead, use TUN mode.
 
 ## TUN mode (whole system)
 
-Open the server list (click the server chip) and choose **TUN · whole system**. When connected, the block shows *Connected · TUN* and *All traffic of this computer goes through the VPN*. The HTTP/SOCKS5 proxy on `127.0.0.1:2080` also keeps working. Choose **Proxy** to go back. Switching while connected reconnects in the new mode.
+Open the **Connection** sheet (the gear button in the VPN tab) and choose **TUN · whole system**. When connected, the tab shows *Connected · TUN* and *All traffic of this computer goes through the VPN*. The HTTP/SOCKS5 proxy on `127.0.0.1:2080` also keeps working. Choose **Proxy** to go back. Switching while connected reconnects in the new mode.
 
 TUN needs root to create the network interface and the routes. It does not use `sudo` and does not ask for a password. Instead, the installer sets up:
 
@@ -136,6 +168,13 @@ serpantinum vpn mode proxy|tun    # choose the mode (reconnects when connected)
 serpantinum vpn tun on | tun off  # TUN shortcuts: switch to TUN and connect / disconnect
 serpantinum vpn check             # TUN service state, DNS notes, other-VPN conflicts (tun status)
 serpantinum vpn force-off         # emergency off (tun off --force)
+serpantinum vpn ipcheck           # exit IP and country, fetched through the running VPN
+serpantinum vpn subs              # saved subscriptions (names and hosts, never links)
+serpantinum vpn sub-add [--name=N]   # reads the link from stdin
+serpantinum vpn sub-use ID | sub-rename ID NAME | sub-remove ID
+serpantinum vpn singbox-info      # which sing-box is used, other ones found
+serpantinum vpn singbox-install   # download the official release (no root)
+serpantinum vpn singbox-use PATH  # use this sing-box ("" = automatic)
 ```
 
 Add `--json` for machine-readable output. `vpn test` exits with:
@@ -149,7 +188,10 @@ With `serpantinum vpn test "<link>"` the link is on your shell's command line. T
 
 | Path | Contents |
 |---|---|
-| `~/.config/serpantinum/vpn/source` | the link (or pasted server links) |
+| `~/.config/serpantinum/vpn/source` | the active link (or pasted server links) |
+| `~/.config/serpantinum/vpn/subs/ID` | each saved subscription's link |
+| `~/.config/serpantinum/vpn/subscriptions.json` | subscription names, active id, update results |
+| `~/.local/share/serpantinum/vpn/bin/sing-box` | the downloaded sing-box, if you used **Download** |
 | `~/.config/serpantinum/vpn/settings.json` | ports, update interval, selected server, Clash API secret |
 | `~/.local/state/serpantinum/vpn/` | parsed servers, generated sing-box config, last update result, ping results, `sing-box.log`, pid |
 
@@ -175,7 +217,20 @@ Settings file keys:
 
 ## Manual test checklist (Fedora + Hyprland)
 
-- [ ] Without sing-box: the block says *sing-box is not installed*, Copy puts the dnf command into the clipboard, nothing crashes.
+VPN Control Studio:
+- [ ] Super+N → VPN tab and back (click, Ctrl+Tab, Ctrl+PgUp/PgDown): smooth switch; the Internet tab, Wi-Fi, Ethernet and Bluetooth work as before.
+- [ ] Every sheet opened and closed, then the whole tab: clicks anywhere on the panel (and on the desktop and windows after closing it) still work; no invisible area catches the mouse.
+- [ ] Resize the panel/monitor scale: lines follow the cards and never cross text; small sizes switch to Compact.
+- [ ] sing-box **Download** with internet: progress and speed move, the result works; **Cancel** mid-way leaves nothing in `~/.local/share/serpantinum/vpn/bin`; offline gives a clear error.
+- [ ] Connect: the button goes Connecting → Connected; IP and Location appear only after the check; `curl -x socks5h://127.0.0.1:2080 https://ifconfig.me` shows the same IP.
+- [ ] A broken server: the button ends in Error with the reason, the internet still works without the VPN.
+- [ ] Two subscriptions: switch, rename, remove; the bottom bar and the server list follow.
+- [ ] Super+H → Theme → VPN: each theme, material, line style, layout, colour picker and HEX; Apply, Cancel, Reset, Save as custom theme survive a shell restart.
+- [ ] GPU load with the tab open and idle (`nvtop`/`intel_gpu_top`): no constant load; with the panel closed, nothing animates.
+- [ ] OBS recording and switching workspaces with the panel open: no stuck input.
+
+Proxy and subscriptions:
+- [ ] Without sing-box: the sing-box sheet opens, Copy puts the dnf command into the clipboard, nothing crashes.
 - [ ] Paste with Ctrl+V and with the button, then Save: the server count appears, and `ls -l ~/.config/serpantinum/vpn` shows `-rw-------`.
 - [ ] `ps aux | grep serp_vpn` while saving: the link is not visible.
 - [ ] Connect: `curl -x socks5h://127.0.0.1:2080 https://ifconfig.me` shows the server's address. Disconnect stops sing-box (`pgrep sing-box` is empty).

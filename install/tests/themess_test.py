@@ -158,6 +158,24 @@ class ThemessTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Scan again"):
             self.apply(initial)
 
+    def test_vpn_appearance_is_data_only_and_keeps_user_presets(self):
+        presets = [{"id": "p1", "name": "Mine", "style": {"active": "#00ff88"}}]
+        self.set_store(self.stores.settings, {"vpnAppearance": {"theme": "graphite", "presets": presets}})
+        self.package_file("vpn.json", {"lineStyle": "flow", "active": "#9fdcff", "glow": 0.6})
+        report = self.report()
+        self.assertFalse(report["errors"], report["errors"])
+        self.apply(report["token"])
+        stored = json.loads(self.stores.settings.read_text(encoding="utf-8"))["vpnAppearance"]
+        self.assertEqual(stored["theme"], "custom")
+        self.assertEqual(stored["custom"], {"lineStyle": "flow", "active": "#9fdcff", "glow": 0.6})
+        self.assertEqual(stored["presets"], presets)          # the user's own themes are untouched
+        for value in ({"theme": "graphite", "subscription": "https://example.com/sub"},
+                      {"theme": "user:p1"}, {"presets": []}, {"link": "vless://x"},
+                      {"custom": {"active": "red"}}, {"custom": {"lineWidth": 60}}):
+            with self.subTest(value=value):
+                self.package_file("vpn.json", value)
+                self.assertTrue(self.report()["errors"])
+
     def test_noop_keeps_restore_point(self):
         self.package_file("dock.json", {"enabled": False})
         self.apply(self.report()["token"])
@@ -275,6 +293,19 @@ class ThemessTest(unittest.TestCase):
         self.assertEqual(self.stores.settings.read_bytes(), before)
         self.assertFalse(self.stores.widget_path("DP-1").exists())
 
+    def test_fastfetch_appearance_preserves_local_media_and_audio(self):
+        local = {"path": "/home/user/video.mp4", "enabled": True, "playAudio": False}
+        self.set_store(self.stores.settings, {"fastfetchMedia": local})
+        appearance = {"theme": "glass_noir", "layout": "floating", "width": 48}
+        self.package_file("fastfetch.json", {"appearance": appearance})
+        report = self.report()
+        self.assertEqual(report["errors"], [])
+        self.apply(report["token"])
+        self.assertEqual(json.loads(self.stores.settings.read_bytes())["fastfetchMedia"],
+                         {**local, "appearance": appearance})
+        self.package_file("fastfetch.json", {"appearance": appearance, "path": "/tmp/foreign.mp4"})
+        self.assertTrue(self.report()["errors"])
+
     @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg required")
     def test_mr_robot_applies_all_real_components_and_restores_exact_files(self):
         settings = {"general": {"performance": False}, "launcher": {"terminalCommand": "kitty -e"},
@@ -290,7 +321,8 @@ class ThemessTest(unittest.TestCase):
         second, _, _ = self.stores.wallpaper_paths("HDMI-A-1")
         report = self.report(MRROBOT, preview=True)
         self.assertEqual(report["errors"], [])
-        self.assertEqual({item["kind"] for item in report["components"]}, themess.KINDS)
+        manifest = json.loads((MRROBOT / "theme.json").read_text(encoding="utf-8"))
+        self.assertEqual({item["kind"] for item in report["components"]}, set(manifest["components"]))
         self.assertTrue(report["image"].startswith("data:image/png;base64,"))
         thumbnail = themess.package_view(themess.scan(MRROBOT, CAPS, thumbnail=True), show_image=True)
         self.assertEqual(thumbnail["packageToken"], report["packageToken"])

@@ -2,3 +2,5 @@ UsageFaceBase 1.0 UsageFaceBase.qml
 UsageFaceCircleBase 1.0 UsageFaceCircleBase.qml
 UsageFaceRestrained 1.0 UsageFaceRestrained.qml
 UsageFaceLush 1.0 UsageFaceLush.qml
+AtelierUsageBody 1.0 AtelierUsageBody.qml
+UsageFaceAtelier 1.0 UsageFaceAtelier.qml

@@ -47,7 +47,12 @@ ShellRoot {
 
     Main { onSettingsOpening: widgetRedactor.close() }
     Bar {}
-    Lock {}
+    Lock { id: lockscreen }
+    Binding {
+        target: Wallpaper
+        property: "sessionLocked"
+        value: lockscreen.sessionLocked
+    }
     WidgetRedactor { id: widgetRedactor }
     LockRedactor {}
 

@@ -47,7 +47,8 @@ Item {
     }
 
     function capabilities(screen) {
-        const modules = ["palette", "materials", "panels", "dock", "launcher", "notifications"];
+        const modules = ["palette", "materials", "panels", "dock", "launcher", "notifications", "vpn",
+                         "fastfetch", "fastfetchMedia", "studio"];
         const outputs = Array.from(Quickshell.screens, item => item.name);
         const wallpaperOutputs = outputs.filter(name => !!Wallpaper.engines[name]);
         const widgetScreen = outputs.includes(screen) ? screen : (outputs[0] || "");
@@ -95,8 +96,25 @@ Item {
     }
 
     function requestApply(item, screen) {
+        pendingApply = null;
         selectFolder(item.folder);
         run("scan", screen, item.folder, "", item.packageToken);
+    }
+
+    // Set when Apply would replace widgets that are on the screen now. Nothing is written
+    // until confirmApply(); the replaced layout is kept for Restore Previous either way.
+    property var pendingApply: null
+
+    function confirmApply() {
+        const pending = pendingApply;
+        if (!pending || busy) return;
+        pendingApply = null;
+        run("apply", pending.screen, pending.folder, pending.token);
+    }
+
+    function cancelApply() {
+        pendingApply = null;
+        message = I18n.t("guide.themess.apply_cancelled", "Apply cancelled. Nothing was changed.");
     }
 
     function receive() {
@@ -131,6 +149,12 @@ Item {
             if (task.expectedPackage !== response.packageToken) {
                 errors = [I18n.t("guide.themess.changed", "Package or compatibility changed. Refresh the library and review it again.")];
                 result = {};
+                return;
+            }
+            if (response.widgetCount !== null && response.widgetCount !== undefined && response.widgetsBefore > 0) {
+                pendingApply = {folder: response.folder, token: response.token, screen: screen, name: response.name,
+                                widgetsBefore: response.widgetsBefore, widgetCount: response.widgetCount,
+                                widgetScreen: response.widgetScreen};
                 return;
             }
             run("apply", screen, response.folder, response.token);

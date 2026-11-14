@@ -35,7 +35,29 @@ VIDEO_MAX_SIDE = 4096
 VIDEO_MAX_SECONDS = 600
 WALLPAPER_SUFFIXES = (*FORMATS, *VIDEO_FORMATS)
 FALLBACK = {kind: f"{kind}.json" for kind in (*SETTINGS, "widgets")}
-KINDS = set(FALLBACK) | {"wallpaper"}
+MEDIA_KINDS = ("wallpaper", "fastfetchMedia")
+KINDS = set(FALLBACK) | set(MEDIA_KINDS)
+# Packages that sit directly in a library root may name media as "@shared/<path>": the file
+# is read from the root's ".shared" folder with the same checks as package files, so several
+# bundled themes can use one copy of a video instead of each carrying its own.
+SHARED_PREFIX = "@shared/"
+
+
+def library_roots(home=None):
+    home = (home or Path.home()).resolve()
+    return {Path(__file__).resolve().parents[3] / "themess", home / ".local/share/serpantinum/themess"}
+
+
+def component_source(root, name):
+    if not isinstance(name, str) or not name.startswith(SHARED_PREFIX):
+        return root, name
+    parent = root.parent
+    if parent not in {path.resolve() for path in library_roots() if path.is_dir()}:
+        raise ValueError(f"{name}: shared media is only available to packages in a Themess library folder")
+    shared = parent / ".shared"
+    if shared.is_symlink() or not shared.is_dir():
+        raise ValueError(f"{name}: the library has no shared media folder")
+    return shared, name[len(SHARED_PREFIX):]
 
 
 def encode(value):
@@ -210,6 +232,7 @@ class Plan:
     settings: dict = field(default_factory=dict)
     widgets: list | None = None
     image: tuple | None = None
+    media: tuple | None = None
     fingerprints: dict = field(default_factory=dict)
 
 
@@ -269,16 +292,23 @@ def scan(folder, caps, thumbnail=False):
             plan.warnings.append(f"{kind}: module unavailable in this session")
             continue
         try:
-            parts = relative_parts(name)
+            source, relative = component_source(root, name)
+            parts = relative_parts(relative)
             suffix = PurePosixPath(parts[-1]).suffix.lower()
-            if kind == "wallpaper":
+            if kind in MEDIA_KINDS:
                 if suffix not in WALLPAPER_SUFFIXES:
-                    raise ValueError("expected a GIF, PNG, JPEG, WebP, MP4 or WebM wallpaper")
-                data = read_package_file(root, name, MEDIA_LIMIT)
-                size = (480, 270) if thumbnail else (1920, 1080)
+                    raise ValueError("expected a GIF, PNG, JPEG, WebP, MP4 or WebM file")
+                data = read_package_file(source, relative, MEDIA_LIMIT)
+                size = (480, 270) if thumbnail or kind != "wallpaper" else (1920, 1080)
                 snapshot_of = video_snapshot if suffix in VIDEO_FORMATS else image_snapshot
-                plan.image = (name, suffix, data, snapshot_of(data, suffix, size))
+                frame = snapshot_of(data, suffix, size)
+                if kind == "wallpaper":
+                    plan.image = (PurePosixPath(parts[-1]).name, suffix, data, frame)
+                else:
+                    plan.media = (PurePosixPath(parts[-1]).name, suffix, data)
             else:
+                if name.startswith(SHARED_PREFIX):
+                    raise ValueError("only media files can be shared")
                 if suffix != ".json":
                     raise ValueError("expected a JSON file")
                 data = read_package_file(root, name, JSON_LIMIT)
@@ -361,16 +391,21 @@ def write_atomic(path, data):
 
 def native_changes(plan, stores):
     targets = {}
-    detail = {"settings": [], "widgetCount": None, "widgetScreen": "", "wallpaperScreens": []}
-    if plan.settings:
+    detail = {"settings": [], "widgetCount": None, "widgetScreen": "", "wallpaperScreens": [], "widgetsBefore": 0}
+    settings = plan.settings
+    if plan.media:
+        # The clip is copied next to the wallpaper assets; settings only ever point there.
+        settings = copy.deepcopy(plan.settings)
+        merge(settings, {"fastfetchMedia": {"enabled": True, "path": str(media_asset(plan, stores))}})
+    if settings:
         path = stores.safe(stores.settings)
         original = snapshot(path)
         current = read_json(original) if original else {}
         if not isinstance(current, dict):
             raise ValueError("Current settings.json must contain an object.")
         updated = copy.deepcopy(current)
-        merge(updated, plan.settings)
-        detail["settings"] = differences(current, plan.settings)
+        merge(updated, settings)
+        detail["settings"] = differences(current, settings)
         if updated != current:
             targets[path] = (original, encode(updated))
     if plan.widgets is not None:
@@ -378,8 +413,15 @@ def native_changes(plan, stores):
         if not screen:
             raise ValueError("No widget output is available.")
         path = stores.widget_path(screen)
-        targets[path] = (snapshot(path), encode(plan.widgets))
-        detail.update(widgetCount=len(plan.widgets), widgetScreen=screen)
+        before = snapshot(path)
+        try:
+            existing = read_json(before) if before else []
+        except (ValueError, UnicodeDecodeError):
+            existing = []
+        targets[path] = (before, encode(plan.widgets))
+        # Shown before Apply: these widgets are replaced (and kept in the Restore Previous backup).
+        detail.update(widgetCount=len(plan.widgets), widgetScreen=screen,
+                      widgetsBefore=len(existing) if isinstance(existing, list) else 0)
     if plan.image:
         name, suffix, data, frame = plan.image
         asset = stores.safe(stores.directory / "assets" / (digest(data) + suffix))
@@ -395,6 +437,11 @@ def native_changes(plan, stores):
             targets[current] = (snapshot(current), str(asset).encode("utf-8"))
         detail["wallpaperScreens"] = screens
     return {path: pair for path, pair in targets.items() if pair[0] != pair[1]}, detail
+
+
+def media_asset(plan, stores):
+    _, suffix, data = plan.media
+    return stores.safe(stores.directory / "assets" / (digest(data) + suffix))
 
 
 def package_view(plan, show_image=False):
@@ -600,6 +647,10 @@ def mutate(args, stores):
             asset = stores.safe(stores.directory / "assets" / (digest(data) + suffix))
             if snapshot(asset) != data:
                 write_atomic(asset, data)
+        if plan.media:
+            asset = media_asset(plan, stores)
+            if snapshot(asset) != plan.media[2]:
+                write_atomic(asset, plan.media[2])
         folder = str(plan.root)
         history = [folder] + [item for item in state["history"] if item != folder]
         backup = journal_entry(changes)

@@ -1,0 +1,27 @@
+{
+  "mode": "dark",
+  "colors": {
+    "crust": "#0B0A0F",
+    "mantle": "#0F0D14",
+    "base": "#141219",
+    "surface0": "#1D1A24",
+    "surface1": "#27232F",
+    "surface2": "#332E3D",
+    "overlay0": "#4A4457",
+    "overlay1": "#5E576C",
+    "overlay2": "#746C83",
+    "subtext0": "#A49DB2",
+    "subtext1": "#C3BCCF",
+    "text": "#ECE6F0",
+    "blue": "#9DB4E0",
+    "sapphire": "#8FC3D9",
+    "mauve": "#C6A8EC",
+    "teal": "#8FD1C6",
+    "green": "#A9D8B0",
+    "yellow": "#EBD39D",
+    "peach": "#EDB89A",
+    "red": "#F08CA6",
+    "maroon": "#D78BA0",
+    "pink": "#E7A4C6"
+  }
+}

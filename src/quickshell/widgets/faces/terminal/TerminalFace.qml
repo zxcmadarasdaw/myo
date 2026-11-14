@@ -39,6 +39,8 @@ Item {
     property bool paused: false
 
     readonly property bool isLive: !!(parent && parent.liveDesktopWidget === true)
+    readonly property bool hasFetchMedia: fetchLoader.item?.ready === true
+    readonly property var fetchStyle: FastfetchMedia.style
     readonly property bool wantsKeyboardFocus: isLive && core.engaged && !paused
 
     readonly property bool cyber: terminalStyle === "cyber"
@@ -119,13 +121,15 @@ Item {
     Rectangle {
         id: card
         anchors.fill: parent
-        radius: root.radius
+        radius: root.hasFetchMedia ? Math.max(4, root.fetchStyle.radius) : root.radius
         clip: true
-        color: root.terminalStyle === "glass"
+        color: root.hasFetchMedia ? Qt.alpha(root.fetchStyle.bg, root.fetchStyle.alpha)
+            : root.terminalStyle === "glass"
             ? Qt.alpha(ThemeBackend.surface0, root.bgOpacity)
             : Qt.alpha(root.schemeBg, root.bgOpacity)
-        border.width: root.terminalStyle === "transparent" ? 0 : 1
-        border.color: root.cyber ? Qt.alpha(root.neonA, root.core_focused ? 0.9 : 0.55)
+        border.width: root.hasFetchMedia ? (root.fetchStyle.border > 0 ? 1 : 0) : root.terminalStyle === "transparent" ? 0 : 1
+        border.color: root.hasFetchMedia ? Qt.alpha(root.fetchStyle.accent, root.fetchStyle.border)
+            : root.cyber ? Qt.alpha(root.neonA, root.core_focused ? 0.9 : 0.55)
             : root.terminalStyle === "glass" ? Qt.rgba(1, 1, 1, root.core_focused ? 0.3 : 0.16)
             : Qt.alpha(ThemeBackend.text, root.core_focused ? 0.18 : 0.08)
         Behavior on border.color { ColorAnimation { duration: 200 } }
@@ -134,13 +138,20 @@ Item {
             z: -1
             anchors.fill: parent
             radius: parent.radius
-            visible: root.terminalStyle === "glass" && root.bgOpacity > 0
+            visible: root.hasFetchMedia ? root.fetchStyle.material === "glass" && GpuCompatibility.blurAllowed
+                                         : root.terminalStyle === "glass" && root.bgOpacity > 0
+        }
+        GlassFill {
+            anchors.fill: parent
+            radius: card.radius
+            tintColor: root.fetchStyle.bg
+            allowed: root.hasFetchMedia && root.fetchStyle.material === "liquid" && GpuCompatibility.shadersAllowed
         }
 
         // Cyber: scanlines
         Canvas {
             anchors.fill: parent
-            visible: root.cyber
+            visible: root.cyber && !root.hasFetchMedia
             opacity: 0.06
             onPaint: {
                 let ctx = getContext("2d");
@@ -192,7 +203,7 @@ Item {
                 font.pixelSize: Scaler.s(10)
                 font.bold: root.cyber
                 font.letterSpacing: root.cyber ? 1.5 : 0
-                color: root.cyber ? root.neonA : ThemeBackend.subtext0
+                color: root.hasFetchMedia ? root.fetchStyle.accent : root.cyber ? root.neonA : ThemeBackend.subtext0
             }
 
             Row {
@@ -211,21 +222,35 @@ Item {
             }
         }
 
+        Loader {
+            id: fetchLoader
+            anchors { left: parent.left; right: parent.right; top: header.bottom; bottom: parent.bottom }
+            anchors.margins: root.fetchStyle.gap / 2
+            active: (root.mode === "fastfetch" || root.mode === "fetchShell") && root.isLive && !root.paused
+                    && FastfetchMedia.enabled && FastfetchMedia.kind !== ""
+            sourceComponent: FastfetchMediaPane { active: true; obscured: Wallpaper.sessionLocked }
+        }
+
         TerminalCore {
             id: core
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: header.bottom
             anchors.bottom: parent.bottom
+            anchors.leftMargin: root.hasFetchMedia ? fetchLoader.item.leadingSpace + fetchLoader.anchors.leftMargin : 0
+            anchors.topMargin: root.hasFetchMedia ? fetchLoader.item.topSpace + fetchLoader.anchors.topMargin : 0
             padding: Scaler.s(root.terminalStyle === "minimal" || root.terminalStyle === "transparent" ? 6 : 8)
             live: root.isLive && !root.paused
             mode: root.mode
+            fetchLayout: root.hasFetchMedia ? FastfetchMedia.layout : ""
             shell: root.shell
             command: root.command
             monitorInterval: root.monitorInterval
-            fontFamily: root.fontFamily !== "" ? root.fontFamily : "monospace"
+            fontFamily: root.hasFetchMedia ? root.fetchStyle.font : (root.fontFamily || "monospace")
             fontSize: Math.max(6, Scaler.s(root.fontSize))
-            theme: ({ fg: root.scheme.fg, bg: root.scheme.bg, palette: root.scheme.palette, boldBright: true })
+            theme: root.hasFetchMedia ? ({ fg: root.fetchStyle.fg, bg: root.fetchStyle.bg,
+                                          palette: root.scheme.palette, boldBright: true })
+                                       : ({ fg: root.scheme.fg, bg: root.scheme.bg, palette: root.scheme.palette, boldBright: true })
             cursorColor: root.cyber ? root.neonA : root.scheme.cursor
             selectionColor: Qt.alpha(root.cyber ? root.neonB : ThemeBackend.mauve, 0.35)
         }
@@ -328,7 +353,7 @@ Item {
 
         // process finished (fastfetch, a shell that exited, ...)
         Rectangle {
-            visible: core.status === "exited" && root.isLive
+            visible: core.status === "exited" && root.isLive && !root.hasFetchMedia
             anchors.left: core.left
             anchors.right: core.right
             anchors.bottom: core.bottom
@@ -352,6 +377,7 @@ Item {
         if (core.title !== "" && mode === "interactive") return core.title;
         switch (mode) {
         case "fastfetch": return "fastfetch";
+        case "fetchShell": return core.title !== "" ? core.title : "fastfetch";
         case "cmatrix": return "cmatrix";
         case "cava": return "cava";
         case "monitor": return (command.trim() || I18n.t("widgets.terminal.monitor", "Command monitor")) + "  ·  " + monitorInterval + "s";

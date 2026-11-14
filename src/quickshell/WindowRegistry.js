@@ -69,8 +69,8 @@ function getLayout(name, mx, my, mw, mh, userScale, barPosition) {
 
     let base = {
         "network": { 
-            // 600 for the Internet card + 106 VPN card + 8 gap (network/VpnBlock.qml)
-            w: 720, h: 714, comp: "network/NetworkPopup.qml",
+            // 600 for the Internet / VPN page + 40 INTERNET | VPN tab bar + 8 gap (NetworkPopup.qml)
+            w: 720, h: 648, comp: "network/NetworkPopup.qml",
             pos: { 
                 "top": { anchor: "top-right", mt: 52, mr: 4 }, 
                 "bottom": { anchor: "bottom-right", mb: 52, mr: 4 }, 

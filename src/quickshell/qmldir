@@ -44,6 +44,9 @@ singleton Matugen 1.0 singletons/theme/Matugen.qml
 singleton Scaler 1.0 singletons/theme/Scaler.qml
 singleton ThemeBackend 1.0 singletons/theme/ThemeBackend.qml
 singleton Wallpaper 1.0 singletons/theme/Wallpaper.qml
+singleton FastfetchMedia 1.0 singletons/theme/FastfetchMedia.qml
+WallpaperAudioMonitor 1.0 singletons/audio/WallpaperAudioMonitor.qml
+singleton VpnAppearance 1.0 singletons/theme/VpnAppearance.qml
 
 singleton Gamma 1.0 singletons/environment/Gamma.qml
 singleton Location 1.0 singletons/environment/Location.qml
@@ -78,6 +81,7 @@ singleton ShellSurfaces 1.0 singletons/system/ShellSurfaces.qml
 singleton SurfaceField 1.0 singletons/system/SurfaceField.qml
 
 singleton SysData 1.0 singletons/info/SysData.qml
+singleton GpuStats 1.0 singletons/info/GpuStats.qml
 singleton NetStats 1.0 singletons/info/NetStats.qml
 singleton SystemInfo 1.0 singletons/info/SystemInfo.qml
 

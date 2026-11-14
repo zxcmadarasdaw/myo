@@ -9,6 +9,7 @@ import Quickshell.Bluetooth
 import Quickshell.Networking
 import "../"
 import "../reusables"
+import "vpn"
 
 Item {
     id: popupWindowRoot
@@ -79,9 +80,26 @@ Item {
         }
     }
 
+    // ---- INTERNET | VPN pages ------------------------------------------------------------
+    property string page: "internet"
+    // 0 = Internet, 1 = VPN; animated, so both pages cross-fade and slide
+    property real pagePos: page === "vpn" ? 1.0 : 0.0
+    Behavior on pagePos { enabled: popupWindowRoot.visible; NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+    readonly property real tabBarHeight: s(40)
+    readonly property real tabGap: s(8)
+    function setPage(p) {
+        if (p !== "vpn" && p !== "internet") return;
+        if (page === p) return;
+        Sounds.playSfx("network/switch.wav");
+        page = p;
+    }
+
     function gotoTab(tabName) {
         if (!tabName) return;
         let t = String(tabName).toLowerCase();
+        if (t === "vpn" || t === "internet") { popupWindowRoot.setPage(t); return; }
+        if (t === "wifi" || t === "bt" || t === "bluetooth" || t === "eth" || t === "ethernet" || t === "wired" || t === "wlan")
+            popupWindowRoot.page = "internet";
         if (t === "wifi" || t === "wlan") t = "wifi";
         else if (t === "bt" || t === "bluetooth") t = "bt";
         else if (t === "eth" || t === "ethernet" || t === "wired") t = "eth";
@@ -495,7 +513,7 @@ Item {
 
     Shortcut {
         sequence: "Tab"
-        enabled: popupWindowRoot.visible
+        enabled: popupWindowRoot.visible && popupWindowRoot.page === "internet"   // on the VPN tab Tab moves the focus
         onActivated: {
             if (popupWindowRoot.pendingWifiId !== "") {
                 popupWindowRoot.pendingWifiId = ""; popupWindowRoot.pendingWifiSsid = "";
@@ -519,9 +537,8 @@ Item {
     }
 
     Keys.onEscapePressed: (event) => {
-        if (vpnBlock.listOpen) {
-            vpnBlock.listOpen = false;
-            event.accepted = true;
+        if (popupWindowRoot.page === "vpn") {
+            event.accepted = vpnStudio.back();       // an open sheet closes first; otherwise the window
             return;
         }
         if (popupWindowRoot.pendingWifiId !== "") {
@@ -601,6 +618,10 @@ Item {
         onFileChanged: reload()
         onLoaded: {
             let mode = text().trim();
+            if (mode === "vpn" || mode === "internet") {      // qs_manager.sh open network vpn
+                popupWindowRoot.page = mode;
+                return;
+            }
             if ((mode === "wifi" || mode === "bt" || mode === "eth") && popupWindowRoot.activeMode !== mode) {
                 if ((mode === "eth" && popupWindowRoot.ethPresent) ||
                     (mode === "wifi" && popupWindowRoot.wifiPresent) ||
@@ -1465,20 +1486,117 @@ Item {
     property alias powerAnimBlockerTimer: powerAnimBlocker
     property alias orbitModel: orbitDisplayModel
 
-    // VPN card above the Internet card; its server list overlays the area below.
-    VpnBlock {
-        id: vpnBlock
-        anchors.fill: parent
-        z: 20
-        window: popupWindowRoot
+    // ---- tab bar: INTERNET | VPN ---------------------------------------------------------
+    Binding {
+        target: VpnService
+        property: "panelOpen"                        // pings and the exit-IP check run only while the VPN tab is shown
+        value: popupWindowRoot.visible && popupWindowRoot.page === "vpn"
     }
 
     Item {
-        anchors.fill: parent
-        anchors.topMargin: vpnBlock.cardHeight + vpnBlock.gap   // the window is taller by the same amount
+        id: tabBar
+        anchors.top: parent.top
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(parent.width, popupWindowRoot.s(300))
+        height: popupWindowRoot.tabBarHeight
         visible: popupWindowRoot.visible
+        readonly property real intro: popupWindowRoot.easeOut(popupWindowRoot.animWin(popupWindowRoot.introState, 0.0, 0.12))
+        opacity: popupWindowRoot.exitOpacity * intro
+        scale: (0.96 + 0.04 * intro) * (0.97 + 0.03 * popupWindowRoot.exitOpacity)
+
+        Rectangle {
+            anchors.fill: parent
+            radius: height / 2
+            color: Qt.alpha(ThemeBackend.base, ThemeBackend.elementOpacity)
+            clip: true
+            WallpaperBlur {
+                z: -1
+                anchors.fill: parent
+                radius: parent.radius
+            }
+        }
+        Rectangle {                                   // sliding highlight
+            width: parent.width / 2 - popupWindowRoot.s(6)
+            height: parent.height - popupWindowRoot.s(8)
+            y: popupWindowRoot.s(4)
+            x: popupWindowRoot.s(4) + popupWindowRoot.pagePos * (parent.width / 2 - popupWindowRoot.s(2))
+            radius: height / 2
+            color: Qt.alpha(popupWindowRoot.pagePos > 0.5 ? (VpnService.connected ? ThemeBackend.green : ThemeBackend.blue) : popupWindowRoot.activeColor, 0.85)
+            Behavior on color { ColorAnimation { duration: 260 } }
+        }
+        Row {
+            anchors.fill: parent
+            Repeater {
+                model: [
+                    { key: "internet", label: I18n.t("vpn.tabs.internet", "INTERNET"), icon: "󰖩" },
+                    { key: "vpn", label: I18n.t("vpn.tabs.vpn", "VPN"), icon: VpnService.connected ? "󰦝" : "󰦞" }
+                ]
+                delegate: Item {
+                    required property var modelData
+                    readonly property bool current: popupWindowRoot.page === modelData.key
+                    width: tabBar.width / 2
+                    height: tabBar.height
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: popupWindowRoot.s(6)
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: parent.parent.modelData.icon
+                            font.family: ThemeBackend.iconFont
+                            font.pixelSize: popupWindowRoot.s(14)
+                            color: parent.parent.current ? ThemeBackend.crust : ThemeBackend.subtext0
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: parent.parent.modelData.label
+                            font.family: ThemeBackend.fontFamily
+                            font.weight: Font.Black
+                            font.pixelSize: popupWindowRoot.s(12)
+                            font.letterSpacing: 1.5
+                            color: parent.parent.current ? ThemeBackend.crust : ThemeBackend.text
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: popupWindowRoot.setPage(parent.modelData.key)
+                    }
+                    Accessible.role: Accessible.PageTab
+                    Accessible.name: modelData.label
+                    Accessible.selected: current
+                }
+            }
+        }
+    }
+    Shortcut {
+        sequences: ["Ctrl+Tab", "Ctrl+PgDown", "Ctrl+PgUp"]
         enabled: popupWindowRoot.visible
-        opacity: popupWindowRoot.exitOpacity * popupWindowRoot.easeOut(popupWindowRoot.animWin(popupWindowRoot.introState, 0.0, 0.12))
+        onActivated: popupWindowRoot.setPage(popupWindowRoot.page === "vpn" ? "internet" : "vpn")
+    }
+
+    // ---- VPN page ------------------------------------------------------------------------
+    VpnStudio {
+        id: vpnStudio
+        anchors.fill: parent
+        anchors.topMargin: popupWindowRoot.tabBarHeight + popupWindowRoot.tabGap
+        // only the visible page exists for the mouse: hidden = invisible and disabled
+        readonly property real intro: popupWindowRoot.easeOut(popupWindowRoot.animWin(popupWindowRoot.introState, 0.0, 0.12))
+        visible: popupWindowRoot.visible && popupWindowRoot.pagePos > 0.01
+        enabled: popupWindowRoot.visible && popupWindowRoot.page === "vpn"
+        active: popupWindowRoot.visible && popupWindowRoot.page === "vpn"
+        opacity: popupWindowRoot.exitOpacity * intro * popupWindowRoot.pagePos
+        transform: Translate { x: (1 - popupWindowRoot.pagePos) * popupWindowRoot.s(36) }
+        scale: (0.96 + 0.04 * intro) * (0.97 + 0.03 * popupWindowRoot.exitOpacity)
+    }
+
+    // ---- Internet page ---------------------------------------------------------------------
+    Item {
+        anchors.fill: parent
+        anchors.topMargin: popupWindowRoot.tabBarHeight + popupWindowRoot.tabGap   // the window is taller by the same amount
+        visible: popupWindowRoot.visible && popupWindowRoot.pagePos < 0.99
+        enabled: popupWindowRoot.visible && popupWindowRoot.page === "internet"
+        opacity: popupWindowRoot.exitOpacity * popupWindowRoot.easeOut(popupWindowRoot.animWin(popupWindowRoot.introState, 0.0, 0.12)) * (1 - popupWindowRoot.pagePos)
+        transform: Translate { x: -popupWindowRoot.pagePos * popupWindowRoot.s(36) }
         scale: (0.96 + 0.04 * popupWindowRoot.easeOut(popupWindowRoot.animWin(popupWindowRoot.introState, 0.0, 0.12))) * (0.97 + 0.03 * popupWindowRoot.exitOpacity)
         transformOrigin: Item.Center
 

@@ -45,6 +45,12 @@ ShellRoot {
                 property string pathB: ""
                 property bool isVideoB: false
                 property bool playbackPaused: false
+                readonly property var activeVideo: (activeLayer === 0 ? videoLoaderA : videoLoaderB).item
+                readonly property string audioTrackState: activeVideo?.audioTrackState ?? "unknown"
+                readonly property bool audioPlaying: audioSelected && activeVideo?.audioPlaying === true
+                                                     && !Wallpaper.audioSettings.muted && Wallpaper.effectiveAudioVolume > 0
+                readonly property bool audioSelected: Wallpaper.audioEngine === barWindow
+                                                      && Wallpaper.audioSettings.enabled && !playbackPaused
                 property bool snapReadyA: false
                 property bool snapReadyB: false
                 property int snapRevA: 0
@@ -684,7 +690,11 @@ ShellRoot {
                 Component {
                     id: videoLayerCompA
                     Item {
+                        id: videoA
                         anchors.fill: parent
+                        readonly property bool audioOwner: barWindow.audioSelected && barWindow.activeLayer === 0 && playerA.hasAudio
+                        readonly property string audioTrackState: playerA.hasAudio ? "present" : (playerA.hasVideo ? "absent" : "unknown")
+                        readonly property bool audioPlaying: playerA.playing && playerA.hasAudio
                         function play() { if (!barWindow.staticVideoA) playerA.play(); }
                         function stop() { playerA.stop(); }
 
@@ -692,6 +702,7 @@ ShellRoot {
                             id: playerA
                             source: barWindow.isVideoA && barWindow.pathA ? Caching.fileUrl(barWindow.pathA) : ""
                             videoOutput: videoOutputA
+                            audioOutput: videoA.audioOwner ? audioA : null
                             loops: MediaPlayer.Infinite
                             onSourceChanged: GpuCompatibility.observeMedia(barWindow.screen.name + ":A", barWindow.pathA, "loading", "")
                             onErrorOccurred: function(error, errorString) {
@@ -711,6 +722,12 @@ ShellRoot {
                             }
                         }
 
+                        AudioOutput {
+                            id: audioA
+                            volume: Wallpaper.effectiveAudioVolume / 100
+                            muted: !videoA.audioOwner || Wallpaper.audioSettings.muted || volume === 0
+                        }
+
                         VideoOutput {
                             id: videoOutputA
                             anchors.fill: parent
@@ -722,7 +739,11 @@ ShellRoot {
                 Component {
                     id: videoLayerCompB
                     Item {
+                        id: videoB
                         anchors.fill: parent
+                        readonly property bool audioOwner: barWindow.audioSelected && barWindow.activeLayer === 1 && playerB.hasAudio
+                        readonly property string audioTrackState: playerB.hasAudio ? "present" : (playerB.hasVideo ? "absent" : "unknown")
+                        readonly property bool audioPlaying: playerB.playing && playerB.hasAudio
                         function play() { if (!barWindow.staticVideoB) playerB.play(); }
                         function stop() { playerB.stop(); }
 
@@ -730,6 +751,7 @@ ShellRoot {
                             id: playerB
                             source: barWindow.isVideoB && barWindow.pathB ? Caching.fileUrl(barWindow.pathB) : ""
                             videoOutput: videoOutputB
+                            audioOutput: videoB.audioOwner ? audioB : null
                             loops: MediaPlayer.Infinite
                             onSourceChanged: GpuCompatibility.observeMedia(barWindow.screen.name + ":B", barWindow.pathB, "loading", "")
                             onErrorOccurred: function(error, errorString) {
@@ -747,6 +769,12 @@ ShellRoot {
                                     playerB.play();
                                 }
                             }
+                        }
+
+                        AudioOutput {
+                            id: audioB
+                            volume: Wallpaper.effectiveAudioVolume / 100
+                            muted: !videoB.audioOwner || Wallpaper.audioSettings.muted || volume === 0
                         }
 
                         VideoOutput {

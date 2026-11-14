@@ -14,6 +14,63 @@ Item {
     property var screenWallpapers: ({})
     property var screenWallpaperPaths: ({})
     property var engines: ({})
+    property bool sessionLocked: false
+    readonly property var audioModes: ["off", "mute", "duck"]
+    readonly property var audioSources: ["primary", "monitor", "none"]
+    readonly property var audioSettings: {
+        const saved = Config.getSetting("wallpaperAudio", {}) || {};
+        return {
+            enabled: saved.enabled === true,
+            muted: saved.muted === true,
+            volume: audioPercent(saved.volume, 50),
+            mode: audioModes.includes(saved.mode) ? saved.mode : "off",
+            duckVolume: audioPercent(saved.duckVolume, 15),
+            reactToPlayback: saved.reactToPlayback !== false,
+            reactToCalls: saved.reactToCalls !== false,
+            muteOnLock: saved.muteOnLock !== false,
+            source: audioSources.includes(saved.source) ? saved.source : "primary",
+            monitor: typeof saved.monitor === "string" ? saved.monitor : ""
+        };
+    }
+    readonly property var audioMonitors: Array.from(Quickshell.screens, screen => screen.name)
+    readonly property string audioScreenName: {
+        if (audioSettings.source === "none") return "";
+        if (audioSettings.source === "monitor")
+            return audioMonitors.includes(audioSettings.monitor) ? audioSettings.monitor : "";
+        // Quickshell exposes Qt's screen list, which starts with its primary output.
+        return audioMonitors[0] || "";
+    }
+    readonly property var audioEngine: audioScreenName ? engines[audioScreenName] || null : null
+    readonly property string audioTrackState: audioEngine?.audioTrackState ?? "unknown"
+    readonly property bool smartAudioWatching: audioMonitor.watching
+    readonly property bool smartAudioReady: audioMonitor.ready
+    readonly property bool smartAudioActive: audioMonitor.active
+    readonly property int effectiveAudioVolume: {
+        if (sessionLocked && audioSettings.muteOnLock) return 0;
+        if (audioMonitor.waiting || (smartAudioActive && audioSettings.mode === "mute")) return 0;
+        if (smartAudioActive && audioSettings.mode === "duck")
+            return Math.min(audioSettings.volume, audioSettings.duckVolume);
+        return audioSettings.volume;
+    }
+
+    function audioPercent(value: var, fallback: int): int {
+        return typeof value === "number" && isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : fallback;
+    }
+
+    function setAudioSetting(key: string, value: var): void {
+        Config.setSetting("wallpaperAudio." + key, value);
+    }
+
+    WallpaperAudioMonitor {
+        id: audioMonitor
+        watching: root.audioSettings.enabled && !root.audioSettings.muted
+                  && root.audioSettings.volume > 0 && root.audioSettings.mode !== "off"
+                  && root.audioTrackState === "present" && !root.audioEngine.playbackPaused
+                  && (root.audioSettings.reactToPlayback || root.audioSettings.reactToCalls)
+        watchPlayback: root.audioSettings.reactToPlayback
+        watchCalls: root.audioSettings.reactToCalls
+    }
+
     // Last wallpaper requested for every output. Outputs that appear later
     // (hotplug, slow monitor init on login) adopt it instead of staying empty.
     property string lastRequestedAll: ""

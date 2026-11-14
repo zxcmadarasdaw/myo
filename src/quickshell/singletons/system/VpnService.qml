@@ -46,19 +46,72 @@ Item {
     readonly property var checks: status.checks || []
     readonly property bool hasConflict: checks.some(c => c.level === "warn")
     // the emergency off is offered when the service is stuck or failed (a normal
-    // Disconnect works otherwise; VpnBlock also shows it while a disconnect hangs)
+    // Disconnect works otherwise; the VPN tab also shows it while a disconnect hangs)
     readonly property bool canForceOff: tunState === "failed" || tunState === "deactivating" || tunState === "activating"
     property bool forcing: false
+
+    // ---- connection phase (VPN Control Studio) ---------------------------------------------
+    // "connected" only after the backend confirmed it (sing-box answers on its control port);
+    // between an action and the next status the phase stays "connecting"/"disconnecting".
+    property string awaiting: ""              // "on" | "off": action done, status not read yet
+    property string errorAction: ""           // action whose failure produced `error`
+    readonly property string phase: {
+        if (forcing) return "disconnecting";
+        if (busy && (busyAction === "connect" || busyAction === "select" || busyAction === "mode")) return "connecting";
+        if (busy && busyAction === "disconnect") return "disconnecting";
+        if (awaiting === "on") return "connecting";
+        if (awaiting === "off") return "disconnecting";
+        if (vpnState === "connected") return "connected";
+        if (vpnState === "error") return "error";
+        if (error !== "" && ["connect", "select", "disconnect", "mode"].indexOf(errorAction) >= 0) return "error";
+        return "disconnected";
+    }
+    readonly property bool canConnect: !busy && !forcing && hasSource && vpnState !== "missing" && servers.length > 0
+    readonly property string subscriptionName: status.subscription || ""
+    readonly property var lastUpdate: status.lastUpdate || ({})
+
+    // ---- exit IP: checked through the VPN after it connects, only while the panel is open --
+    property var exitIp: null                 // { ip, country, countryName, flag, time, server }
+    property string ipState: ""               // "" | "checking" | "ok" | "failed"
+    property string ipError: ""
+
+    // ---- subscriptions -------------------------------------------------------------------
+    property var subs: []                     // [{ id, name, kind, host|count, active, lastUpdate }]
+    property string activeSub: ""
+
+    // ---- sing-box --------------------------------------------------------------------------
+    property var sbInfo: ({})                 // singbox-info: path, source, version, works, candidates
+    property bool sbInstalling: false
+    property bool sbCancelled: false
+    property string sbStage: ""               // release | download | verify | extract | test | done
+    property real sbDone: 0
+    property real sbTotal: 0
+    property real sbSpeed: 0
+    property int sbAttempt: 0
+    property string sbVersion: ""
+    property bool sbChecksum: false
+    property string sbError: ""
+    property var sbResult: null               // last successful install
 
     function start() {
         if (started) return;
         started = true;
         refresh();
+        loadSubs();
         run("update", ["--auto"], "");
     }
 
+    // A status that was already running when an action finished describes the time before
+    // it: it is followed by a fresh one, and only a fresh one may end the "awaiting" phase.
+    property int actionSeq: 0
+    property bool refreshQueued: false
     function refresh() {
-        if (!started || statusProc.running) return;
+        if (!started) return;
+        if (statusProc.running) {
+            refreshQueued = true;
+            return;
+        }
+        statusProc.seq = actionSeq;
         statusProc.running = true;
     }
 
@@ -67,6 +120,8 @@ Item {
     function run(action, args, input) {
         if (actionProc.running) return false;
         error = "";
+        errorAction = "";
+        awaiting = "";
         busy = true;
         busyAction = action;
         actionProc.action = action;
@@ -111,8 +166,55 @@ Item {
         if (!tag || busy) return;
         current = tag;                 // immediate feedback; status confirms
         pendingConnect = !connected;
+        ipState = "";                  // first: bindings see "ok" only together with an exitIp
+        exitIp = null;                 // the old address no longer applies
         run("select", [tag], "");
     }
+
+    function checkIp() {
+        if (!connected || !panelOpen || ipProc.running) return;
+        ipState = "checking";
+        ipError = "";
+        ipProc.running = true;
+    }
+
+    // ---- subscriptions (the link goes on stdin, never into argv) ----------------------------
+    function loadSubs() {
+        if (started && !subsProc.running) subsProc.running = true;
+    }
+    function addSub(link, name) {
+        let t = (link || "").trim();
+        if (t === "") {
+            error = I18n.t("vpn.errors.empty_link", "Paste a subscription link first.");
+            return false;
+        }
+        let n = (name || "").trim();
+        return run("sub-add", n !== "" ? ["--name=" + n] : [], t);
+    }
+    function useSub(id) { if (id && id !== activeSub) run("sub-use", [id], ""); }
+    function renameSub(id, name) { if (id && (name || "").trim() !== "") run("sub-rename", [id, name.trim()], ""); }
+    function removeSub(id) { if (id) run("sub-remove", [id], ""); }
+
+    // ---- sing-box ------------------------------------------------------------------------
+    function singboxInfo() {
+        if (!sbInfoProc.running) sbInfoProc.running = true;
+    }
+    function installSingbox() {
+        if (sbProc.running) return;
+        sbCancelled = false;
+        sbError = "";
+        sbResult = null;
+        sbStage = "release";
+        sbDone = 0; sbTotal = 0; sbSpeed = 0; sbAttempt = 1;
+        sbInstalling = true;
+        sbProc.running = true;
+    }
+    function cancelInstall() {
+        if (!sbProc.running) return;
+        sbCancelled = true;
+        sbProc.running = false;        // SIGTERM: the script removes its partial download
+    }
+    function useSingbox(path) { run("singbox-use", [path || ""], ""); }
 
     function ping() {
         if (pingProc.running || !panelOpen || servers.length === 0) return;
@@ -137,7 +239,7 @@ Item {
             let s = list[i];
             let key = s.country || "";
             if (!map[key]) {
-                map[key] = { code: key, name: s.countryName || key || I18n.t("vpn.other_country", "Other"),
+                map[key] = { code: key, name: s.countryName || key || I18n.t("vpn.unknown_country", "Unknown"),
                              flag: s.flag || "", servers: [], best: -1 };
                 order.push(key);
             }
@@ -176,39 +278,174 @@ Item {
                 if (!d) return;
                 if (d.ok === false && d.error) {
                     root.error = d.error.message || d.error.code || "";
+                    root.errorAction = actionProc.action;
                     root.pendingConnect = false;
                 } else if (d.restartError) {
                     root.error = d.restartError;
+                    root.errorAction = actionProc.action;
+                } else if (d.updateError) {
+                    root.error = d.updateError;
+                    root.errorAction = actionProc.action;
+                }
+                if (d.items !== undefined && Array.isArray(d.items)) {
+                    root.subs = d.items;
+                    root.activeSub = d.active || "";
                 }
             }
         }
         onExited: (code) => {
+            let action = actionProc.action;
+            root.actionSeq++;
             root.busy = false;
             root.busyAction = "";
-            if (code > 2 && root.error === "" && !root.forcing)     // killed by forceOff(): not an error
+            if (code > 2 && root.error === "" && !root.forcing) {    // killed by forceOff(): not an error
                 root.error = I18n.t("vpn.errors.backend", "The VPN helper failed (is python3 installed?).");
-            let again = actionProc.action === "select" && root.pendingConnect && root.error === "";
+                root.errorAction = action;
+            }
+            let again = action === "select" && root.pendingConnect && root.error === "";
             root.pendingConnect = false;
             if (again) {
                 root.connect();
                 return;
             }
+            if (root.error === "") {
+                if (action === "connect" || action === "select" || (action === "mode" && root.connected)) root.awaiting = "on";
+                else if (action === "disconnect") root.awaiting = "off";
+                if (awaitTimeout.running || root.awaiting !== "") awaitTimeout.restart();
+                if (action === "select" && root.connected) ipDelay.restart();
+            }
             root.refresh();
-            if (actionProc.action !== "select" && actionProc.action !== "connect" && actionProc.action !== "disconnect")
+            if (action !== "select" && action !== "connect" && action !== "disconnect")
                 listProc.running = true;
+            if (action.indexOf("sub-") === 0 || action === "update" || action === "set-source") root.loadSubs();
+            if (action === "singbox-use") root.singboxInfo();
+        }
+    }
+
+    // A status that never arrives must not leave the button spinning.
+    Timer {
+        id: awaitTimeout
+        interval: 8000
+        onTriggered: root.awaiting = ""
+    }
+
+    Timer {
+        id: ipDelay
+        interval: 700
+        onTriggered: root.checkIp()
+    }
+
+    Process {
+        id: ipProc
+        command: ["python3", root.script, "ipcheck", "--json"]
+        environment: root.procEnv
+        stdout: StdioCollector {
+            onStreamFinished: {
+                let d = root.parseLast(this.text);
+                if (d && d.ok !== false && d.ip) {
+                    root.exitIp = d;
+                    root.ipState = "ok";
+                } else {
+                    root.exitIp = null;
+                    root.ipState = root.connected ? "failed" : "";
+                    root.ipError = d && d.error ? (d.error.message || "") : "";
+                }
+            }
+        }
+        onExited: if (root.ipState === "checking") root.ipState = root.connected ? "failed" : ""
+    }
+
+    Process {
+        id: subsProc
+        command: ["python3", root.script, "subs", "--json"]
+        environment: root.procEnv
+        stdout: StdioCollector {
+            onStreamFinished: {
+                let d = root.parseLast(this.text);
+                if (d && Array.isArray(d.items)) {
+                    root.subs = d.items;
+                    root.activeSub = d.active || "";
+                }
+            }
+        }
+    }
+
+    Process {
+        id: sbInfoProc
+        command: ["python3", root.script, "singbox-info", "--json"]
+        environment: root.procEnv
+        stdout: StdioCollector {
+            onStreamFinished: {
+                let d = root.parseLast(this.text);
+                if (d && d.ok !== false) root.sbInfo = d;
+            }
+        }
+    }
+
+    // Live progress: one JSON object per line (stage / progress / retry), the result last.
+    Process {
+        id: sbProc
+        command: ["python3", root.script, "singbox-install", "--json"]
+        environment: root.procEnv
+        stdout: SplitParser {
+            onRead: (line) => {
+                let e;
+                try { e = JSON.parse(line); } catch (err) { return; }
+                if (e.event === "stage") {
+                    root.sbStage = e.stage || "";
+                    if (e.version) root.sbVersion = e.version;
+                    if (e.total) root.sbTotal = e.total;
+                    if (e.checksum !== undefined) root.sbChecksum = e.checksum === true;
+                } else if (e.event === "progress") {
+                    root.sbDone = e.done || 0;
+                    if (e.total) root.sbTotal = e.total;
+                    root.sbSpeed = e.speed || 0;
+                    root.sbAttempt = e.attempt || root.sbAttempt;
+                } else if (e.event === "retry") {
+                    root.sbAttempt = e.attempt || root.sbAttempt;
+                    root.sbSpeed = 0;
+                } else if (e.ok === true && e.path) {
+                    root.sbResult = e;
+                    root.sbStage = "done";
+                } else if (e.ok === false && e.error) {
+                    root.sbError = e.error.message || e.error.code || "";
+                }
+            }
+        }
+        onExited: (code) => {
+            root.sbInstalling = false;
+            if (root.sbCancelled) {
+                root.sbError = I18n.t("vpn.singbox.cancelled", "Download cancelled. Nothing was installed.");
+                root.sbStage = "";
+            } else if (!root.sbResult && root.sbError === "") {
+                root.sbError = I18n.t("vpn.errors.backend", "The VPN helper failed (is python3 installed?).");
+            }
+            root.refresh();
+            root.singboxInfo();
         }
     }
 
     Process {
         id: statusProc
+        property int seq: 0
         command: ["python3", root.script, "status", "--json"]
         environment: root.procEnv
+        onExited: {
+            if (root.refreshQueued) {
+                root.refreshQueued = false;
+                Qt.callLater(root.refresh);
+            }
+        }
         stdout: StdioCollector {
             onStreamFinished: {
                 let d = root.parseLast(this.text);
                 if (!d || d.ok === false) return;
                 root.status = d;
                 root.vpnState = d.state || "";
+                if (!root.busy && statusProc.seq === root.actionSeq) {
+                    root.awaiting = "";
+                    awaitTimeout.stop();
+                }
                 if (d.current && !root.busy) root.current = d.current;
                 if (d.delays && Object.keys(d.delays).length > 0 && !root.pinging) root.delays = d.delays;
                 if (d.count !== root.servers.length && !listProc.running) listProc.running = true;
@@ -290,8 +527,20 @@ Item {
         if (panelOpen) {
             refresh();
             if (servers.length === 0 && started) listProc.running = true;
+            if (connected && exitIp === null) ipDelay.restart();
         } else {
             stopPing();
+        }
+    }
+    onConnectedChanged: {
+        if (connected) {
+            ipDelay.restart();
+        } else {
+            ipDelay.stop();
+            if (ipProc.running) ipProc.running = false;
+            ipState = "";
+            exitIp = null;
+            ipError = "";
         }
     }
     onServersChanged: if (panelOpen && servers.length > 0 && Object.keys(delays).length === 0) ping()

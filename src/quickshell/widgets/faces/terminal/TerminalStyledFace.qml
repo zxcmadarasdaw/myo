@@ -23,11 +23,14 @@ Item {
     property bool isRound: false
 
     // ---- look (set by the variant files) ----
-    property string look: "restrained"       // restrained | lush
+    property string look: "restrained"       // restrained | lush | atelier
     readonly property bool lush: look === "lush"
+    readonly property bool atelier: look === "atelier"
+    property string faceStyle: "retro"        // Atelier look only (AtelierStyles.js)
+    AtelierKit { id: kit; style: root.faceStyle }
 
     // ---- settings (wProps), same names as TerminalFace ----
-    property string mode: "interactive"      // interactive | fastfetch | cmatrix | cava | monitor
+    property string mode: "interactive"      // interactive | fastfetch | fetchShell | cmatrix | cava | monitor
     property string shell: "auto"
     property string command: ""
     property real monitorInterval: 5
@@ -40,6 +43,8 @@ Item {
     property bool paused: false
 
     readonly property bool isLive: !!(parent && parent.liveDesktopWidget === true)
+    readonly property bool hasFetchMedia: fetchLoader.item?.ready === true
+    readonly property var fetchStyle: FastfetchMedia.style
     readonly property bool wantsKeyboardFocus: isLive && core.engaged && !paused
     readonly property bool focused: core.activeFocus
     readonly property FaceTone tone: FaceTone {}
@@ -87,6 +92,7 @@ Item {
         if (core.title !== "" && mode === "interactive") return core.title;
         switch (mode) {
         case "fastfetch": return "fastfetch";
+        case "fetchShell": return core.title !== "" ? core.title : "fastfetch  ·  " + I18n.t("widgets.terminal.name", "Terminal");
         case "cmatrix": return "cmatrix";
         case "cava": return "cava";
         case "monitor": return (command.trim() || I18n.t("widgets.terminal.monitor", "Command monitor")) + "  ·  " + monitorInterval + "s";
@@ -98,7 +104,35 @@ Item {
     Loader {
         anchors.fill: parent
         z: -1
-        sourceComponent: root.lush ? lushBg : minimalBg
+        sourceComponent: root.hasFetchMedia ? fetchBg : root.atelier ? atelierBg : root.lush ? lushBg : minimalBg
+    }
+    Component {
+        id: atelierBg
+        AtelierCard {
+            kit: kit
+            showHeader: false
+            emphasised: root.focused
+        }
+    }
+    Component {
+        id: fetchBg
+        Rectangle {
+            radius: Math.max(4, root.fetchStyle.radius)
+            color: Qt.alpha(root.fetchStyle.bg, root.fetchStyle.alpha)
+            border.width: root.fetchStyle.border > 0 ? 1 : 0
+            border.color: Qt.alpha(root.fetchStyle.accent, root.fetchStyle.border)
+            WallpaperBlur {
+                anchors.fill: parent
+                radius: parent.radius
+                visible: root.fetchStyle.material === "glass" && GpuCompatibility.blurAllowed
+            }
+            GlassFill {
+                anchors.fill: parent
+                radius: parent.radius
+                tintColor: root.fetchStyle.bg
+                allowed: root.fetchStyle.material === "liquid" && GpuCompatibility.shadersAllowed
+            }
+        }
     }
     Component {
         id: minimalBg
@@ -155,12 +189,12 @@ Item {
             anchors.rightMargin: Scaler.s(6)
             anchors.verticalCenter: parent.verticalCenter
             elide: Text.ElideRight
-            text: root.lush ? root.headerTitle : root.headerTitle.toUpperCase()
-            font.family: ThemeBackend.fontFamily
+            text: root.atelier ? kit.label(root.headerTitle) : root.lush ? root.headerTitle : root.headerTitle.toUpperCase()
+            font.family: root.atelier ? kit.labelFamily : ThemeBackend.fontFamily
             font.pixelSize: Scaler.s(root.lush ? 11 : 9)
-            font.italic: root.lush
-            font.letterSpacing: root.lush ? 0 : Scaler.s(1.5)
-            color: root.focused ? root.tone.ink : root.tone.muted
+            font.italic: root.lush || (root.atelier && kit.styleId === "elegant")
+            font.letterSpacing: root.atelier ? kit.tracking : root.lush ? 0 : Scaler.s(1.5)
+            color: root.hasFetchMedia ? root.fetchStyle.accent : root.focused ? root.tone.ink : root.tone.muted
         }
 
         Text {
@@ -191,25 +225,39 @@ Item {
         }
     }
 
+    Loader {
+        id: fetchLoader
+        anchors { left: parent.left; right: parent.right; top: header.bottom; bottom: parent.bottom }
+        anchors.margins: root.fetchStyle.gap / 2
+        active: (root.mode === "fastfetch" || root.mode === "fetchShell") && root.isLive && !root.paused
+                && FastfetchMedia.enabled && FastfetchMedia.kind !== ""
+        sourceComponent: FastfetchMediaPane { active: true; obscured: Wallpaper.sessionLocked }
+    }
+
     TerminalCore {
         id: core
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: header.bottom
         anchors.bottom: parent.bottom
-        anchors.leftMargin: root.lush ? Scaler.s(6) : 0
+        anchors.leftMargin: root.hasFetchMedia ? fetchLoader.item.leadingSpace + fetchLoader.anchors.leftMargin
+                                               : root.lush ? Scaler.s(6) : 0
+        anchors.topMargin: root.hasFetchMedia ? fetchLoader.item.topSpace + fetchLoader.anchors.topMargin : 0
         anchors.rightMargin: root.lush ? Scaler.s(6) : 0
         anchors.bottomMargin: root.lush ? Scaler.s(6) : 0
         clip: true
         padding: Scaler.s(root.lush ? 8 : 6)
         live: root.isLive && !root.paused
         mode: root.mode
+        fetchLayout: root.hasFetchMedia ? FastfetchMedia.layout : ""
         shell: root.shell
         command: root.command
         monitorInterval: root.monitorInterval
-        fontFamily: root.fontFamily !== "" ? root.fontFamily : "monospace"
+        fontFamily: root.hasFetchMedia ? root.fetchStyle.font : (root.fontFamily || "monospace")
         fontSize: Math.max(6, Scaler.s(root.fontSize))
-        theme: ({ fg: root.scheme.fg, bg: root.scheme.bg, palette: root.scheme.palette, boldBright: true })
+        theme: root.hasFetchMedia ? ({ fg: root.fetchStyle.fg, bg: root.fetchStyle.bg,
+                                      palette: root.scheme.palette, boldBright: true })
+                                   : ({ fg: root.scheme.fg, bg: root.scheme.bg, palette: root.scheme.palette, boldBright: true })
         cursorColor: root.scheme.cursor
         selectionColor: Qt.alpha(ThemeBackend.mauve, 0.35)
     }
@@ -297,7 +345,7 @@ Item {
 
     // process finished (fastfetch, a shell that exited, ...)
     Rectangle {
-        visible: core.status === "exited" && root.isLive
+        visible: core.status === "exited" && root.isLive && !root.hasFetchMedia
         anchors.left: core.left
         anchors.right: core.right
         anchors.bottom: core.bottom

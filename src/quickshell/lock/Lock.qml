@@ -9,6 +9,7 @@ import "../"
 
 Scope {
     id: root
+    readonly property bool sessionLocked: rootLock.locked
 
     property string freezeTimestamp: ""
     property bool staticLock: false

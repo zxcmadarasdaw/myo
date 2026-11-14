@@ -19,7 +19,24 @@ Commands:
   ping                delay test of all servers, done by sing-box through its Clash
                       API (a short-lived sing-box without inbounds when not connected).
                       The shell runs this only while the network panel is open.
-  clear               forget the subscription (stops the proxy)
+  clear               forget all subscriptions (stops the proxy)
+  ipcheck             external IP and its country, fetched through the running VPN
+                      (proxy or TUN); refuses when nothing is connected
+
+Subscriptions (several can be saved; one is active, its servers are the ones listed):
+  subs                list: id, name, kind/host (never the link), last update result
+  sub-add [--name=N]  read a link from stdin, save it as a new subscription, make it
+                      active and update; nothing is kept when the update fails
+  sub-use ID          make ID active and update (the previous one stays on failure)
+  sub-rename ID NAME
+  sub-remove ID       forget one subscription (the next one becomes active)
+
+sing-box (no root; see serp_vpn_singbox.py):
+  singbox-info        which sing-box is used, its version, other ones found
+  singbox-install     download the official release for this machine into
+                      ~/.local/share/serpantinum/vpn/bin, with progress lines on stdout;
+                      SIGTERM cancels; used only after `sing-box version` works
+  singbox-use PATH    use this sing-box file (checked by running `version`); "" = automatic
 
 Stage 2, TUN (whole system through the VPN; needs the installer's serpantinum-vpn service):
   mode proxy|tun      choose the mode (reconnects when connected)
@@ -32,7 +49,9 @@ Stage 2, TUN (whole system through the VPN; needs the installer's serpantinum-vp
   started with systemctl; the polkit rule lets only the installing user do both.
 
 Files
-  ~/.config/serpantinum/vpn/source         the link or pasted text            (600)
+  ~/.config/serpantinum/vpn/source         the active link or pasted text     (600)
+  ~/.config/serpantinum/vpn/subs/ID        each saved subscription's link     (600)
+  ~/.config/serpantinum/vpn/subscriptions.json  names, active id, update results (600)
   ~/.config/serpantinum/vpn/settings.json  ports, interval, selection, secret (600)
   ~/.local/state/serpantinum/vpn/          servers.json, config.json, last_update.json,
                                            pings.json, sing-box.log, sing-box.pid
@@ -43,6 +62,7 @@ script. sing-box listens on 127.0.0.1 only (mixed HTTP/SOCKS5 proxy + Clash API
 protected by a random secret).
 """
 import base64
+import ipaddress
 import json
 import os
 import re
@@ -76,11 +96,44 @@ def state_dir():
     return os.path.join(base, "vpn")
 
 
-def singbox_bin():
+def managed_singbox():
+    """Where `singbox-install` puts sing-box (same rule as serp_vpn_singbox.managed_path)."""
+    base = os.environ.get("SERP_VPN_BIN_DIR") or os.path.join(_xdg("XDG_DATA_HOME", ".local/share"),
+                                                              "serpantinum", "vpn", "bin")
+    return os.path.join(base, "sing-box")
+
+
+def _executable(path):
+    return bool(path) and os.path.isfile(path) and os.access(path, os.X_OK)
+
+
+def singbox_location():
+    """(path, source): source is env | chosen | system | managed | "" (none)."""
     override = os.environ.get("SERP_VPN_SINGBOX")
     if override is not None:                  # tests / custom location; "" means "not installed"
-        return override if override and os.path.isfile(override) else ""
-    return shutil.which("sing-box") or ""
+        return (override, "env") if override and os.path.isfile(override) else ("", "")
+    chosen = _merge_settings(read_json(os.path.join(config_dir(), "settings.json"), {})).get("singboxPath", "")
+    if _executable(chosen):                   # picked in the panel, or installed by singbox-install
+        return chosen, ("managed" if chosen == managed_singbox() else "chosen")
+    found = shutil.which("sing-box")
+    if found:
+        return found, "system"
+    if _executable(managed_singbox()):
+        return managed_singbox(), "managed"
+    return "", ""
+
+
+def singbox_bin():
+    return singbox_location()[0]
+
+
+def _singbox_module():
+    """serp_vpn_singbox lives next to this file (also when this file is loaded by path in tests)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import serp_vpn_singbox
+    return serp_vpn_singbox
 
 
 INSTALL_HINT = "sudo dnf config-manager addrepo --from-repofile=https://sing-box.app/sing-box.repo && sudo dnf install sing-box"
@@ -95,6 +148,7 @@ DEFAULT_SETTINGS = {
     "selected": "",
     "secret": "",
     "mode": "proxy",          # "proxy": local proxy as the user; "tun": system service (stage 2)
+    "singboxPath": "",        # chosen or installed sing-box ("" = automatic: PATH, then the installed one)
 }
 
 
@@ -198,8 +252,8 @@ MESSAGES = {
     "fetch_http": ("The subscription server answered HTTP {detail}.", "Сервер подписки ответил HTTP {detail}."),
     "fetch_failed": ("Could not download the subscription: {detail}", "Не удалось скачать подписку: {detail}"),
     "too_large": ("The subscription is larger than 5 MB.", "Подписка больше 5 МБ."),
-    "no_singbox": ("sing-box is not installed. Install it: " + INSTALL_HINT,
-                   "sing-box не установлен. Установите: " + INSTALL_HINT),
+    "no_singbox": ("sing-box is not installed. Download it in the VPN panel, or install it: " + INSTALL_HINT,
+                   "sing-box не установлен. Скачайте его в панели VPN или установите: " + INSTALL_HINT),
     "check_failed": ("sing-box rejected the generated config: {detail}",
                      "sing-box отклонил созданный конфиг: {detail}"),
     "no_config": ("There is no checked config yet. Update the subscription first.",
@@ -241,6 +295,39 @@ MESSAGES = {
                        "Поднят интерфейс другого VPN: {detail}. Два VPN одновременно обычно конфликтуют."),
     "conflict_proc": ("Another VPN program is running: {detail}.", "Запущена другая VPN-программа: {detail}."),
     "conflict_nm": ("A NetworkManager VPN connection is active: {detail}.", "Активно VPN-подключение NetworkManager: {detail}."),
+    # subscriptions
+    "sub_unknown": ("No such subscription: {detail}", "Нет такой подписки: {detail}"),
+    "sub_bad_name": ("A subscription name must be 1-60 printable characters.",
+                     "Название подписки: от 1 до 60 печатных символов."),
+    # exit IP check
+    "not_connected": ("The VPN is not connected.", "VPN не подключён."),
+    "ip_failed": ("Could not check the external IP through the VPN: {detail}",
+                  "Не удалось проверить внешний IP через VPN: {detail}"),
+    # sing-box download / choice (serp_vpn_singbox.py)
+    "sb_offline": ("No internet connection: github.com could not be resolved. The VPN panel keeps working; try again later or choose an installed sing-box.",
+                   "Нет подключения к интернету: адрес github.com не определяется. Панель VPN продолжает работать; повторите позже или выберите установленный sing-box."),
+    "sb_timeout": ("GitHub stopped answering (no data for 30 s, four attempts). Press Retry, or install sing-box with dnf.",
+                   "GitHub перестал отвечать (30 с без данных, четыре попытки). Нажмите «Повторить» или установите sing-box через dnf."),
+    "sb_tls": ("The secure connection to GitHub failed ({detail}). Check the system date and time.",
+               "Не удалось установить защищённое соединение с GitHub ({detail}). Проверьте системные дату и время."),
+    "sb_unreachable": ("GitHub could not be reached: {detail}", "Не удалось связаться с GitHub: {detail}"),
+    "sb_http": ("GitHub answered HTTP {detail}.", "GitHub ответил HTTP {detail}."),
+    "sb_no_release": ("The latest sing-box release could not be read ({detail}).",
+                      "Не удалось прочитать последний выпуск sing-box ({detail})."),
+    "sb_no_asset": ("The release has no file for this computer: {detail}",
+                    "В выпуске нет файла для этого компьютера: {detail}"),
+    "sb_arch": ("sing-box is not published for this processor: {detail}",
+                "sing-box не выпускается для этого процессора: {detail}"),
+    "sb_too_large": ("The download is unexpectedly large ({detail}); stopped.",
+                     "Загрузка неожиданно большая ({detail}); остановлена."),
+    "sb_incomplete": ("The download ended early ({detail}).", "Загрузка оборвалась ({detail})."),
+    "sb_checksum": ("The download is damaged: its SHA-256 does not match the one GitHub published ({detail}). Nothing was installed.",
+                    "Загрузка повреждена: SHA-256 не совпадает с опубликованным на GitHub ({detail}). Ничего не установлено."),
+    "sb_bad_archive": ("The downloaded archive is not a sing-box release ({detail}). Nothing was installed.",
+                       "Скачанный архив не похож на выпуск sing-box ({detail}). Ничего не установлено."),
+    "sb_not_working": ("The downloaded sing-box does not run on this system ({detail}). Nothing was installed.",
+                       "Скачанный sing-box не запускается в этой системе ({detail}). Ничего не установлено."),
+    "sb_bad_path": ("This file is not a working sing-box ({detail}).", "Этот файл не является рабочим sing-box ({detail})."),
 }
 
 
@@ -1146,6 +1233,7 @@ def update(auto=False):
             entry["message"] += " " + msg("kept_old")
         entry["servers"] = last.get("servers", 0)
         write_private(os.path.join(state_dir(), "last_update.json"), json.dumps(entry, ensure_ascii=False))
+        _record_sub_update(entry)
         raise
     # sing-box accepted it: only now replace the working files.
     write_private(os.path.join(state_dir(), "servers.json"), json.dumps(parsed["servers"], ensure_ascii=False))
@@ -1153,6 +1241,7 @@ def update(auto=False):
     entry.update(ok=True, format=parsed["format"], servers=len(parsed["servers"]),
                  skippedCount=len(parsed["errors"]), skipped=parsed["errors"][:20], info=info)
     write_private(os.path.join(state_dir(), "last_update.json"), json.dumps(entry, ensure_ascii=False))
+    _record_sub_update(entry)
     if vpn_running():
         try:
             restart_proxy()
@@ -1739,7 +1828,7 @@ def status():
         except Exception:
             api_ok = False
     has_config = os.path.exists(os.path.join(state_dir(), "config.json"))
-    binary = singbox_bin()
+    binary, binary_source = singbox_location()
     if running:
         state = "connected" if api_ok else "error"
     elif not has_source:
@@ -1754,7 +1843,8 @@ def status():
     pings = read_json(os.path.join(state_dir(), "pings.json"), {})
     out = {
         "state": state, "running": running, "hasSource": has_source, "hasConfig": has_config,
-        "singbox": bool(binary), "installHint": INSTALL_HINT,
+        "singbox": bool(binary), "installHint": INSTALL_HINT, "singboxSource": binary_source,
+        "singboxPath": binary, "subscription": _active_sub_name(has_source),
         "proxy": f"127.0.0.1:{settings['proxyPort']}", "current": current,
         "currentServer": server_summary(cur) if cur else None,
         "count": len(servers), "updateHours": settings["updateHours"],
@@ -1781,30 +1871,378 @@ def status():
 
 
 def set_source(text):
+    """Replaces the active subscription's link (creates the first one); the CLI's `vpn set`."""
     text = (text or "").strip()
     if not text:
         raise VpnError("empty")
     unwrap_source(text)                       # happ:// etc.: clear error before saving
+    d = load_subs()
+    if not d["active"]:
+        sid = _new_sub_id(d)
+        d["items"].append({"id": sid, "name": "", "created": time.time()})
+        d["active"] = sid
+    write_private(sub_link_file(d["active"]), text + "\n")
+    save_subs(d)
     write_private(os.path.join(config_dir(), "source"), text + "\n")
-    return update()
+    entry = update()
+    _name_from_update(d["active"], entry)
+    return entry
 
 
-def clear():
-    disconnect()
+def _forget_state(tun_forget=True):
     marker = os.path.join(state_dir(), "tun_applied")
-    if os.path.exists(marker) and tun_installed():
+    if tun_forget and os.path.exists(marker) and tun_installed():
         try:
             _helper("forget", timeout=60)
         except VpnError:
             pass
     paths = [os.path.join(config_dir(), "source"), marker] + [
-        os.path.join(state_dir(), f) for f in ("servers.json", "config.json", "probe.json", "pings.json", "last_update.json")]
+        os.path.join(state_dir(), f) for f in ("servers.json", "config.json", "probe.json", "pings.json",
+                                               "last_update.json", "ipcheck.json")]
     for p in paths:
         try:
             os.unlink(p)
         except OSError:
             pass
+
+
+def clear():
+    """Forgets every saved subscription."""
+    disconnect()
+    _forget_state()
+    shutil.rmtree(os.path.join(config_dir(), "subs"), ignore_errors=True)
+    try:
+        os.unlink(subs_file())
+    except OSError:
+        pass
     return status()
+
+
+# ---- subscriptions -----------------------------------------------------------------------
+# Only names and update results are in subscriptions.json; each link is in its own 600 file.
+# The active link is also mirrored to `source`, which everything above reads.
+
+SUB_ID = re.compile(r"[0-9a-f]{8}")
+
+
+def subs_file():
+    return os.path.join(config_dir(), "subscriptions.json")
+
+
+def sub_link_file(sid):
+    if not SUB_ID.fullmatch(sid or ""):
+        raise VpnError("sub_unknown", sid)
+    return os.path.join(config_dir(), "subs", sid)
+
+
+def _clean_name(name):
+    name = " ".join(str(name or "").split())
+    return name if 0 < len(name) <= 60 and all(ch.isprintable() for ch in name) else ""
+
+
+def _subs_raw():
+    d = read_json(subs_file(), {})
+    d = d if isinstance(d, dict) else {}
+    items = []
+    for it in d.get("items", []) if isinstance(d.get("items"), list) else []:
+        if isinstance(it, dict) and SUB_ID.fullmatch(str(it.get("id", ""))) \
+                and os.path.exists(os.path.join(config_dir(), "subs", it["id"])):
+            items.append({"id": it["id"], "name": _clean_name(it.get("name")),
+                          "created": float(it.get("created") or 0),
+                          "lastUpdate": it.get("lastUpdate") if isinstance(it.get("lastUpdate"), dict) else {}})
+    ids = [it["id"] for it in items]
+    active = d.get("active") if d.get("active") in ids else (ids[0] if ids else "")
+    return {"active": active, "items": items}
+
+
+def _new_sub_id(d):
+    while True:
+        sid = secrets.token_hex(4)
+        if sid not in [it["id"] for it in d["items"]]:
+            return sid
+
+
+def save_subs(d):
+    write_private(subs_file(), json.dumps({"active": d["active"], "items": d["items"]}, indent=2, ensure_ascii=False))
+
+
+def load_subs(migrate=True):
+    """The saved subscriptions. A link saved before subscriptions existed becomes the first one."""
+    d = _subs_raw()
+    src = _source_text()
+    if migrate and not d["items"] and src:
+        sid = _new_sub_id(d)
+        write_private(sub_link_file(sid), src + "\n")
+        title = ((read_json(os.path.join(state_dir(), "last_update.json"), {}) or {}).get("info") or {}).get("title", "")
+        d = {"active": sid, "items": [{"id": sid, "name": _clean_name(title), "created": time.time()}]}
+        save_subs(d)
+    return d
+
+
+def _sub_hint(sid):
+    """What the list may show about a link: the host of a URL or the number of pasted servers. Never the link."""
+    try:
+        link = unwrap_source(read_text(sub_link_file(sid)).strip())
+    except VpnError:
+        return {"kind": "app", "host": ""}
+    if is_url(link):
+        return {"kind": "url", "host": (urllib.parse.urlsplit(link).hostname or "")[:80]}
+    return {"kind": "links", "count": sum(1 for line in link.splitlines() if "://" in line) or 1}
+
+
+def _default_name(d, sid):
+    hint = _sub_hint(sid)
+    if hint.get("host"):
+        return hint["host"]
+    n = [it["id"] for it in d["items"]].index(sid) + 1 if sid in [it["id"] for it in d["items"]] else 1
+    return ("Подписка " if lang_ru() else "Subscription ") + str(n)
+
+
+def subs_list(migrate=True):
+    d = load_subs(migrate)
+    items = []
+    for it in d["items"]:
+        out = dict(it, **_sub_hint(it["id"]))
+        out["name"] = it["name"] or _default_name(d, it["id"])
+        out["active"] = it["id"] == d["active"]
+        items.append(out)
+    return {"active": d["active"], "items": items}
+
+
+def _record_sub_update(entry):
+    d = _subs_raw()
+    if not d["active"]:
+        return
+    for it in d["items"]:
+        if it["id"] == d["active"]:
+            it["lastUpdate"] = {k: entry.get(k) for k in ("time", "ok", "servers", "message", "keptOld") if k in entry}
+            title = (entry.get("info") or {}).get("title")
+            if title:
+                it["lastUpdate"]["title"] = str(title)[:80]
+    save_subs(d)
+
+
+def _name_from_update(sid, entry):
+    d = _subs_raw()
+    for it in d["items"]:
+        if it["id"] == sid and not it["name"]:
+            it["name"] = _clean_name((entry.get("info") or {}).get("title", ""))
+            save_subs(d)
+
+
+def _switch_with_rollback(d, sid):
+    """Makes sid active and updates; on failure the previous active link, its result and config stay."""
+    prev_active = d["active"]
+    prev_source = read_text(os.path.join(config_dir(), "source"))
+    last_path = os.path.join(state_dir(), "last_update.json")
+    prev_last = read_text(last_path) if os.path.exists(last_path) else None
+    d["active"] = sid
+    save_subs(d)
+    write_private(os.path.join(config_dir(), "source"), read_text(sub_link_file(sid)))
+    try:
+        return update()
+    except VpnError:
+        d2 = _subs_raw()
+        d2["active"] = prev_active if prev_active in [it["id"] for it in d2["items"]] else d2["active"]
+        save_subs(d2)
+        if prev_source.strip():
+            write_private(os.path.join(config_dir(), "source"), prev_source)
+        else:
+            try:
+                os.unlink(os.path.join(config_dir(), "source"))
+            except OSError:
+                pass
+        if prev_last is not None:
+            write_private(last_path, prev_last)
+        else:
+            try:
+                os.unlink(last_path)
+            except OSError:
+                pass
+        raise
+
+
+def sub_add(text, name=""):
+    text = (text or "").strip()
+    if not text:
+        raise VpnError("empty")
+    unwrap_source(text)                       # happ:// etc.: clear error before saving anything
+    name = _clean_name(name)
+    d = load_subs()
+    sid = _new_sub_id(d)
+    write_private(sub_link_file(sid), text + "\n")
+    d["items"].append({"id": sid, "name": name, "created": time.time()})
+    try:
+        entry = _switch_with_rollback(d, sid)
+    except VpnError:
+        d2 = _subs_raw()
+        d2["items"] = [it for it in d2["items"] if it["id"] != sid]
+        save_subs(d2)
+        try:
+            os.unlink(sub_link_file(sid))
+        except OSError:
+            pass
+        raise
+    if not name:
+        _name_from_update(sid, entry)
+    return dict(subs_list(), ok=True, added=sid, servers=entry.get("servers", 0),
+                skippedCount=entry.get("skippedCount", 0))
+
+
+def _find_sub(d, sid):
+    if sid not in [it["id"] for it in d["items"]]:
+        raise VpnError("sub_unknown", sid)
+
+
+def sub_use(sid):
+    d = load_subs()
+    _find_sub(d, sid)
+    entry = update() if sid == d["active"] else _switch_with_rollback(d, sid)
+    return dict(subs_list(), ok=True, servers=entry.get("servers", 0))
+
+
+def sub_rename(sid, name):
+    d = load_subs()
+    _find_sub(d, sid)
+    clean = _clean_name(name)
+    if not clean:
+        raise VpnError("sub_bad_name")
+    for it in d["items"]:
+        if it["id"] == sid:
+            it["name"] = clean
+    save_subs(d)
+    return dict(subs_list(), ok=True)
+
+
+def sub_remove(sid):
+    d = load_subs()
+    _find_sub(d, sid)
+    was_active = d["active"] == sid
+    d["items"] = [it for it in d["items"] if it["id"] != sid]
+    try:
+        os.unlink(sub_link_file(sid))
+    except OSError:
+        pass
+    out = {}
+    if was_active:
+        disconnect()
+        _forget_state(tun_forget=not d["items"])
+        d["active"] = d["items"][0]["id"] if d["items"] else ""
+        save_subs(d)
+        if d["active"]:
+            write_private(os.path.join(config_dir(), "source"), read_text(sub_link_file(d["active"])))
+            try:
+                update()
+            except VpnError as e:
+                out["updateError"] = e.as_dict()["message"]
+    else:
+        save_subs(d)
+    return dict(subs_list(), ok=True, **out)
+
+
+# ---- external IP through the VPN ---------------------------------------------------------
+
+IP_SERVICES = ("https://ipinfo.io/json", "https://api.ipify.org?format=json")
+
+
+def ipcheck():
+    """{ip, country, ...} as seen by an outside service through our own VPN. Never runs when not connected."""
+    settings = load_settings_readonly()
+    if tun_state() == "active":
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))       # routed into serp-tun0
+        via = "tun"
+    elif is_running():
+        proxy = f"http://127.0.0.1:{settings['proxyPort']}"
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+        via = "proxy"
+    else:
+        raise VpnError("not_connected")
+    services = [u for u in os.environ.get("SERP_VPN_IP_SERVICES", "").split(",") if u] or list(IP_SERVICES)
+    last = "-"
+    for url in services:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "curl/8.0", "Accept": "application/json"})
+            with opener.open(req, timeout=12) as r:
+                data = json.loads(r.read(64 * 1024).decode("utf-8", errors="replace"))
+            ip = str(data.get("ip", "")).strip()
+            ipaddress.ip_address(ip)
+            cc = str(data.get("country", "") or "").strip().upper()
+            cc = cc if re.fullmatch(r"[A-Z]{2}", cc) else ""
+            out = {"ok": True, "ip": ip, "country": cc, "countryName": country_name(cc) if cc else "",
+                   "flag": flag(cc) if cc else "", "time": time.time(), "via": via,
+                   "service": urllib.parse.urlsplit(url).hostname or "", "server": status_current(settings)}
+            write_private(os.path.join(state_dir(), "ipcheck.json"), json.dumps(out, ensure_ascii=False))
+            return out
+        except urllib.error.HTTPError as e:
+            last = f"HTTP {e.code}"
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            reason = getattr(e, "reason", None)
+            last = reason if isinstance(reason, str) else type(reason or e).__name__
+    raise VpnError("ip_failed", last)
+
+
+def _active_sub_name(has_source):
+    """Read-only (status never creates files): name of the active subscription."""
+    if not has_source:
+        return ""
+    d = _subs_raw()
+    for it in d["items"]:
+        if it["id"] == d["active"]:
+            return it["name"] or _default_name(d, it["id"])
+    return ""
+
+
+def status_current(settings):
+    tags = [s.get("tag") for s in _servers()]
+    return settings["selected"] if settings["selected"] in tags else (tags[0] if tags else "")
+
+
+# ---- sing-box: info, install, choose ------------------------------------------------------
+
+
+def singbox_info():
+    sb = _singbox_module()
+    path, source = singbox_location()
+    checked = sb.probe(path) if path else {"ok": False, "version": "", "error": "not_found"}
+    found = []
+    for p in sb.candidates():
+        found.append({"path": p, "system": sb.system_path(p)})
+    return {"ok": True, "path": path, "source": source, "version": checked["version"], "works": checked["ok"],
+            "error": checked["error"] if path else "", "managedPath": sb.managed_path(), "arch": sb.arch_name(),
+            "tunUsable": sb.system_path(path), "candidates": found, "installHint": INSTALL_HINT}
+
+
+def _emit(event):
+    print(json.dumps(event, ensure_ascii=False), flush=True)
+
+
+def singbox_install(as_json):
+    sb = _singbox_module()
+    emit = _emit if as_json else (lambda e: None)
+    try:
+        res = sb.install(emit)
+    except sb.SingboxError as e:
+        raise VpnError(e.code, e.detail)
+    except OSError as e:
+        raise VpnError("sb_unreachable", e.strerror or type(e).__name__)
+    settings = load_settings()
+    settings["singboxPath"] = res["path"]
+    save_settings(settings)
+    return res
+
+
+def singbox_use(path):
+    path = (path or "").strip()
+    settings = load_settings()
+    if path:
+        sb = _singbox_module()
+        path = os.path.realpath(os.path.expanduser(path))
+        checked = sb.probe(path)
+        if not checked["ok"]:
+            raise VpnError("sb_bad_path", checked["error"])
+    settings["singboxPath"] = path
+    save_settings(settings)
+    return singbox_info()
 
 
 def test(text):
@@ -1877,6 +2315,28 @@ def _print_human(cmd, data):
     elif cmd == "ping":
         for tag, d in sorted(data.get("delays", {}).items(), key=lambda kv: (kv[1] <= 0, kv[1])):
             print(f"{(str(d) + ' ms') if d > 0 else '-':>8}  {tag}")
+    elif cmd in ("subs", "sub-add", "sub-use", "sub-rename", "sub-remove"):
+        for it in data.get("items", []):
+            where = it.get("host") or (str(it.get("count", "")) + L(" links", " ссылок") if it.get("kind") == "links" else "")
+            lu = it.get("lastUpdate") or {}
+            when = time.strftime("%Y-%m-%d %H:%M", time.localtime(lu["time"])) if lu.get("time") else "-"
+            print(f"{'*' if it.get('active') else ' '} {it['id']}  {it['name'][:30]:30s} {where[:30]:30s} {when}"
+                  + ("" if lu.get("ok", True) else "  !"))
+        if data.get("updateError"):
+            print(data["updateError"])
+    elif cmd == "ipcheck":
+        print(f"{data.get('ip', '')}  {data.get('flag', '')} {data.get('countryName', '')}".rstrip())
+    elif cmd in ("singbox-info", "singbox-use", "singbox-install"):
+        if cmd == "singbox-install":
+            print(L("Installed: ", "Установлено: ") + data.get("path", "") + "  (sing-box " + data.get("version", "") + ")")
+            print("SHA-256: " + data.get("sha256", "") + ("" if data.get("verified")
+                  else L("  (GitHub published no checksum for it)", "  (GitHub не опубликовал контрольную сумму)")))
+        else:
+            print("sing-box: " + (data.get("path") or L("not found", "не найден"))
+                  + (f"  ({data.get('version')})" if data.get("version") else "")
+                  + (f"  [{data.get('source')}]" if data.get("source") else ""))
+            for c in data.get("candidates", []):
+                print("  " + c["path"] + ("  (TUN ok)" if c["system"] else ""))
     else:
         st = data.get("state", "")
         print(L("State: ", "Состояние: ") + STATE_NAMES.get(st, (st, st))[1 if ru else 0])
@@ -1938,6 +2398,25 @@ def main(argv):
             data = {"checks": collect_checks(), "tunInstalled": tun_installed(), "tunState": tun_state()}
         elif cmd == "force-off":
             data = force_off()
+        elif cmd == "ipcheck":
+            data = ipcheck()
+        elif cmd == "subs":
+            data = subs_list()
+        elif cmd == "sub-add":
+            name = next((a[7:] for a in rest if a.startswith("--name=")), "")
+            data = sub_add(sys.stdin.read(), name)
+        elif cmd == "sub-use":
+            data = sub_use(rest[0] if rest else "")
+        elif cmd == "sub-rename":
+            data = sub_rename(rest[0] if rest else "", " ".join(rest[1:]))
+        elif cmd == "sub-remove":
+            data = sub_remove(rest[0] if rest else "")
+        elif cmd == "singbox-info":
+            data = singbox_info()
+        elif cmd == "singbox-install":
+            data = singbox_install(as_json)
+        elif cmd == "singbox-use":
+            data = singbox_use(rest[0] if rest else "")
         else:
             print(f"unknown command: {cmd}", file=sys.stderr)
             return 64

@@ -16,7 +16,10 @@ Item {
 
     // ---- configuration (set by TerminalFace) -------------------------------------
     property bool live: false
+    property bool viewOnly: false
     property string mode: "interactive"       // interactive | fastfetch | cmatrix | cava | monitor
+    property string fetchLayout: ""
+    readonly property string fetchVariant: fetchLayout === "" ? "" : fetchLayout === "minimal" ? "minimal" : "full"
     property string shell: "auto"             // auto | bash | zsh
     property string command: ""               // interactive: start command; monitor: the command
     property real monitorInterval: 5           // seconds
@@ -68,7 +71,19 @@ Item {
     function buildCommand() {
         let script = Caching.serpantinumDir + "/scripts/system/serp_pty.py";
         let argv = ["python3", script, "--cols", String(core.cols), "--rows", String(core.rows)];
-        if (core.mode === "fastfetch") argv.push("--require", "fastfetch", "--cmd", "fastfetch");
+        if (core.mode === "fastfetch" || core.mode === "fetchShell") {
+            const layouts = {
+                full: "OS:Kernel:Uptime:CPU:GPU:Memory:Disk:Shell:WM:Terminal",
+                minimal: "OS:CPU:GPU:Memory"
+            };
+            const modules = layouts[core.fetchVariant];
+            const command = modules ? "TERM_PROGRAM=Serpantinum fastfetch --config none --logo none --structure " + modules : "fastfetch";
+            argv.push("--require", "fastfetch", "--cmd", command);
+            // fetchShell: Fastfetch once, then the user's shell on the same PTY (a fixed,
+            // built-in command, so no approval is involved; nothing repeats on a timer).
+            if (core.mode === "fetchShell")
+                argv.push("--then-shell", "--shell", ["bash", "zsh"].indexOf(core.shell) !== -1 ? core.shell : "auto");
+        }
         else if (core.mode === "cmatrix") argv.push("--require", "cmatrix", "--cmd", "cmatrix");
         else if (core.mode === "cava") argv.push("--require", "cava", "--cmd", "cava");
         else if (core.mode === "monitor") argv.push("--cmd", core.command.trim(), "--repeat", String(Math.max(1, core.monitorInterval)));
@@ -186,6 +201,8 @@ Item {
         case "exit":
             core.status = "exited";
             core.exitCode = msg.code || 0;
+            if (core.mode === "fastfetch" && core.fetchVariant !== "")
+                core.viewOffset = core.term.scrollbackLength();
             markDirty();
             break;
         case "missing":
@@ -205,7 +222,8 @@ Item {
     readonly property bool wantRunning: live && visible && width > 0 && height > 0
     onWantRunningChanged: wantRunning ? restart() : stop()
     onModeChanged: restart()
-    onShellChanged: if (mode === "interactive") restart()
+    onFetchVariantChanged: if (mode === "fastfetch" || mode === "fetchShell") restart()
+    onShellChanged: if (mode === "interactive" || mode === "fetchShell") restart()
     onCommandChanged: { core.sessionTrusted = false; if (mode === "monitor" || mode === "interactive") restart(); }
     onMonitorIntervalChanged: if (mode === "monitor") restart()
     onLiveChanged: restart()
@@ -265,7 +283,7 @@ Item {
                 }
             }
             t.write(s + "\x1b[0m");
-        } else if (core.mode === "fastfetch") {
+        } else if (core.mode === "fastfetch" || core.mode === "fetchShell") {
             t.write("\x1b[1;34m   .--.   \x1b[0m \x1b[1;34muser\x1b[0m@\x1b[1;34mserpantinum\x1b[0m\r\n"
                 + "\x1b[1;34m  |o_o |  \x1b[0m -----------------\r\n"
                 + "\x1b[1;34m  |:_/ |  \x1b[0m \x1b[1;34mOS\x1b[0m: Fedora Linux\r\n"
@@ -385,8 +403,9 @@ Item {
     }
 
     // ---- keyboard ----------------------------------------------------------------------
-    focus: true
+    focus: !viewOnly
     Keys.onPressed: event => {
+        if (core.viewOnly) return;
         let ctrlShift = (event.modifiers & Qt.ControlModifier) && (event.modifiers & Qt.ShiftModifier);
         if (ctrlShift && event.key === Qt.Key_C) { core.copySelection(); event.accepted = true; return; }
         if ((ctrlShift && event.key === Qt.Key_V) || ((event.modifiers & Qt.ShiftModifier) && event.key === Qt.Key_Insert)) {
@@ -419,7 +438,7 @@ Item {
     MouseArea {
         id: mouse
         anchors.fill: parent
-        enabled: core.live
+        enabled: core.live && !core.viewOnly
         acceptedButtons: Qt.LeftButton | Qt.MiddleButton
         cursorShape: Qt.IBeamCursor
         property bool dragging: false
@@ -581,7 +600,7 @@ Item {
 
     // scrolled-back indicator
     Rectangle {
-        visible: core.viewOffset > 0
+        visible: core.viewOffset > 0 && !core.viewOnly
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: Scaler.s(6)

@@ -170,6 +170,51 @@ GuideTab {
             }
         }
 
+        Rectangle {
+            objectName: "themessConfirmApply"
+            Layout.fillWidth: true
+            visible: !!Themess.pendingApply
+            implicitHeight: confirmColumn.implicitHeight + Scaler.s(20)
+            radius: Math.min(Scaler.s(10), ThemeBackend.borderRadius)
+            color: Qt.alpha(ThemeBackend.yellow, 0.1)
+            border.width: 1
+            border.color: Qt.alpha(ThemeBackend.yellow, 0.5)
+
+            ColumnLayout {
+                id: confirmColumn
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: Scaler.s(10)
+                spacing: Scaler.s(8)
+
+                Copy {
+                    Layout.fillWidth: true
+                    readonly property var pending: Themess.pendingApply || {}
+                    text: tab.tr("confirm_widgets", "%1 replaces the %2 widgets on %3 with %4 widgets of the theme. They are saved first: Restore Previous brings them back. Other screens are not changed.")
+                        .replace("%1", pending.name || "").replace("%2", pending.widgetsBefore || 0)
+                        .replace("%3", pending.widgetScreen || "").replace("%4", pending.widgetCount || 0)
+                }
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: Scaler.s(6)
+                    ActionButton {
+                        objectName: "themessConfirmApplyButton"
+                        text: tab.tr("apply", "Apply")
+                        highlighted: true
+                        enabled: !Themess.busy
+                        onClicked: Themess.confirmApply()
+                    }
+                    ActionButton {
+                        objectName: "themessCancelApplyButton"
+                        text: tab.tr("cancel", "Cancel")
+                        enabled: !Themess.busy
+                        onClicked: Themess.cancelApply()
+                    }
+                }
+            }
+        }
+
         Repeater {
             model: Themess.errors
             delegate: Copy {

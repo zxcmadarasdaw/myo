@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "ERROR//OVERDRIVE",
+  "author": "Serpantinum",
+  "description": "Retro-computer anime glitch: near-black, hot pink and ice blue, windows with title bars, technical meters, a large player, a month calendar and a real terminal with Fastfetch and the girl from the video in place of the logo. Widgets keep to the edges; the face stays clear. No glass, no blur.",
+  "components": {
+    "palette": "palette.json",
+    "materials": "materials.json",
+    "panels": "panels.json",
+    "animations": "animations.json",
+    "canvas": "canvas.json",
+    "dock": "dock.json",
+    "launcher": "launcher.json",
+    "notifications": "notifications.json",
+    "studio": "studio.json",
+    "fastfetch": "fastfetch.json",
+    "widgets": "widgets.json",
+    "wallpaper": "@shared/error-girl/error-girl.mp4",
+    "fastfetchMedia": "@shared/error-girl/fastfetch-girl.webm"
+  }
+}

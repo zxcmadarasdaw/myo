@@ -55,6 +55,7 @@ let
     matugen
     networkmanager
     pciutils
+    pipewire
     playerctl
     power-profiles-daemon
     python3
@@ -75,6 +76,7 @@ let
     quickshell
     qt6.qtwayland
     qt6.qtmultimedia
+    qt6.qtimageformats
   ];
   qmlImportPath = lib.concatMapStringsSep ":" (pkg: "${pkg}/lib/qt-6/qml") qtDeps;
   qtPluginPath = lib.concatMapStringsSep ":" (pkg: "${pkg}/lib/qt-6/plugins") qtDeps;

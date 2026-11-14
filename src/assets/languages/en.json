@@ -47,6 +47,7 @@
       "theme_apps": "App theming",
       "theme_wallpapers": "Wallpapers",
       "theme_wallpaper_hub": "Wallpaper Hub",
+      "theme_vpn": "VPN",
       "diagnostics": "Diagnostics",
       "general_main": "General",
       "general_presets": "Presets",
@@ -705,6 +706,29 @@
         "select_dir": "Select directory...",
         "select_wallpaper": "Select wallpaper",
         "select": "Wallpaper",
+        "audio": {
+          "title": "Audio",
+          "track_present": "Audio track available",
+          "track_absent": "This video has no audio track",
+          "enable": "Play wallpaper sound",
+          "volume": "Wallpaper volume",
+          "muted": "Mute",
+          "source": "Audio source",
+          "primary": "Primary monitor",
+          "monitor": "Selected monitor",
+          "none": "No sound",
+          "disconnected": "Monitor disconnected",
+          "select_monitor": "Choose monitor",
+          "smart_active": "Other audio activity detected",
+          "smart_unavailable": "Waiting for PipeWire",
+          "off": "Off",
+          "smart_mute": "Mute wallpaper",
+          "smart_duck": "Lower volume",
+          "duck_volume": "Reduced volume",
+          "playback": "React to other apps playing sound",
+          "calls": "React to voice chat and microphone use",
+          "lock": "Mute when the screen is locked"
+        },
         "transition": {
           "mode": {
             "title": "Transition",
@@ -1730,6 +1754,45 @@
     }
   },
   "widgets": {
+    "fastfetchMedia": {
+      "title": "Terminal · Fastfetch Media",
+      "missingFastfetch": "Install Fastfetch to preview system information.",
+      "hint": "Applies to desktop Terminal widgets in Fastfetch mode.",
+      "choose": "Choose a local media file",
+      "chooseButton": "Choose file",
+      "custom": "Use custom media instead of distro logo",
+      "file": "Media file",
+      "empty": "No file selected",
+      "clear": "Clear",
+      "preview": "Preview",
+      "invalid": "This file could not be opened. The widget uses standard Fastfetch.",
+      "limited": "Video is paused by the current performance or recording profile.",
+      "loading": "Loading media…",
+      "theme": "Theme",
+      "layout": "Layout",
+      "classic": "Classic",
+      "wide": "Wide",
+      "vertical": "Vertical",
+      "floating": "Floating",
+      "minimal": "Minimal",
+      "position": "Position",
+      "start": "Start",
+      "center": "Center",
+      "end": "End",
+      "width": "Media width",
+      "height": "Media height",
+      "zoom": "Zoom",
+      "opacity": "Media opacity",
+      "radius": "Media corner radius",
+      "speed": "Playback speed",
+      "fps": "Animated image frame limit",
+      "sourceFps": "Source timing",
+      "loop": "Loop",
+      "autoplay": "Autoplay",
+      "pause": "Pause when the widget is hidden",
+      "audio": "Play media audio",
+      "mix": "Allow mixing with wallpaper audio"
+    },
     "wallpaper": {
       "name": "Wallpaper picker",
       "desc": "Browse and set desktop wallpaper"
@@ -2131,7 +2194,9 @@
       "disconnected": "Disconnected",
       "none": "No subscription",
       "missing": "sing-box is not installed",
-      "error": "Error"
+      "error": "Error",
+      "connecting": "Connecting…",
+      "disconnecting": "Disconnecting…"
     },
     "busy": {
       "update": "Downloading and checking the subscription…",
@@ -2141,7 +2206,9 @@
       "force": "Turning the VPN off…"
     },
     "hint": {
-      "none": "Paste a subscription link below and press Save"
+      "none": "Paste a subscription link below and press Save",
+      "add": "Add a VPN subscription to start.",
+      "missing": "Download sing-box or choose an installed one to connect."
     },
     "errors": {
       "empty_link": "Paste a subscription link first.",
@@ -2176,6 +2243,176 @@
       "proxy_desc": "Only apps set to use the proxy",
       "tun_desc": "All apps, through the system service",
       "tun_missing": "TUN mode needs the serpantinum-vpn service: run the Serpantinum installer again."
+    },
+    "appearance": "VPN appearance",
+    "close": "Close",
+    "no_servers": "No servers",
+    "unknown_country": "Unknown",
+    "forget_all": "Remove all",
+    "forget_all_desc": "Remove all subscriptions, servers and the VPN configuration from this computer.",
+    "tabs": {
+      "internet": "INTERNET",
+      "vpn": "VPN"
+    },
+    "btn": {
+      "add": "Add",
+      "connecting": "…",
+      "disconnecting": "…",
+      "off": "OFF",
+      "on": "ON",
+      "setup": "Set up"
+    },
+    "conn": {
+      "title": "Connection"
+    },
+    "ip": {
+      "after": "Checked after connecting",
+      "checking": "Checking through the VPN…",
+      "failed": "Could not check · click to retry",
+      "verified": "Verified at {time}"
+    },
+    "loc": {
+      "declared": "From the server name · not verified",
+      "differs": "Exit IP country differs from the server name",
+      "none": "The server does not say its country",
+      "verified": "By the exit IP"
+    },
+    "node": {
+      "ip": "IP ADDRESS",
+      "location": "LOCATION",
+      "protocol": "PROTOCOL",
+      "server": "SELECT SERVER"
+    },
+    "picker": {
+      "title": "Choose a server",
+      "connected": "connected",
+      "selected": "selected",
+      "count": "{count} servers"
+    },
+    "singbox": {
+      "cancelled": "Download cancelled. Nothing was installed."
+    },
+    "subs": {
+      "title": "VPN subscriptions",
+      "add": "Add",
+      "add_button": "Add VPN subscription",
+      "app": "app link",
+      "empty": "No subscriptions yet. Paste the link your VPN provider gave you.",
+      "formats": "Supported: subscription URLs (base64, Clash YAML, sing-box JSON) and vless, vmess, trojan, ss, hysteria2, tuic links. The link is kept only on this computer and never written to logs.",
+      "links": "{count} links",
+      "name": "Name (optional)",
+      "never": "not updated yet",
+      "rename": "Rename",
+      "updated": "updated {time}"
+    },
+    "sb": {
+      "attempt": "attempt {n} of 4",
+      "auto": "Automatic",
+      "broken": "The chosen sing-box does not run: {error}",
+      "cancel": "Cancel",
+      "dnf": "System package (needed for TUN mode), in a terminal:",
+      "download": "Download",
+      "download_desc": "Download the official release from GitHub (SagerNet/sing-box) for this computer.",
+      "found": "In use: sing-box {version}",
+      "found_here": "Found on this computer",
+      "in_use": "In use",
+      "installed": "Installed sing-box {version}",
+      "manage": "Manage",
+      "mb": "MB",
+      "mbps": "MB/s",
+      "no_digest": "The release has no published checksum: the program is checked by running it.",
+      "none": "sing-box was not found on this computer.",
+      "path_placeholder": "Path to a sing-box file, e.g. ~/bin/sing-box",
+      "retry": "Retry",
+      "system_ok": "works with TUN",
+      "tun_note": "TUN mode uses only a system sing-box (/usr/bin). For TUN, install the package with dnf below.",
+      "unverified": "no official checksum; checked by running it",
+      "update": "Update",
+      "use": "Use",
+      "verified": "checksum verified",
+      "will_verify": "The archive will be checked against the SHA-256 published with the release.",
+      "stage": {
+        "download": "Downloading…",
+        "extract": "Unpacking…",
+        "release": "Looking up the latest release…",
+        "test": "Testing the program…",
+        "verify": "Checking the checksum…"
+      },
+      "source": {
+        "system": "system package",
+        "managed": "downloaded by Serpantinum",
+        "chosen": "chosen file",
+        "env": "SERP_VPN_SINGBOX"
+      }
+    },
+    "studio": {
+      "anim_off": "Animation off",
+      "anim_on": "Animation on",
+      "apply": "Apply",
+      "blur": "Blur",
+      "border_opacity": "Border",
+      "cancel": "Cancel",
+      "colors": "Colours",
+      "custom": "Custom",
+      "delete_preset": "Delete",
+      "glow": "Glow",
+      "layout": "Layout",
+      "line_width": "Width",
+      "lines": "Lines",
+      "material": "Material",
+      "not_applied": "not applied yet",
+      "opacity": "Opacity",
+      "preset_name": "Name for a custom theme",
+      "preview": "Preview",
+      "preview_note": "The open network panel (Super+N → VPN) shows the preview too.",
+      "radius": "Corner radius",
+      "reset": "Reset",
+      "save_preset": "Save as custom theme",
+      "speed": "Animation speed",
+      "themes": "Themes",
+      "color": {
+        "active": "Active",
+        "background": "Background",
+        "border": "Border",
+        "button": "Button",
+        "glow": "Glow",
+        "inactive": "Inactive",
+        "line": "Lines",
+        "text": "Text"
+      },
+      "material_name": {
+        "glass": "Premium Glass",
+        "liquid": "Liquid Glass",
+        "matte": "Matte Dark",
+        "minimal": "Minimal",
+        "neon": "Neon",
+        "obsidian": "Obsidian"
+      },
+      "line": {
+        "circuit": "Circuit",
+        "curved": "Curved",
+        "flow": "Flow",
+        "minimal": "Minimal",
+        "straight": "Straight"
+      },
+      "shape": {
+        "circle": "Circle",
+        "pill": "Pill",
+        "squircle": "Squircle"
+      },
+      "type": {
+        "bold": "Bold",
+        "light": "Light",
+        "regular": "Regular"
+      },
+      "layouts": {
+        "auto": "Auto (adapts to size)",
+        "centered": "Centered",
+        "compact": "Compact",
+        "expanded": "Expanded",
+        "horizontal": "Horizontal",
+        "vertical": "Vertical"
+      }
     }
   },
   "common": {

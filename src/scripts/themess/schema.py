@@ -37,6 +37,24 @@ COLOR = pattern(r"#[a-fA-F0-9]{6}")
 IDENTIFIER = pattern(r"[A-Za-z0-9_-]{1,80}")
 
 
+VPN_THEMES = ("obsidian_glass", "liquid_noir", "midnight_blue", "graphite", "soft_neon", "pure_minimal")
+UNIT = number(0, 1)
+VPN_STYLE = {
+    "material": choice(("matte", "glass", "liquid", "obsidian", "minimal", "neon")),
+    "layout": choice(("auto", "centered", "vertical", "horizontal", "compact", "expanded")),
+    "lineStyle": choice(("straight", "curved", "circuit", "flow", "minimal")),
+    "buttonShape": choice(("circle", "squircle", "pill")),
+    "typography": choice(("light", "regular", "bold")),
+    **dict.fromkeys(("background", "button", "line", "active", "inactive", "text", "glowColor", "border"), COLOR),
+    "opacity": UNIT, "blur": UNIT, "borderOpacity": UNIT, "glow": UNIT,
+    "lineWidth": number(0.5, 6), "animSpeed": number(0.25, 3), "animate": BOOL, "radius": integer(0, 40),
+}
+
+
+FASTFETCH_THEMES = ("obsidian", "glass_noir", "minimal", "liquid_shadow", "terminal_classic", "floating_media",
+                    "mochi", "overdrive")
+
+
 def validate(value, schema, label, allow_empty=False):
     if not isinstance(schema, dict):
         if not schema(value):
@@ -100,6 +118,49 @@ SETTINGS = {
         "dnd": BOOL, "position": choice(ANCHORS + ["custom"]), "horizontalPosition": PERCENT,
         "verticalPosition": PERCENT, "sound": BOOL, "showEmptyGraphic": BOOL, "rightClickClose": BOOL,
     }),
+    # Look of the VPN panel only (singletons/theme/VpnAppearance.qml). No subscription, link,
+    # server or token can be expressed here, and the user's own saved presets ("presets")
+    # are not part of the schema, so a package can neither carry them nor overwrite them.
+    "vpn": ("vpnAppearance", {
+        "theme": choice(VPN_THEMES + ("custom",)),
+        "custom": VPN_STYLE,
+    }),
+    # Fastfetch Media look and playback. The media file itself is the separate
+    # `fastfetchMedia` component (validated like a wallpaper); a package never names a path
+    # here, and it cannot turn the clip's sound on (playAudio is not part of the schema).
+    "fastfetch": ("fastfetchMedia", {
+        "appearance": {
+            "theme": choice(FASTFETCH_THEMES),
+            "layout": choice(("classic", "wide", "vertical", "floating", "minimal")),
+            "position": choice(("start", "center", "end")),
+            "width": integer(15, 100), "height": integer(15, 100),
+            "zoom": number(0.5, 2), "opacity": UNIT, "radius": integer(0, 40),
+        },
+        "loop": BOOL, "autoplay": BOOL, "pauseWhenHidden": BOOL,
+        "speed": number(0.25, 2), "animationFps": integer(0, 60),
+    }),
+    # Atelier widget looks: how much optional motion they show.
+    "studio": ("widgetStudio", {
+        "motion": choice(("full", "reduced", "off")),
+    }),
+}
+
+# Widget fields a package may set besides id/type/variant/geometry. Appearance only:
+# no command, no host to ping, no path. Terminal modes that would run a configured
+# command ("monitor") are not accepted.
+ATELIER_STYLES = ("matte", "premium", "minimal", "retro", "elegant", "editorial", "technical", "borderless", "compact")
+WIDGET_FIELDS = {
+    "faceStyle": choice(ATELIER_STYLES),
+    "onlyWhilePlaying": BOOL,
+    "showTotals": BOOL,
+}
+TERMINAL_FIELDS = {
+    "mode": choice(("interactive", "fastfetch", "fetchShell", "cmatrix")),
+    "shell": choice(("auto", "bash", "zsh")),
+    "fontFamily": plain, "fontSize": integer(7, 32),
+    "colorScheme": choice(("theme", "classic", "matrix", "cyber", "amber")),
+    "backgroundOpacity": UNIT, "cornerRadius": integer(0, 40),
+    "appearAnimation": choice(("fade", "slide", "scale", "none")),
 }
 
 
@@ -107,6 +168,8 @@ def configuration(kind, value, caps, name):
     section, schema = SETTINGS[kind]
     if isinstance(value, dict) and set(value) == {section}:
         value = value[section]
+    if kind == "vpn" and isinstance(value, dict) and value and set(value) <= set(VPN_STYLE):
+        value = {"theme": "custom", "custom": value}         # a bare style object is a custom look
     if kind == "panels":
         modules = choice(caps.get("barModules", []))
         group = items(lambda item: modules(item) or (
@@ -144,6 +207,9 @@ def widget_layout(value, caps):
         }
         if isinstance(item, dict) and schema["type"](item.get("type")):
             schema["variant"] = choice(types[item["type"]])
+            schema.update(WIDGET_FIELDS)
+            if item["type"] == "terminal":
+                schema.update(TERMINAL_FIELDS)
             if item["type"] == "music":
                 # Appearance only. Themes cannot apply EQ, presets, routing or commands.
                 schema.update(musicDrawer=BOOL, musicAnimations=BOOL, musicVisualizer=BOOL,

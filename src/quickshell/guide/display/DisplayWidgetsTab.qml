@@ -36,6 +36,32 @@ DisplayWidgetsState {
             width: parent.width - (parent.contentHeight > parent.height ? rootObj.s(6) : 0)
             spacing: rootObj.s(6)
 
+            FastfetchMediaSection { rootObj: displayWidgetsRoot.rootObj }
+
+            // Atelier widget motion: full | reduced (entrances only) | off (static).
+            SettingsRow {
+                rootObj: displayWidgetsRoot.rootObj
+                settingId: "widgets_atelier_motion"
+                icon: "󰐊"
+                title: I18n.t("guide.display.widgets.motion.title", "Widget animation")
+                description: I18n.t("guide.display.widgets.motion.desc", "Atelier widgets: full motion, only gentle entrances, or completely still. Performance mode always turns it off.")
+                searchKeywords: "widgets animation motion reduce atelier weather scene performance"
+
+                Dropdown {
+                    readonly property var ids: ["full", "reduced", "off"]
+                    Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                    Layout.preferredWidth: displayWidgetsRoot.rootObj ? displayWidgetsRoot.rootObj.s(150) : 150
+                    Layout.preferredHeight: displayWidgetsRoot.rootObj ? displayWidgetsRoot.rootObj.s(32) : 32
+                    accentColor: ThemeBackend.mauve
+                    options: [I18n.t("guide.display.widgets.motion.full", "Full"),
+                              I18n.t("guide.display.widgets.motion.reduced", "Reduced"),
+                              I18n.t("guide.display.widgets.motion.off", "Off")]
+                    currentIndex: Math.max(0, ids.indexOf(Config.getSetting("widgetStudio.motion", "full")))
+                    onSelected: (index, _) => Config.setSetting("widgetStudio.motion", ids[index])
+                    onVisibleChanged: if (!visible && isOpen) closePopup()
+                }
+            }
+
             SettingsRow {
                 rootObj: displayWidgetsRoot.rootObj
                 settingId: "widgets_hide_bar"

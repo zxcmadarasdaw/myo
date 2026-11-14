@@ -8,3 +8,5 @@ ThemePresetsSection 1.0 ThemePresetsSection.qml
 ThemeAppsTab 1.0 ThemeAppsTab.qml
 AppIssuePopup 1.0 AppIssuePopup.qml
 AppPickerPopup 1.0 AppPickerPopup.qml
+ThemeVpnTab 1.0 ThemeVpnTab.qml
+VpnColorPicker 1.0 VpnColorPicker.qml

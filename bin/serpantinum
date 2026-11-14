@@ -751,7 +751,16 @@ if [[ "$1" == "vpn" ]]; then
             fi
             exec python3 "$VPN_PY" set-source "${@:2}"
             ;;
-        ""|status|update|connect|disconnect|list|ping|select|clear|mode|check|force-off|-h|--help|help)
+        sub-add)
+            if [[ -t 0 ]]; then
+                read -r -s -p "Subscription link / ссылка подписки: " VPN_LINK
+                echo
+                printf '%s\n' "$VPN_LINK" | python3 "$VPN_PY" sub-add "${@:2}"
+                exit $?
+            fi
+            exec python3 "$VPN_PY" sub-add "${@:2}"
+            ;;
+        ""|status|update|connect|disconnect|list|ping|select|clear|mode|check|force-off|ipcheck|subs|sub-use|sub-rename|sub-remove|singbox-info|singbox-install|singbox-use|-h|--help|help)
             exec python3 "$VPN_PY" "${@:-status}"
             ;;
         tun)
@@ -777,7 +786,7 @@ if [[ "$1" == "vpn" ]]; then
             esac
             ;;
         *)
-            echo "usage: serpantinum vpn [status|test [link]|set|update|connect|disconnect|list|ping|select <server>|clear|mode proxy|tun|check|force-off|tun on|off [--force]] [--json]"
+            echo "usage: serpantinum vpn [status|test [link]|set|update|connect|disconnect|list|ping|select <server>|clear|mode proxy|tun|check|force-off|tun on|off [--force]|ipcheck|subs|sub-add [--name=N]|sub-use ID|sub-rename ID NAME|sub-remove ID|singbox-info|singbox-install|singbox-use PATH] [--json]"
             exit 64
             ;;
     esac

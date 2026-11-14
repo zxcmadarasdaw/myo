@@ -1,0 +1,17 @@
+{
+  "appearance": {
+    "theme": "overdrive",
+    "layout": "classic",
+    "position": "center",
+    "width": 42,
+    "height": 94,
+    "zoom": 1,
+    "opacity": 1,
+    "radius": 2
+  },
+  "loop": true,
+  "autoplay": true,
+  "pauseWhenHidden": true,
+  "speed": 1,
+  "animationFps": 0
+}

@@ -5,6 +5,7 @@ import Quickshell
 import "../"
 import "../reusables"
 import "settings"
+import "faces/common/AtelierStyles.js" as AtelierStyles
 
 QtObject {
     id: registry
@@ -601,6 +602,7 @@ QtObject {
         _setting("mode", "choice", "top", { name: I18n.t("widgets.terminal.mode", "Mode"), options: [
             { id: "interactive", label: I18n.t("widgets.terminal.modes.interactive", "Interactive") },
             { id: "fastfetch", label: "Fastfetch" },
+            { id: "fetchShell", label: I18n.t("widgets.terminal.modes.fetchShell", "Fastfetch + shell") },
             { id: "cmatrix", label: "CMatrix" },
             { id: "cava", label: "CAVA" },
             { id: "monitor", label: I18n.t("widgets.terminal.modes.monitor", "Command monitor") }
@@ -681,6 +683,16 @@ QtObject {
         }
     }
 
+    // Atelier: one variant per type whose look is picked here (faces/common/AtelierStyles.js).
+    readonly property var atelierStyleOptions: AtelierStyles.IDS.map(id => ({ id: id, label: I18n.t("widgets.atelier.styles." + id, AtelierStyles.LABELS[id]) }))
+    readonly property var atelierSettings: [
+        _setting("faceStyle", "choice", "top", { name: I18n.t("widgets.atelier.style", "Style"), options: registry.atelierStyleOptions, variants: ["atelier"] })
+    ]
+    function withAtelier(list) { return (list || []).concat(registry.atelierSettings); }
+    function atelierVariant(file) {
+        return { file: file, icon: "A", label: I18n.t("widgets.variants.atelier", "Atelier") };
+    }
+
     readonly property var usageCircleSettings: [
         {
             id: "sineWave",
@@ -734,7 +746,8 @@ QtObject {
                 "bars": { file: "faces/visualizer/VisualizerFace.qml", icon: "1", label: I18n.t("widgets.variants.bars") },
                 "continuous": { file: "faces/visualizer/VisualizerFaceContinuous.qml", icon: "2", label: I18n.t("widgets.variants.continuous") },
                 "minimal":    { file: "faces/visualizer/VisualizerFaceRestrained.qml", icon: "3", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":       { file: "faces/visualizer/VisualizerFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") }
+                "lush":       { file: "faces/visualizer/VisualizerFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/visualizer/VisualizerFaceAtelier.qml")
             },
             additionalSettings: [
                 {
@@ -746,7 +759,9 @@ QtObject {
                     accentColor: "surface0",
                     textColor: "mauve"
                 }
-            ]
+            ].concat(registry.atelierSettings, [
+                _setting("onlyWhilePlaying", "toggle", "bottom", { name: I18n.t("widgets.atelier.onlyWhilePlaying", "Only while music plays"), variants: ["atelier"] })
+            ])
         },
         "time": {
             name: I18n.t("widgets.types.clock"),
@@ -765,8 +780,10 @@ QtObject {
                 "lockscreen":     { file: "faces/clock/ClockFaceLockscreen.qml",     icon: "7", label: I18n.t("widgets.variants.lockscreen", "Lockscreen") },
                 "stretched":      { file: "faces/clock/ClockFaceStretched.qml",      icon: "8", label: I18n.t("widgets.variants.stretched", "Stretched") },
                 "clockMinimal":   { file: "faces/clock/ClockFaceRestrained.qml",     icon: "9", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":           { file: "faces/clock/ClockFaceLush.qml",           icon: "10", label: I18n.t("widgets.variants.lush", "Lush") }
-            }
+                "lush":           { file: "faces/clock/ClockFaceLush.qml",           icon: "10", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/clock/ClockFaceAtelier.qml")
+            },
+            additionalSettings: registry.atelierSettings
         },
         "music": {
             name: I18n.t("widgets.types.music"),
@@ -787,7 +804,8 @@ QtObject {
                 "lyrics":       { file: "faces/music/MusicFaceLyrics.qml",       icon: "3", label: I18n.t("widgets.variants.lyrics") },
                 "simpleLyrics": { file: "faces/music/MusicFaceLyricsSimple.qml", icon: "4", label: typeof I18n !== "undefined" ? I18n.t("widgets.variants.simpleLyrics", "Simple Lyrics") : "Simple Lyrics" },
                 "musicMinimal": { file: "faces/music/MusicFaceRestrained.qml",   icon: "5", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":         { file: "faces/music/MusicFaceLush.qml",         icon: "6", label: I18n.t("widgets.variants.lush", "Lush") }
+                "lush":         { file: "faces/music/MusicFaceLush.qml",         icon: "6", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/music/MusicFaceAtelier.qml")
             },
             additionalSettings: [
                 { id: "musicDrawer", name: "Audio Studio · полоска", property: "musicDrawer", type: "custom", component: registry.toggleSettingComponent },
@@ -855,7 +873,7 @@ QtObject {
                     textColor: "mauve",
                     component: registry.visualizerStyleSwitchComponent
                 }
-            ]
+            ].concat(registry.atelierSettings)
         },
         "weather": {
             name: I18n.t("widgets.types.weather"),
@@ -869,8 +887,10 @@ QtObject {
                 "full":    { file: "faces/weather/WeatherFaceFull.qml",    icon: "2", label: I18n.t("widgets.variants.full") },
                 "round":   { file: "faces/weather/WeatherFaceRound.qml",   icon: "3", label: I18n.t("widgets.variants.round") },
                 "minimal": { file: "faces/weather/WeatherFaceRestrained.qml", icon: "4", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":    { file: "faces/weather/WeatherFaceLush.qml",       icon: "5", label: I18n.t("widgets.variants.lush", "Lush") }
-            }
+                "lush":    { file: "faces/weather/WeatherFaceLush.qml",       icon: "5", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/weather/WeatherFaceAtelier.qml")
+            },
+            additionalSettings: registry.atelierSettings
         },
         "image": {
             name: I18n.t("widgets.types.image"),
@@ -923,9 +943,10 @@ QtObject {
                 "default": { file: "faces/usage/CpuFace.qml", icon: "1", label: I18n.t("widgets.variants.default") },
                 "circle":  { file: "faces/usage/CpuFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") },
                 "minimal": { file: "faces/usage/CpuFaceRestrained.qml", icon: "3", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":    { file: "faces/usage/CpuFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") }
+                "lush":    { file: "faces/usage/CpuFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/usage/CpuFaceAtelier.qml")
             },
-            additionalSettings: registry.usageCircleSettings
+            additionalSettings: registry.withAtelier(registry.usageCircleSettings)
         },
         "ram": {
             name: I18n.t("quickactions.systemusage.ram"),
@@ -938,9 +959,10 @@ QtObject {
                 "default": { file: "faces/usage/RamFace.qml", icon: "1", label: I18n.t("widgets.variants.default") },
                 "circle":  { file: "faces/usage/RamFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") },
                 "minimal": { file: "faces/usage/RamFaceRestrained.qml", icon: "3", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":    { file: "faces/usage/RamFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") }
+                "lush":    { file: "faces/usage/RamFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/usage/RamFaceAtelier.qml")
             },
-            additionalSettings: registry.usageCircleSettings
+            additionalSettings: registry.withAtelier(registry.usageCircleSettings)
         },
         "temp": {
             name: I18n.t("quickactions.systemusage.temp"),
@@ -953,9 +975,10 @@ QtObject {
                 "default": { file: "faces/usage/TempFace.qml", icon: "1", label: I18n.t("widgets.variants.default") },
                 "circle":  { file: "faces/usage/TempFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") },
                 "minimal": { file: "faces/usage/TempFaceRestrained.qml", icon: "3", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":    { file: "faces/usage/TempFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") }
+                "lush":    { file: "faces/usage/TempFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/usage/TempFaceAtelier.qml")
             },
-            additionalSettings: registry.usageCircleSettings
+            additionalSettings: registry.withAtelier(registry.usageCircleSettings)
         },
         "disk": {
             name: I18n.t("quickactions.systemusage.disk"),
@@ -968,9 +991,10 @@ QtObject {
                 "default": { file: "faces/usage/DiskFace.qml", icon: "1", label: I18n.t("widgets.variants.default") },
                 "circle":  { file: "faces/usage/DiskFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") },
                 "minimal": { file: "faces/usage/DiskFaceRestrained.qml", icon: "3", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":    { file: "faces/usage/DiskFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") }
+                "lush":    { file: "faces/usage/DiskFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/usage/DiskFaceAtelier.qml")
             },
-            additionalSettings: registry.usageCircleSettings
+            additionalSettings: registry.withAtelier(registry.usageCircleSettings)
         },
         "battery": {
             name: I18n.t("widgets.types.battery"),
@@ -983,9 +1007,10 @@ QtObject {
                 "default": { file: "faces/battery/BatteryFace.qml", icon: "1", label: I18n.t("widgets.variants.default") },
                 "circle":  { file: "faces/battery/BatteryFaceCircle.qml", icon: "2", label: I18n.t("widgets.variants.circle", "Circle") },
                 "minimal": { file: "faces/battery/BatteryFaceRestrained.qml", icon: "3", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":    { file: "faces/battery/BatteryFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") }
+                "lush":    { file: "faces/battery/BatteryFaceLush.qml",       icon: "4", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/battery/BatteryFaceAtelier.qml")
             },
-            additionalSettings: registry.usageCircleSettings
+            additionalSettings: registry.withAtelier(registry.usageCircleSettings)
         },
         "github": {
             name: typeof I18n !== "undefined" ? I18n.t("widgets.types.github", "GitHub") : "GitHub",
@@ -1010,8 +1035,10 @@ QtObject {
             variants: {
                 "default": { file: "faces/notes/NotesFace.qml", icon: "1", label: typeof I18n !== "undefined" ? I18n.t("widgets.variants.default", "Default") : "Default" },
                 "minimal": { file: "faces/notes/NotesFaceRestrained.qml", icon: "2", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":    { file: "faces/notes/NotesFaceLush.qml",       icon: "3", label: I18n.t("widgets.variants.lush", "Lush") }
-            }
+                "lush":    { file: "faces/notes/NotesFaceLush.qml",       icon: "3", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/notes/NotesFaceAtelier.qml")
+            },
+            additionalSettings: registry.atelierSettings
         },
         "timer": {
             name: I18n.t("quickactions.tabs.timer", "Timer"),
@@ -1025,8 +1052,10 @@ QtObject {
                 "stopwatch": { file: "faces/timer/TimerFaceStopwatch.qml", icon: "2", label: I18n.t("quickactions.timer.tabs.stopwatch", "Stopwatch") },
                 "pomodoro":  { file: "faces/timer/TimerFacePomodoro.qml",  icon: "3", label: I18n.t("quickactions.timer.tabs.pomodoro", "Pomodoro") },
                 "minimal":   { file: "faces/timer/TimerFaceRestrained.qml", icon: "4", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":      { file: "faces/timer/TimerFaceLush.qml",       icon: "5", label: I18n.t("widgets.variants.lush", "Lush") }
-            }
+                "lush":      { file: "faces/timer/TimerFaceLush.qml",       icon: "5", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/timer/TimerFaceAtelier.qml")
+            },
+            additionalSettings: registry.atelierSettings
         },
         "text": {
             name: I18n.t("widgets.types.text", "Text"),
@@ -1038,7 +1067,8 @@ QtObject {
             variants: {
                 "default": { file: "faces/text/TextFace.qml", icon: "1", label: I18n.t("widgets.variants.default", "Default") },
                 "minimal": { file: "faces/text/TextFaceRestrained.qml", icon: "2", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":    { file: "faces/text/TextFaceLush.qml",       icon: "3", label: I18n.t("widgets.variants.lush", "Lush") }
+                "lush":    { file: "faces/text/TextFaceLush.qml",       icon: "3", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/text/TextFaceAtelier.qml")
             },
             additionalSettings: [
                 {
@@ -1054,7 +1084,34 @@ QtObject {
                     textColor: "mauve",
                     component: registry.textContentInputComponent
                 }
-            ]
+            ].concat(registry.atelierSettings)
+        },
+        // GPU load (GpuStats: sysfs or nvidia-smi). Atelier only; says "not measured"
+        // when the driver reports no load.
+        "gpu": {
+            name: I18n.t("widgets.types.gpu", "GPU"),
+            icon: String.fromCodePoint(0xF08AE),
+            category: "system",
+            defaultWidth: 220,
+            defaultHeight: 150,
+            defaultVariant: "atelier",
+            variants: {
+                "atelier": registry.atelierVariant("faces/usage/GpuFaceAtelier.qml")
+            },
+            additionalSettings: registry.atelierSettings
+        },
+        // Month calendar from the system date. No events: there is no calendar source.
+        "calendar": {
+            name: I18n.t("widgets.types.calendar", "Calendar"),
+            icon: String.fromCodePoint(0xF00ED),
+            category: "time",
+            defaultWidth: 300,
+            defaultHeight: 260,
+            defaultVariant: "atelier",
+            variants: {
+                "atelier": registry.atelierVariant("faces/calendar/CalendarFaceAtelier.qml")
+            },
+            additionalSettings: registry.atelierSettings
         },
         // Network Monitor Pro. "original" is the bar indicator as it is.
         "network": {
@@ -1072,9 +1129,10 @@ QtObject {
                 "cyber":    { file: "faces/network/NetworkFaceCyber.qml",    icon: "5", label: I18n.t("widgets.variants.cyberNetwork", "Cyber Network") },
                 "compact":  { file: "faces/network/NetworkFaceCompact.qml",  icon: "6", label: I18n.t("widgets.variants.compactPanel", "Compact Panel") },
                 "networkMinimal": { file: "faces/network/NetworkFaceRestrained.qml", icon: "7", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":     { file: "faces/network/NetworkFaceLush.qml",     icon: "8", label: I18n.t("widgets.variants.lush", "Lush") }
+                "lush":     { file: "faces/network/NetworkFaceLush.qml",     icon: "8", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/network/NetworkFaceAtelier.qml")
             },
-            additionalSettings: registry.networkSettings
+            additionalSettings: registry.withAtelier(registry.networkSettings)
         },
         // File Dock: shortcuts only; never deletes or moves files.
         "filedock": {
@@ -1093,9 +1151,10 @@ QtObject {
                 "grid":       { file: "faces/filedock/FileDockGrid.qml",       icon: "5", label: I18n.t("widgets.variants.grid", "Grid") },
                 "cyber":      { file: "faces/filedock/FileDockCyber.qml",      icon: "6", label: I18n.t("widgets.variants.cyberFiles", "Cyber Files") },
                 "filedockMinimal": { file: "faces/filedock/FileDockRestrained.qml", icon: "7", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":       { file: "faces/filedock/FileDockLush.qml",       icon: "8", label: I18n.t("widgets.variants.lush", "Lush") }
+                "lush":       { file: "faces/filedock/FileDockLush.qml",       icon: "8", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/filedock/FileDockAtelier.qml")
             },
-            additionalSettings: registry.fileDockSettings
+            additionalSettings: registry.withAtelier(registry.fileDockSettings)
         },
         // Desktop Terminal: a real PTY terminal. Never on the lock screen; it
         // runs nothing until placed on the desktop, and only approved commands.
@@ -1114,9 +1173,10 @@ QtObject {
                 "minimal":     { file: "faces/terminal/TerminalMinimal.qml",     icon: "4", label: I18n.t("widgets.variants.minimal", "Minimal") },
                 "card":        { file: "faces/terminal/TerminalCard.qml",        icon: "5", label: I18n.t("widgets.variants.consoleCard", "Console Card") },
                 "terminalMinimal": { file: "faces/terminal/TerminalRestrained.qml", icon: "6", label: I18n.t("widgets.variants.restrained", "Restrained") },
-                "lush":        { file: "faces/terminal/TerminalLush.qml",        icon: "7", label: I18n.t("widgets.variants.lush", "Lush") }
+                "lush":        { file: "faces/terminal/TerminalLush.qml",        icon: "7", label: I18n.t("widgets.variants.lush", "Lush") },
+                "atelier": registry.atelierVariant("faces/terminal/TerminalAtelier.qml")
             },
-            additionalSettings: registry.terminalSettings
+            additionalSettings: registry.withAtelier(registry.terminalSettings)
         }
     })
 

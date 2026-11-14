@@ -10,3 +10,8 @@ LushMeter 1.0 LushMeter.qml
 FaceRing 1.0 FaceRing.qml
 FaceButton 1.0 FaceButton.qml
 HoldAction 1.0 HoldAction.qml
+AtelierKit 1.0 AtelierKit.qml
+AtelierCard 1.0 AtelierCard.qml
+AtelierAppear 1.0 AtelierAppear.qml
+AtelierMeter 1.0 AtelierMeter.qml
+AtelierSpark 1.0 AtelierSpark.qml

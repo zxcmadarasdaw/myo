@@ -633,7 +633,8 @@ Item {
                 { id: "ThemeAppearance", key: "theme_appearance", name: "Appearance", icon: "󰏘", file: "theme/ThemeTab.qml" },
                 { id: "ThemeWallpapers", key: "theme_wallpapers", name: "Wallpapers", icon: "󰸉", file: "wallpaper/WallpaperTab.qml" },
                 { id: "ThemeWallpaperHub", key: "theme_wallpaper_hub", name: "Wallpaper Hub", icon: "󰖟", file: "wallpaper/hub/WallpaperHubTab.qml" },
-                { id: "ThemeApps", key: "theme_apps", name: "App theming", icon: "󰏗", file: "theme/ThemeAppsTab.qml" }
+                { id: "ThemeApps", key: "theme_apps", name: "App theming", icon: "󰏗", file: "theme/ThemeAppsTab.qml" },
+                { id: "ThemeVpn", key: "theme_vpn", name: "VPN", icon: "󰦝", file: "theme/ThemeVpnTab.qml" }
             ]
         },
         {

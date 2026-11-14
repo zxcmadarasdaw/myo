@@ -319,7 +319,8 @@ class Env:
         for base in (self.cfg, self.state):
             for dirpath, _, files in os.walk(base):
                 for f in files:
-                    if f != "source":
+                    # the only places a link may be: `source` (active) and subs/<id> (each saved one)
+                    if f != "source" and os.path.basename(dirpath) != "subs":
                         out.append(Path(dirpath, f).read_text(encoding="utf-8", errors="replace"))
         return "\n".join(out)
 
@@ -642,6 +643,9 @@ class Storage(unittest.TestCase):
         self.assertIn(token, Path(self.env.cfg, "source").read_text(encoding="utf-8"))
         self.assertNotIn(token, self.env.all_text())
         self.assertNotIn(token, json.dumps(vpn.status()))
+        self.assertNotIn(token, json.dumps(vpn.subs_list()))              # the list shows the host only
+        self.assertEqual(vpn.subs_list()["items"][0]["host"], "127.0.0.1")
+        self.assertEqual(vpn.subs_list()["items"][0]["name"], "Мой VPN")   # named after Profile-Title
         self.sub.code = 404
         with self.assertRaises(vpn.VpnError) as ctx:
             vpn.update()
