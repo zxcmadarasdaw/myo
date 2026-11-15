@@ -273,7 +273,8 @@ Window {
                                 subs: VpnService.subs, activeSub: VpnService.activeSub,
                                 sb: { installing: VpnService.sbInstalling, stage: VpnService.sbStage, done: VpnService.sbDone,
                                       total: VpnService.sbTotal, speed: VpnService.sbSpeed, attempt: VpnService.sbAttempt,
-                                      canCancel: VpnService.sbCanCancel,
+                                      canCancel: VpnService.sbCanCancel, elapsed: VpnService.sbElapsed,
+                                      logPath: VpnService.sbLogPath, errorCode: VpnService.sbErrorCode,
                                       error: VpnService.sbError, result: VpnService.sbResult, checksum: VpnService.sbChecksum } });
     }
     function ui() {
@@ -293,6 +294,10 @@ Window {
         case "removeSub": VpnService.removeSub(a); break;
         case "select": VpnService.select(a); break;
         case "install": VpnService.installSingbox(); break;
+        case "installBundle": VpnService.installSingbox("bundle", a); break;
+        case "installOnline": VpnService.installSingbox("online", ""); break;
+        case "singboxInfo": VpnService.singboxInfo(); break;
+        case "stall": VpnService.sbLastEvent = Date.now() - VpnService.sbWatchdogMs - 1000; break;
         case "cancelInstall": VpnService.cancelInstall(); break;
         case "useSingbox": VpnService.useSingbox(a); break;
         case "previewTheme": VpnAppearance.previewTheme(a); break;
@@ -636,7 +641,11 @@ try:
     until(lambda: running("setup --json") and running("setup --json")[0]["stdinClosed"], "setup retry")
     assert running("setup --json")[0]["written"] == [link + "\n"]
     j("stream", "setup --json", json.dumps({"event": "stage", "stage": "packages"}))
-    assert not j("svc")["sb"]["canCancel"]
+    assert j("svc")["sb"]["canCancel"], "the polkit password wait can be cancelled"
+    j("stream", "setup --json", json.dumps({"event": "heartbeat", "phase": "auth", "elapsed": 20}))
+    assert j("svc")["sb"]["elapsed"] == 20, j("svc")["sb"]
+    j("stream", "setup --json", json.dumps({"event": "stage", "stage": "transaction"}))
+    assert not j("svc")["sb"]["canCancel"], "a running RPM transaction is never interrupted"
     finish("setup --json", {"ok": True, "path": "/usr/bin/sing-box", "setupComplete": True,
                            "active": "aaaaaaaa", "items": [SUB_A]})
     answer_status(dict(status_off, setup={"state": "ready", "binaryReady": True, "yaml": True}),
@@ -712,6 +721,74 @@ try:
         if running(needle):
             finish(needle, status_off if needle == "status --json" else {"ok": True, "works": True, "candidates": [], "servers": SERVERS})
     passed.append("failed download keeps the reason (Retry); choosing an installed sing-box runs singbox-use PATH")
+
+    # ---- offline bundle: three states, local install, chosen folder, clear error -----------------
+    sb_sheet = win.findChild(QObject, "mainStudio").findChild(QObject, "vpnSheet_singbox")
+    def child(name):
+        o = sb_sheet.findChild(QObject, name)
+        assert o is not None, name
+        return o
+    do("singboxInfo")
+    until(lambda: running("singbox-info"), "info for bundle state")
+    finish("singbox-info", {"ok": True, "path": "", "source": "", "version": "", "works": False, "candidates": [],
+                            "bundle": {"found": True, "dir": "/home/u/.local/share/serpantinum/vpn-bundle", "version": "1.14.4"}})
+    until(lambda: child("vpnInstallBundle").property("visible"), "Install VPN Components offered for a found bundle")
+    assert child("vpnEngineState").property("text") == S["sb.not_installed"], child("vpnEngineState").property("text")
+    assert child("vpnDownload").property("visible") and child("vpnChooseBundle").property("visible")
+    do("installBundle", "")
+    until(lambda: running("singbox-install"), "bundle install started")
+    cmd = running("singbox-install")[0]["cmd"]
+    assert "--offline" in cmd and not any(a.startswith("--bundle=") for a in cmd), cmd
+    assert j("svc")["sb"]["stage"] == "bundle", j("svc")["sb"]
+    finish("singbox-install", "\n".join(json.dumps(e) for e in (
+        {"event": "stage", "stage": "bundle"}, {"event": "stage", "stage": "verify"},
+        {"event": "stage", "stage": "extract"}, {"event": "stage", "stage": "test"},
+        {"ok": True, "path": "/home/u/.local/share/serpantinum/vpn/bin/sing-box", "version": "1.14.4",
+         "verified": True, "source": "bundle"})))
+    until(lambda: j("svc")["sb"]["result"] is not None and not j("svc")["sb"]["installing"], "bundle installed")
+    until(lambda: running("singbox-info"), "info after bundle install")
+    finish("singbox-info", {"ok": True, "path": "/home/u/.local/share/serpantinum/vpn/bin/sing-box", "source": "managed",
+                            "version": "1.14.4", "works": True, "candidates": [],
+                            "bundle": {"found": True, "dir": "/b", "version": "1.14.4"}})
+    until(lambda: child("vpnEngineState").property("text") == S["sb.ready"], "VPN Engine Ready")
+    assert not child("vpnInstallBundle").property("visible"), "nothing to install when the engine matches the bundle"
+    if running("status --json"):
+        finish("status --json", status_off)
+    # a folder chosen in the dialog (file URL) and a clear error when it is not a bundle
+    do("installBundle", "file:///run/media/u/USB/vpn-bundle")
+    until(lambda: running("singbox-install"), "chosen-folder install started")
+    cmd = running("singbox-install")[0]["cmd"]
+    assert "--offline" in cmd and "--bundle=file:///run/media/u/USB/vpn-bundle" in cmd, cmd
+    finish("singbox-install", json.dumps({"ok": False, "error": {"code": "sb_bundle_missing",
+                                                                 "message": "Офлайн-комплект VPN не найден.",
+                                                                 "log": "/home/u/.local/state/serpantinum/vpn/install.log"}}), 1)
+    until(lambda: not j("svc")["sb"]["installing"], "failed bundle install finished")
+    sbs = j("svc")["sb"]
+    assert sbs["error"] == "Офлайн-комплект VPN не найден." and not sbs["installing"], sbs
+    assert sbs["logPath"].endswith("install.log"), sbs
+    err_text = win.findChild(QObject, "mainStudio").findChild(QObject, "vpnSheet_singbox").findChild(QObject, "vpnInstallError")
+    until(lambda: "install.log" in err_text.property("text"), "the error names the log file")
+    # watchdog: a helper that goes silent is stopped, with a reason, and the animation ends
+    do("installBundle", "")
+    until(lambda: running("singbox-install"), "install that will hang")
+    assert j("svc")["sb"]["canCancel"], "a bundle install can be cancelled"
+    do("stall")
+    until(lambda: not j("svc")["sb"]["installing"], "watchdog stopped the silent helper", 15)
+    sbs = j("svc")["sb"]
+    assert sbs["error"] == S["singbox.stalled"] and sbs["errorCode"] == "stalled" and sbs["stage"] == "", sbs
+    for needle in ("singbox-info", "status --json"):
+        if running(needle):
+            finish(needle, status_off if needle == "status --json" else {"ok": True, "works": False, "candidates": []})
+    do("installOnline")
+    until(lambda: running("singbox-install"), "online install started")
+    cmd = running("singbox-install")[0]["cmd"]
+    assert "--online" in cmd and j("svc")["sb"]["stage"] == "release", cmd
+    finish("singbox-install", json.dumps({"ok": False, "error": {"code": "sb_offline", "message": "offline"}}), 1)
+    until(lambda: not j("svc")["sb"]["installing"], "online install finished")
+    for needle in ("singbox-info", "status --json", "list --json"):
+        if running(needle):
+            finish(needle, status_off if needle == "status --json" else {"ok": True, "works": True, "candidates": [], "servers": SERVERS})
+    passed.append("offline bundle: Install VPN Components -> --offline, bundle stage, VPN Engine Ready; chosen folder; clear error; Download stays online-only")
 
     # Escape closes the open sheet first
     assert j("ui")["sheet"] == "singbox"

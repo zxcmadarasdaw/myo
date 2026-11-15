@@ -116,6 +116,7 @@ configure_ski_defaults
 
 setup_services
 install_vpn_service
+install_vpn_bundle
 hand_over_from_easyeffects
 write_version_state "$TARGET_VERSION" "$TARGET_COMMIT" "$TELEMETRY_ID" "$ENABLE_TELEMETRY" "${SELECTED_COMPOSITORS[*]}" "$OPT_SDDM" "$SDDM_WAYLAND" "$INSTALL_FULL_WALLPAPERS"
 

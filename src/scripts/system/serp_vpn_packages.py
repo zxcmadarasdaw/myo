@@ -8,6 +8,7 @@ import sys
 
 PACKAGES = {"sing-box", "python3-pyyaml", "iproute", "nftables"}
 REPO = "serpantinum-sagernet"
+DNF_TIMEOUT = 20 * 60
 
 
 def command(packages, action):
@@ -35,15 +36,21 @@ def main(args):
         return 64
     env = {"PATH": "/usr/sbin:/usr/bin", "HOME": "/root", "LANG": "C.UTF-8"}
     os.chdir("/")
+    # Authorization is over once this line is out: the caller switches from the polkit
+    # timeout to the transaction timeout (serp_vpn.py install_fedora_packages).
+    print(json.dumps({"event": "started"}), flush=True)
+    detail = ""
     try:
         result = subprocess.run(command(packages, action), stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
-                                text=True, errors="replace")
+                                text=True, errors="replace", timeout=DNF_TIMEOUT)
+    except subprocess.TimeoutExpired:      # killed here, as root: no dnf is left behind
+        result, detail = None, f"DNF5 did not finish in {DNF_TIMEOUT // 60} min and was stopped"
     except OSError:
         result = None
-    print(json.dumps({"ok": result is not None and result.returncode == 0,
-                      "detail": "\n".join(result.stdout.strip().splitlines()[-6:])[-700:]
-                                if result is not None and result.returncode else ""}))
+    if result is not None and result.returncode:
+        detail = "\n".join(result.stdout.strip().splitlines()[-6:])[-700:]
+    print(json.dumps({"ok": result is not None and result.returncode == 0, "detail": detail}))
     return 0 if result is not None and result.returncode == 0 else 1
 
 

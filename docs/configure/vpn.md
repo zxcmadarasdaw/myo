@@ -20,6 +20,32 @@ Open **Super+N → VPN**, enter a link or choose a local profile, then click **I
 - **TUN** uses a signed system package. On Fedora the Serpantinum installer supplies a polkit helper for the panel. It uses the official SagerNet RPM repository for the transaction and asks for administrator authentication. The panel also offers that source for Proxy if GitHub fails. PyYAML is requested only when the profile actually requires it.
 - **Connection → sing-box** still lists installed binaries and accepts a path for Proxy. A working binary has to answer `sing-box version`.
 
+### Offline VPN bundle (no internet)
+
+A release of Serpantinum can ship `vpn-bundle/`: the official sing-box archive from github.com/SagerNet/sing-box (unchanged), `manifest.json` and `SHA256SUMS`. The version, size and SHA-256 are pinned in `src/scripts/system/serp_vpn_singbox.lock.json`. A bundle is accepted only when it matches these pinned values; its own manifest does not decide. No server, subscription, key or token is included.
+
+- **Installer:** when `vpn-bundle/` lies next to the installer (the offline release tarball), it is copied to `~/.local/share/serpantinum/vpn-bundle` and sing-box is installed from it. Proxy mode needs no root. When the TUN service is installed, it also installs `/usr/local/bin/sing-box` with sudo. Nothing is downloaded.
+- **Panel:** **Super+N → VPN → sing-box** shows **VPN Engine Ready**, or **Install VPN Components** when a bundle is found. **Download** stays a separate, online-only button. **Choose folder…** installs from a bundle on a USB stick or in Downloads.
+- **By hand:** `vpn-bundle/install-vpn-bundle.sh` (proxy) or `install-vpn-bundle.sh --system` (also TUN).
+- **Fedora Live:** without persistent storage everything is gone after a reboot, including sing-box. Keep the bundle on a USB stick and install it again after each boot. This needs no internet.
+
+Building a bundle (developer, needs internet; the archives never go into Git, `dist/` and `/vpn-bundle/` are ignored):
+
+```bash
+python3 packaging/vpn-bundle/build_vpn_bundle.py --verify-api            # dist/vpn-bundle (x86_64)
+python3 packaging/vpn-bundle/build_vpn_bundle.py --arch all --release    # + dist/serpantinum-<version>-offline.tar.gz
+```
+
+The script downloads only from the GitHub release URL and refuses a file whose size or SHA-256 differs from the lock file. `--verify-api` also compares the hash with the digest GitHub publishes. Upload the tarball and its `.sha256` to the GitHub release page. To move to a newer sing-box, change the lock file in a reviewed commit, then rebuild.
+
+### Time limits, cancel and the install log
+
+- Downloading has a 30 s stall timeout, four resuming attempts, and a 15 min limit for the whole download.
+- The administrator password (polkit) must be answered within 3 minutes. DNF5 is stopped by the root helper after 20 minutes.
+- The panel stops a helper that sends nothing for 90 s, so no progress animation runs forever.
+- Everything can be cancelled except a running RPM transaction.
+- Every install appends to `~/.local/state/serpantinum/vpn/install.log` (stages, retries, the error code). It never contains links, servers or configs. The error in the panel names this file.
+
 When updating an existing Fedora installation of Serpantinum, run the updated Serpantinum installer to register the package helper and policy. The installer supplies `lxqt-policykit` on minimal Fedora Hyprland systems that lack a packaged authentication agent. Hyprland starts the agent at sign-in. If a Live session loses the binary at reboot, reopening the VPN tab offers setup again.
 
 ## Use
@@ -169,7 +195,9 @@ serpantinum vpn subs              # saved subscriptions (names and hosts, never 
 serpantinum vpn sub-add [--name=N]   # reads the link from stdin
 serpantinum vpn sub-use ID | sub-rename ID NAME | sub-remove ID
 serpantinum vpn singbox-info      # which sing-box is used, other ones found
-serpantinum vpn singbox-install   # download the official release (no root)
+serpantinum vpn singbox-install   # offline bundle if found, else download the official release (no root)
+serpantinum vpn singbox-install --offline [--bundle=DIR]   # bundle only, never the network
+serpantinum vpn singbox-install --online                   # download only
 serpantinum vpn singbox-use PATH  # use this sing-box ("" = automatic)
 ```
 
@@ -210,6 +238,8 @@ Settings file keys:
 - *TUN mode is not installed*: run the Serpantinum installer again. The service needs systemd and polkit.
 - *The system did not allow controlling the VPN service*: the polkit rule is written for the user who ran the installer. Run the installer as yourself, or check `/etc/polkit-1/rules.d/49-serpantinum-vpn.rules`.
 - *TUN mode needs sing-box 1.12 or newer*: `sudo dnf upgrade sing-box`.
+- *The sing-box install hangs or fails*: see `~/.local/state/serpantinum/vpn/install.log`. Without internet, or when GitHub is throttled, use the offline bundle.
+- *No answer to the administrator password request*: no polkit agent is running. Start `lxqt-policykit-agent`, or run the Serpantinum installer again, which installs it.
 
 ## Manual test checklist (Fedora + Hyprland)
 

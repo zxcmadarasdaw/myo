@@ -2209,7 +2209,12 @@
       "read_profile": "Reading VPN profile…",
       "install_packages": "Authorizing and installing signed RPM packages…",
       "check_config": "Checking VPN configuration…",
-      "retry_wait": "Retry in {seconds} s"
+      "retry_wait": "Retry in {seconds} s",
+      "wait_auth": "Waiting for the administrator password (polkit window)…",
+      "transaction": "Installing signed RPM packages (cannot be cancelled now)…",
+      "elapsed": "{seconds} s",
+      "auth_limit": "stops after 3 min without an answer",
+      "log": "Details: {path}"
     },
     "state": {
       "connected": "Connected",
@@ -2312,7 +2317,9 @@
       "count": "{count} servers"
     },
     "singbox": {
-      "cancelled": "Download cancelled. Nothing was installed."
+      "cancelled": "Download cancelled. Nothing was installed.",
+      "stalled": "The installer stopped responding (no progress for 90 s) and was stopped. Nothing new was installed.",
+      "cancelled_setup": "Installation cancelled."
     },
     "subs": {
       "title": "VPN subscriptions",
@@ -2358,14 +2365,23 @@
         "extract": "Unpacking…",
         "release": "Looking up the latest release…",
         "test": "Testing the program…",
-        "verify": "Checking the checksum…"
+        "verify": "Checking the checksum…",
+        "bundle": "Reading the offline VPN bundle (no internet)…"
       },
       "source": {
         "system": "system package",
         "managed": "downloaded by Serpantinum",
         "chosen": "chosen file",
         "env": "SERP_VPN_SINGBOX"
-      }
+      },
+      "ready": "VPN Engine Ready",
+      "not_installed": "VPN components are not installed",
+      "install_components": "Install VPN Components",
+      "bundle_found": "Offline bundle found: sing-box {version}. It installs without internet.",
+      "bundle_pick": "Have the offline VPN bundle? Install from its folder without internet.",
+      "bundle_pick_hint": "Choose the vpn-bundle folder of this Serpantinum release (for example on a USB stick).",
+      "choose_bundle": "Choose the vpn-bundle folder",
+      "choose_bundle_short": "Choose folder…"
     },
     "studio": {
       "anim_off": "Animation off",

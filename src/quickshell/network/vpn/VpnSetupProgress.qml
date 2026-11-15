@@ -16,8 +16,10 @@ ColumnLayout {
         case "system": return tr("setup.check_system", "Checking system…");
         case "binary": return tr("setup.check_binary", "Checking sing-box…");
         case "profile": return tr("setup.read_profile", "Reading VPN profile…");
-        case "packages": return tr("setup.install_packages", "Authorizing and installing signed RPM packages…");
+        case "packages": return tr("setup.wait_auth", "Waiting for the administrator password (polkit window)…");
+        case "transaction": return tr("setup.transaction", "Installing signed RPM packages (cannot be cancelled now)…");
         case "config": return tr("setup.check_config", "Checking VPN configuration…");
+        case "bundle": return tr("sb.stage.bundle", "Reading the offline VPN bundle (no internet)…");
         case "release": return tr("sb.stage.release", "Looking up the latest release…");
         case "download": return tr("sb.stage.download", "Downloading…");
         case "verify": return tr("sb.stage.verify", "Checking the checksum…");
@@ -28,8 +30,11 @@ ColumnLayout {
     }
     readonly property string resultText: VpnService.sbSetup ? tr("setup.done", "VPN setup complete")
         : tr("sb.installed", "Installed sing-box {version}").replace("{version}", (VpnService.sbResult || {}).version || "")
+    readonly property bool timed: ["packages", "transaction"].indexOf(VpnService.sbStage) >= 0 && VpnService.sbElapsed > 0
     readonly property string progressText: {
         let parts = [];
+        if (timed) return tr("setup.elapsed", "{seconds} s").replace("{seconds}", VpnService.sbElapsed)
+            + (VpnService.sbStage === "packages" ? "  ·  " + tr("setup.auth_limit", "stops after 3 min without an answer") : "");
         if (VpnService.sbTotal > 0) parts.push(mb(VpnService.sbDone) + " / " + mb(VpnService.sbTotal) + " " + tr("sb.mb", "MB"));
         else if (VpnService.sbDone > 0) parts.push(mb(VpnService.sbDone) + " " + tr("sb.mb", "MB"));
         if (VpnService.sbSpeed > 0) parts.push(mb(VpnService.sbSpeed) + " " + tr("sb.mbps", "MB/s"));
@@ -48,19 +53,32 @@ ColumnLayout {
             Layout.fillWidth: true
             visible: sh.installing || VpnService.sbResult !== null || sh.standalone
             text: sh.installing ? sh.stageText : VpnService.sbResult ? sh.resultText
-                : sh.tr("sb.download_desc", "Download the official release from GitHub (SagerNet/sing-box) for this computer.")
+                : VpnService.sbBundleFound
+                    ? sh.tr("sb.bundle_found", "Offline bundle found: sing-box {version}. It installs without internet.").replace("{version}", VpnService.sbInfo.bundle.version || "")
+                    : sh.tr("sb.download_desc", "Download the official release from GitHub (SagerNet/sing-box) for this computer.")
             wrapMode: Text.Wrap
             font.family: ThemeBackend.fontFamily
             font.pixelSize: Scaler.s(11)
             color: VpnService.sbResult && !sh.installing ? ThemeBackend.green : (VpnAppearance.style.text || "#eef1f6")
         }
-        VpnPill {
+        VpnPill {                            // local install from the offline bundle: no network
+            objectName: "vpnInstallBundle"
+            visible: sh.standalone && !sh.installing && VpnService.sbBundleFound
+                     && (!VpnService.sbReady || VpnService.sbInfo.version !== VpnService.sbInfo.bundle.version)
+            icon: "󰏗"
+            text: sh.tr("sb.install_components", "Install VPN Components")
+            enabled: !VpnService.busy && !VpnService.connected
+            onClicked: VpnService.installSingbox("bundle", "")
+        }
+        VpnPill {                            // download from GitHub (needs internet)
+            objectName: "vpnDownload"
             visible: sh.standalone && !sh.installing
             icon: "󰇚"
-            text: VpnService.sbError !== "" ? sh.tr("sb.retry", "Retry")
+            filled: !VpnService.sbBundleFound
+            text: VpnService.sbError !== "" && VpnService.sbErrorCode.indexOf("sb_bundle") !== 0 ? sh.tr("sb.retry", "Retry")
                 : (VpnService.sbInfo.source === "managed" ? sh.tr("sb.update", "Update") : sh.tr("sb.download", "Download"))
             enabled: !VpnService.busy && !VpnService.connected
-            onClicked: VpnService.installSingbox()
+            onClicked: VpnService.installSingbox("online", "")
         }
         VpnPill {
             visible: VpnService.sbCanCancel
@@ -95,7 +113,7 @@ ColumnLayout {
     }
     Text {
         Layout.fillWidth: true
-        visible: sh.installing && VpnService.sbStage === "download" && sh.progressText !== ""
+        visible: sh.installing && (VpnService.sbStage === "download" || sh.timed) && sh.progressText !== ""
         text: sh.progressText
         wrapMode: Text.WrapAnywhere
         font.family: ThemeBackend.fontFamily
@@ -113,8 +131,10 @@ ColumnLayout {
     }
     Text {
         Layout.fillWidth: true
+        objectName: "vpnInstallError"
         visible: VpnService.sbError !== "" && !sh.installing
-        text: VpnService.sbError
+        text: VpnService.sbError + (VpnService.sbLogPath !== ""
+            ? "\n" + sh.tr("setup.log", "Details: {path}").replace("{path}", VpnService.sbLogPath) : "")
         wrapMode: Text.WrapAnywhere
         font.family: ThemeBackend.fontFamily
         font.pixelSize: Scaler.s(11)

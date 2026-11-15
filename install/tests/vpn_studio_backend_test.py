@@ -325,6 +325,28 @@ class SingboxInstall(unittest.TestCase):
         self.gh.ignore_range = True
         self.assertTrue(self.install()["ok"])
 
+    def test_a_download_slower_than_the_deadline_stops_without_retrying(self):
+        with patch.object(sb, "DOWNLOAD_DEADLINE", 0):
+            with self.assertRaises(sb.SingboxError) as ctx:
+                self.install()
+        self.assertEqual(ctx.exception.code, "sb_slow")
+        self.assertEqual(len([1 for path, _ in self.gh.requests if path.startswith("/dl/")]), 1)
+        self.assertFalse(os.path.exists(os.path.join(self.bindir, "sing-box")))
+
+    def test_failed_cli_install_writes_the_log_without_secrets(self):
+        self.gh.digest = "sha256:" + "a" * 64
+        p = subprocess.run([sys.executable, str(base.SCRIPT), "singbox-install", "--online", "--json"],
+                           capture_output=True, text=True, env=dict(os.environ), timeout=120)
+        last = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertIn("error", last, p.stdout + p.stderr)
+        self.assertEqual(last["error"]["code"], "sb_checksum")
+        log = Path(last["error"]["log"])
+        self.assertEqual(log, Path(vpn.install_log_path()))
+        text = log.read_text(encoding="utf-8")
+        self.assertIn("=== singbox-install --online", text)
+        self.assertIn("FAILED sb_checksum", text)
+        self.assertNotIn('"event": "progress"', text)
+
     def test_checksum_mismatch_installs_nothing(self):
         self.gh.digest = "sha256:" + "a" * 64
         with self.assertRaises(sb.SingboxError) as ctx:
@@ -474,15 +496,57 @@ class OneClickSetup(unittest.TestCase):
     def test_fedora_dependencies_use_a_fixed_polkit_request(self):
         with patch.object(vpn, "_tool", return_value="/usr/bin/pkexec"), \
              patch.object(vpn, "_executable", return_value=True), \
-             patch.object(vpn, "_run", return_value=(0, '{"ok":true}', "")) as run:
+             patch.object(vpn, "_run_packages", return_value=(0, '{"event": "started"}\n{"ok":true}\n')) as run:
             vpn.install_fedora_packages(["python3-pyyaml"], self.events.append)
             run.assert_called_once_with(["/usr/bin/pkexec", "--disable-internal-agent", vpn.PACKAGE_HELPER,
-                                         "install", "python3-pyyaml"], timeout=None)
+                                         "install", "python3-pyyaml"], self.events.append)
             self.assertEqual(self.events[-1]["stage"], "packages")
-            run.return_value = 126, "", "dismissed"
+            run.return_value = 126, ""
             with self.assertRaises(vpn.VpnError) as ctx:
                 vpn.install_fedora_packages(["sing-box"], self.events.append)
             self.assertEqual(ctx.exception.code, "setup_auth")
+            run.return_value = 1, '{"event": "started"}\n{"ok": false, "detail": "DNF5 did not finish in 20 min and was stopped"}\n'
+            with self.assertRaises(vpn.VpnError) as ctx:
+                vpn.install_fedora_packages(["sing-box"], self.events.append)
+            self.assertEqual(ctx.exception.code, "setup_packages")
+            self.assertIn("20 min", ctx.exception.detail)
+
+
+class PackageRunner(unittest.TestCase):
+    """pkexec + helper: a deadline for the password, one for the whole run, heartbeats, no hang."""
+
+    def child(self, code):
+        return [sys.executable, "-c", "import sys, time\n" + code]
+
+    def test_normal_run_reports_the_transaction_and_returns_the_output(self):
+        events = []
+        rc, out = vpn._run_packages(self.child('print(\'{"event": "started"}\', flush=True); time.sleep(1.2); print(\'{"ok": true}\')'),
+                                    events.append, heartbeat=0.5)
+        self.assertEqual(rc, 0)
+        self.assertIn('"ok": true', out)
+        self.assertIn({"event": "stage", "stage": "transaction"}, events)
+        self.assertTrue(any(e["event"] == "heartbeat" and e["phase"] == "transaction" for e in events), events)
+
+    def test_no_answer_to_the_password_stops_pkexec(self):
+        events = []
+        with self.assertRaises(vpn.VpnError) as ctx:
+            vpn._run_packages(self.child("time.sleep(60)"), events.append, auth_timeout=1, heartbeat=0.3)
+        self.assertEqual(ctx.exception.code, "setup_auth_timeout")
+        self.assertTrue(any(e.get("phase") == "auth" for e in events), events)
+
+    def test_a_transaction_that_never_ends_is_stopped(self):
+        with self.assertRaises(vpn.VpnError) as ctx:
+            vpn._run_packages(self.child('print(\'{"event": "started"}\', flush=True); time.sleep(60)'),
+                              lambda e: None, auth_timeout=30, total_timeout=1.5)
+        self.assertEqual(ctx.exception.code, "setup_packages_timeout")
+
+    def test_a_missing_program_is_reported_not_raised(self):
+        self.assertEqual(vpn._run_packages([os.path.join(ROOT, "no-such-pkexec")], lambda e: None)[0], 127)
+
+    def test_timeout_messages_exist_in_both_languages(self):
+        for code in ("setup_auth_timeout", "setup_packages_timeout", "sb_slow"):
+            en, ru = vpn.MESSAGES[code]
+            self.assertTrue(en and ru and en != ru, code)
 
 
 class SingboxChoice(unittest.TestCase):

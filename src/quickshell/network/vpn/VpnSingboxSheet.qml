@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import "../../"
 
 VpnSheet {
@@ -12,6 +13,13 @@ VpnSheet {
     readonly property bool installing: VpnService.sbInstalling
 
     onOpenChanged: if (open) VpnService.singboxInfo()
+
+    // A vpn-bundle folder from a Serpantinum release (USB stick, Downloads…): installs offline.
+    FolderDialog {
+        id: bundlePicker
+        title: sh.tr("sb.choose_bundle", "Choose the vpn-bundle folder")
+        onAccepted: VpnService.installSingbox("bundle", selectedFolder.toString())
+    }
 
     Flickable {
         anchors.fill: parent
@@ -41,14 +49,22 @@ VpnSheet {
                     spacing: Scaler.s(4)
                     Text {
                         Layout.fillWidth: true
-                        text: sh.info.works
-                            ? sh.tr("sb.found", "In use: sing-box {version}").replace("{version}", sh.info.version || "?")
+                        objectName: "vpnEngineState"
+                        text: sh.info.works ? sh.tr("sb.ready", "VPN Engine Ready")
                             : (sh.info.path ? sh.tr("sb.broken", "The chosen sing-box does not run: {error}").replace("{error}", sh.info.error || "?")
-                                            : sh.tr("sb.none", "sing-box was not found on this computer."))
+                                            : sh.tr("sb.not_installed", "VPN components are not installed"))
                         wrapMode: Text.Wrap
                         font.family: ThemeBackend.fontFamily
                         font.weight: Font.Bold
                         font.pixelSize: Scaler.s(12)
+                        color: VpnAppearance.style.text || "#eef1f6"
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: sh.info.works === true
+                        text: sh.tr("sb.found", "In use: sing-box {version}").replace("{version}", sh.info.version || "?")
+                        font.family: ThemeBackend.fontFamily
+                        font.pixelSize: Scaler.s(11)
                         color: VpnAppearance.style.text || "#eef1f6"
                     }
                     Text {
@@ -73,6 +89,29 @@ VpnSheet {
             }
 
             VpnSetupProgress { Layout.fillWidth: true; standalone: true; showAnimation: sh.open }
+
+            // offline bundle chosen by hand (no internet needed)
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Scaler.s(8)
+                Text {
+                    Layout.fillWidth: true
+                    text: VpnService.sbErrorCode.indexOf("sb_bundle") === 0 && !sh.installing
+                        ? sh.tr("sb.bundle_pick_hint", "Choose the vpn-bundle folder of this Serpantinum release (for example on a USB stick).")
+                        : sh.tr("sb.bundle_pick", "Have the offline VPN bundle? Install from its folder without internet.")
+                    wrapMode: Text.Wrap
+                    font.family: ThemeBackend.fontFamily
+                    font.pixelSize: Scaler.s(10)
+                    color: Qt.alpha(VpnAppearance.style.text || "#ffffff", 0.6)
+                }
+                VpnPill {
+                    objectName: "vpnChooseBundle"
+                    text: sh.tr("sb.choose_bundle_short", "Choose folder…")
+                    filled: false
+                    enabled: !sh.installing && !VpnService.busy && !VpnService.connected
+                    onClicked: bundlePicker.open()
+                }
+            }
 
             // already on this computer
             Text {

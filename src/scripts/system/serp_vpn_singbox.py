@@ -42,6 +42,7 @@ USER_AGENT = "serpantinum-vpn"
 CONNECT_TIMEOUT = 20          # seconds to get an answer
 STALL_TIMEOUT = 30            # seconds without a single byte -> retry (resume)
 ATTEMPTS = 4
+DOWNLOAD_DEADLINE = 15 * 60   # s for the whole download, all attempts
 MAX_ARCHIVE = 120 * 1024 * 1024
 MAX_BINARY = 256 * 1024 * 1024
 ARCH = {
@@ -262,6 +263,8 @@ def download(url, dest, expected_size, emit, attempts=ATTEMPTS, sleep=time.sleep
                         done += len(chunk)
                         if done > MAX_ARCHIVE:
                             raise SingboxError("sb_too_large", _human(done))
+                        if time.monotonic() - started > DOWNLOAD_DEADLINE:
+                            raise SingboxError("sb_slow", _human(done))
                         now = time.monotonic()
                         window.append((now, done))
                         while len(window) > 1 and now - window[0][0] > 3.0:
@@ -281,7 +284,7 @@ def download(url, dest, expected_size, emit, attempts=ATTEMPTS, sleep=time.sleep
                   "seconds": round(time.monotonic() - started, 1)})
             return done
         except SingboxError as e:
-            if e.code in ("sb_too_large", "sb_tls"):
+            if e.code in ("sb_too_large", "sb_tls", "sb_slow"):
                 raise
             last_error = e
         except (OSError, http.client.HTTPException) as e:
@@ -291,6 +294,8 @@ def download(url, dest, expected_size, emit, attempts=ATTEMPTS, sleep=time.sleep
                     raise last_error
                 if e.code == 416:                       # range past the end: start over
                     done = 0
+        if attempt < attempts and time.monotonic() - started > DOWNLOAD_DEADLINE:
+            raise SingboxError("sb_slow", _human(done))
         if attempt < attempts:
             wait = 2 ** attempt
             emit({"event": "retry", "attempt": attempt + 1, "of": attempts, "wait": wait,
@@ -368,11 +373,180 @@ def install(emit, arch=None, api_url=None, validate=None):
         shutil.rmtree(work, ignore_errors=True)
 
 
+# ---- offline bundle -------------------------------------------------------------------------
+#
+# A release of Serpantinum can carry `vpn-bundle/`: the official sing-box archive, a
+# manifest.json and SHA256SUMS (built by packaging/vpn-bundle/build_vpn_bundle.py). Installing
+# from it needs no network. The trust anchor is serp_vpn_singbox.lock.json next to this file:
+# the archive must have exactly the version, size and SHA-256 pinned there, whatever the
+# bundle's own manifest says.
+
+LOCK_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "serp_vpn_singbox.lock.json")
+BUNDLE_DIRNAME = "vpn-bundle"
+SYSTEM_TARGET = "/usr/local/bin/sing-box"
+
+
+def load_lock(path=None):
+    try:
+        with open(path or LOCK_PATH, encoding="utf-8") as f:
+            lock = json.load(f)
+        if not re.fullmatch(r"\d+\.\d+\.\d+", str(lock["version"])):
+            raise ValueError("version")
+        for asset in lock["assets"].values():
+            if not re.fullmatch(r"[0-9a-f]{64}", asset["sha256"]) or int(asset["size"]) <= 0:
+                raise ValueError("asset")
+        return lock
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        raise SingboxError("sb_bundle_lock") from None
+
+
+def bundle_dirs():
+    """Where a bundle is looked for, in order: $SERP_VPN_BUNDLE, the installed copy, the source tree."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    dirs = [os.environ.get("SERP_VPN_BUNDLE", ""),
+            os.path.join(_xdg("XDG_DATA_HOME", ".local/share"), "serpantinum", BUNDLE_DIRNAME),
+            os.path.normpath(os.path.join(here, "..", "..", "..", BUNDLE_DIRNAME)),
+            os.path.join("/usr/share/serpantinum", BUNDLE_DIRNAME)]
+    seen = []
+    for d in dirs:
+        if d and os.path.abspath(d) not in seen:
+            seen.append(os.path.abspath(d))
+    return seen
+
+
+def read_bundle(folder, arch=None, lock=None):
+    """{"dir", "version", "archive", "size", "sha256"} when folder holds a bundle that matches the
+    lock for this architecture. Cheap: does not hash the archive (install does)."""
+    arch = arch or arch_name()
+    lock = lock or load_lock()
+    asset = lock["assets"].get(arch)
+    if not asset:
+        raise SingboxError("sb_bundle_arch", arch or "?")
+    manifest_path = os.path.join(folder, "manifest.json")
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+        files = {item["arch"]: item for item in manifest["files"]}
+    except FileNotFoundError:
+        raise SingboxError("sb_bundle_missing", folder) from None
+    except (OSError, ValueError, KeyError, TypeError):
+        raise SingboxError("sb_bundle_bad", "manifest.json") from None
+    item = files.get(arch)
+    if manifest.get("component") != "sing-box" or manifest.get("version") != lock["version"]:
+        raise SingboxError("sb_bundle_version", str(manifest.get("version", "?")) + " ≠ " + lock["version"])
+    if not item or item.get("file") != asset["name"] or item.get("sha256") != asset["sha256"]:
+        raise SingboxError("sb_bundle_arch", arch)
+    archive = os.path.join(folder, asset["name"])
+    if os.path.islink(archive) or not os.path.isfile(archive):
+        raise SingboxError("sb_bundle_bad", asset["name"])
+    if os.path.getsize(archive) != int(asset["size"]):
+        raise SingboxError("sb_bundle_bad", "size")
+    return {"dir": os.path.abspath(folder), "version": lock["version"], "archive": archive,
+            "size": int(asset["size"]), "sha256": asset["sha256"]}
+
+
+def find_bundle(arch=None):
+    """(bundle or None, reasons): the first usable bundle and why the other places were skipped."""
+    reasons = []
+    try:
+        lock = load_lock()
+    except SingboxError as e:
+        return None, [e.code]
+    for folder in bundle_dirs():
+        if not os.path.isdir(folder):
+            continue
+        try:
+            return read_bundle(folder, arch, lock), reasons
+        except SingboxError as e:
+            reasons.append(f"{folder}: {e.code} {e.detail}".strip())
+    return None, reasons
+
+
+def _verified_binary(bundle, work, emit):
+    emit({"event": "stage", "stage": "verify"})
+    digest = sha256_file(bundle["archive"])
+    if digest != bundle["sha256"]:
+        raise SingboxError("sb_checksum", digest[:12] + "… ≠ " + bundle["sha256"][:12] + "…")
+    emit({"event": "stage", "stage": "extract"})
+    tmp_bin = os.path.join(work, "sing-box")
+    extract_binary(bundle["archive"], tmp_bin)
+    emit({"event": "stage", "stage": "test"})
+    checked = probe(tmp_bin)
+    if not checked["ok"] or checked["version"] != bundle["version"]:
+        raise SingboxError("sb_not_working", checked["error"] or "version mismatch")
+    return tmp_bin, digest
+
+
+def install_from_bundle(emit, folder=None, arch=None, validate=None):
+    """Offline install into the managed path (proxy mode). No network is used."""
+    arch = arch or arch_name()
+    if not arch:
+        raise SingboxError("sb_arch", platform.machine() or "?")
+    emit({"event": "stage", "stage": "bundle"})
+    if folder:
+        bundle = read_bundle(folder, arch)
+    else:
+        bundle, reasons = find_bundle(arch)
+        if bundle is None:
+            # A bundle that exists but is wrong: report its own reason, not "missing".
+            present = next((d for d in bundle_dirs() if os.path.isfile(os.path.join(d, "manifest.json"))), None)
+            if present:
+                read_bundle(present, arch)
+            raise SingboxError("sb_bundle_missing", "; ".join(reasons))
+    target_dir = managed_dir()
+    os.makedirs(target_dir, mode=0o700, exist_ok=True)
+    work = tempfile.mkdtemp(prefix=".install-", dir=target_dir)
+    try:
+        tmp_bin, digest = _verified_binary(bundle, work, emit)
+        if validate is not None:
+            validate(tmp_bin)
+        final = managed_path()
+        os.replace(tmp_bin, final)
+        return {"ok": True, "path": final, "version": bundle["version"], "release": bundle["version"],
+                "sha256": digest, "verified": True, "source": "bundle", "bundle": bundle["dir"]}
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def install_system_from_bundle(folder, arch=None, target=SYSTEM_TARGET):
+    """Root only (the installer runs it as root): the same checks, then /usr/local/bin/sing-box
+    owned by root, which is what the TUN service accepts. Never writes outside `target`."""
+    if hasattr(os, "geteuid") and os.geteuid() != 0:
+        raise SingboxError("sb_bundle_root")
+    bundle = read_bundle(folder, arch)
+    work = tempfile.mkdtemp(prefix="serpantinum-singbox-")
+    try:
+        tmp_bin, digest = _verified_binary(bundle, work, lambda _event: None)
+        staged = target + ".new"
+        shutil.copyfile(tmp_bin, staged)
+        os.chmod(staged, 0o755)
+        if hasattr(os, "chown"):
+            os.chown(staged, 0, 0)
+        os.replace(staged, target)
+        return {"ok": True, "path": target, "version": bundle["version"], "sha256": digest}
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def system_path(path):
     """True when the file is in a directory the TUN root service accepts."""
     return bool(path) and os.path.dirname(os.path.realpath(path)) in SYSTEM_DIRS
 
 
-if __name__ == "__main__":       # manual check: prints the architecture and the sing-box files found
-    print(json.dumps({"arch": arch_name(), "managed": managed_path(), "candidates": candidates()}, indent=2))
+if __name__ == "__main__":
+    # `install-system --bundle DIR`: used by the installer as root (TUN mode needs a root-owned
+    # sing-box). Without arguments: prints the architecture, the files found and the bundle.
+    if sys.argv[1:2] == ["install-system"]:
+        folder = next((a[len("--bundle="):] for a in sys.argv[2:] if a.startswith("--bundle=")), "")
+        try:
+            if not folder:
+                raise SingboxError("sb_bundle_missing", "--bundle=DIR")
+            print(json.dumps(install_system_from_bundle(folder)))
+            sys.exit(0)
+        except SingboxError as e:
+            print(json.dumps({"ok": False, "error": {"code": e.code, "detail": str(e.detail)}}))
+            sys.exit(1)
+    found, why = find_bundle()
+    print(json.dumps({"arch": arch_name(), "managed": managed_path(), "candidates": candidates(),
+                      "bundle": found, "bundleSkipped": why}, indent=2))
     sys.exit(0)
