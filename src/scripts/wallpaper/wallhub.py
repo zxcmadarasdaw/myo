@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Wallpaper Hub backend for Serpantinum.
+"""Search Wallpapers backend for Serpantinum (Settings -> Search Wallpapers).
 
 Real internet search through official, documented APIs only:
   * Wallhaven      https://wallhaven.cc/help/api            (no key needed for SFW)
@@ -21,12 +21,14 @@ import argparse
 import concurrent.futures
 import datetime
 import hashlib
+import http.client
 import json
 import os
 import re
 import shutil
 import signal
 import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -35,8 +37,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-VERSION = "1.0"
-UA = "SerpantinumWallpaperHub/" + VERSION + " (+https://serpantinum.dev; desktop wallpaper search client)"
+VERSION = "2.0"
+UA = "SerpantinumSearchWallpapers/" + VERSION + " (+https://github.com/ilyamiro/serpantinum; desktop wallpaper search client)"
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config")
 STATE_DIR = os.environ.get("QS_STATE_DIR") or os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.join(HOME, ".local/state"), "serpantinum")
@@ -47,11 +49,13 @@ HUB_STATE = os.path.join(STATE_DIR, "wallpaper_hub")
 LIBRARY_FILE = os.path.join(HUB_STATE, "library.json")
 QUALITY_CACHE = os.path.join(HUB_STATE, "quality.json")
 THUMB_DIR = os.path.join(CACHE_DIR, "wallpaper_hub", "thumbs")
+# Search history stays on this machine (mode 600), never in settings.json/Themess.
+HISTORY_FILE = os.path.join(HUB_STATE, "history.json")
+HISTORY_MAX = 25
 
 TIMEOUT = 12
 PER_PAGE = 24
 KEY_SOURCES = ("pexels", "pixabay", "giphy", "wallhaven")
-ALL_SOURCES = ("wallhaven", "commons", "openverse", "pexels", "pixabay", "giphy")
 RES = {"any": (0, 0), "1080p": (1920, 1080), "1440p": (2560, 1440), "4k": (3840, 2160), "8k": (7680, 4320)}
 MEDIA_EXT = {"jpg", "png", "webp", "gif", "mp4", "webm"}
 
@@ -65,7 +69,9 @@ class Offline(Exception):
 
 
 def emit(obj):
-    sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    # ensure_ascii keeps every line pure ASCII: a console or pipe with a legacy
+    # encoding can never turn a title with an unusual character into a crash.
+    sys.stdout.write(json.dumps(obj, ensure_ascii=True) + "\n")
     sys.stdout.flush()
 
 
@@ -103,7 +109,37 @@ def load_keys():
 
 # --------------------------------------------------------------------------- HTTP
 
-def http_get(url, headers=None, timeout=TIMEOUT, want_json=True):
+class Transient(Exception):
+    """A dropped connection or TLS hiccup: worth exactly one quiet retry."""
+
+
+def classify_net_error(reason, timeout):
+    """Maps a low-level network error to SourceError / Offline / Transient.
+    ssl.SSLError is an OSError subclass, so it must be tested before OSError:
+    a TLS problem with one site does not mean the computer is offline."""
+    if isinstance(reason, (socket.timeout, TimeoutError)):
+        return SourceError("timed out after %ds" % timeout)
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return SourceError("secure connection refused: " + str(getattr(reason, "verify_message", "") or reason))
+    if isinstance(reason, (ssl.SSLError, ConnectionResetError, ConnectionAbortedError, http.client.RemoteDisconnected,
+                           http.client.IncompleteRead)):
+        return Transient("connection dropped (%s)" % reason)
+    if isinstance(reason, (socket.gaierror, ConnectionRefusedError, OSError)):
+        return Offline(str(reason))
+    return SourceError(str(reason))
+
+
+def http_get(url, headers=None, timeout=TIMEOUT, want_json=True, retries=1):
+    for attempt in range(retries + 1):
+        try:
+            return _http_get_once(url, headers, timeout, want_json)
+        except Transient as e:
+            if attempt >= retries:
+                raise SourceError(str(e))
+            time.sleep(0.5)
+
+
+def _http_get_once(url, headers, timeout, want_json):
     h = {"User-Agent": UA, "Accept": "application/json" if want_json else "*/*"}
     if headers:
         h.update(headers)
@@ -119,16 +155,15 @@ def http_get(url, headers=None, timeout=TIMEOUT, want_json=True):
             pass
         detail = re.sub(r"<[^>]+>", " ", detail)
         detail = re.sub(r"\s+", " ", detail)[:240]
+        if e.code == 429:
+            raise SourceError("rate limit reached (HTTP 429); try again in a minute")
+        if e.code in (401, 403) and ("Authorization" in h or re.search(r"[?&](key|api_key|apikey)=", url)):
+            raise SourceError("HTTP %d: the API key was rejected%s" % (e.code, (": " + detail) if detail else ""))
         raise SourceError("HTTP %d %s%s" % (e.code, e.reason or "", (": " + detail) if detail else ""))
     except urllib.error.URLError as e:
-        reason = e.reason
-        if isinstance(reason, (socket.timeout, TimeoutError)):
-            raise SourceError("timed out after %ds" % timeout)
-        if isinstance(reason, (socket.gaierror, ConnectionRefusedError, ConnectionResetError, OSError)):
-            raise Offline(str(reason))
-        raise SourceError(str(reason))
-    except (socket.timeout, TimeoutError):
-        raise SourceError("timed out after %ds" % timeout)
+        raise classify_net_error(e.reason, timeout)
+    except (socket.timeout, TimeoutError, ssl.SSLError, ConnectionError, http.client.HTTPException) as e:
+        raise classify_net_error(e, timeout)
     if not want_json:
         return body
     try:
@@ -181,7 +216,7 @@ def kind_of(fmt):
 def item(**kw):
     base = {
         "id": "", "source": "", "sourceName": "", "title": "", "pageUrl": "", "thumb": "", "preview": "",
-        "url": "", "width": 0, "height": 0, "format": "", "kind": "", "size": 0, "fps": 0,
+        "url": "", "previewVideo": "", "created": "", "thumbHelper": False, "width": 0, "height": 0, "format": "", "kind": "", "size": 0, "fps": 0,
         "duration": 0, "codec": "", "bitrate": 0, "author": "", "license": "", "sourceLink": "",
         "provenance": "unknown", "provenanceReason": "", "notes": [], "originalAvailable": True,
     }
@@ -202,17 +237,63 @@ def strip_html(s):
 
 
 # --------------------------------------------------------------------------- sources
+#
+# What every source really offers. The search planner reads this table, so a
+# filter a source cannot honour skips that source with a stated reason instead
+# of silently returning wrong results:
+#   kinds - media kinds the source hosts (image / animated / video)
+#   sorts - orders the source itself can produce; "resolution" is done locally
+#   safe  - "filter": the source has a content filter we switch on
+#           "policy": the source does not allow explicit content at all
+#           "none":   no content filter (skipped while Safe Search is on)
+#   key   - "none" | "optional" | "required" (the user's own free key)
+CAPS = {
+    "wallhaven": {"name": "Wallhaven", "kinds": ["image"], "sorts": ["relevance", "resolution", "newest", "popular"],
+                  "safe": "filter", "key": "optional", "formats": ["jpg", "png"], "nativeRu": False,
+                  "limits": "45 requests per minute", "keyUrl": "https://wallhaven.cc/settings/account"},
+    "commons": {"name": "Wikimedia Commons", "kinds": ["image", "animated", "video"], "sorts": ["relevance", "resolution", "newest"],
+                "safe": "none", "key": "none", "formats": ["jpg", "png", "webp", "gif", "webm"], "nativeRu": False,
+                "limits": "fair use, no hard quota", "keyUrl": ""},
+    "openverse": {"name": "Openverse", "kinds": ["image", "animated"], "sorts": ["relevance", "resolution"],
+                  "safe": "filter", "key": "none", "formats": ["jpg", "png", "gif"], "nativeRu": False,
+                  "limits": "anonymous: about 100 requests per day", "keyUrl": ""},
+    "pexels": {"name": "Pexels", "kinds": ["image", "video"], "sorts": ["relevance", "resolution"],
+               "safe": "policy", "key": "required", "formats": ["jpg", "png", "mp4"], "nativeRu": True,
+               "limits": "200 requests per hour, 20 000 per month", "keyUrl": "https://www.pexels.com/api/new/"},
+    "pixabay": {"name": "Pixabay", "kinds": ["image", "video"], "sorts": ["relevance", "resolution", "newest", "popular"],
+                "safe": "filter", "key": "required", "formats": ["jpg", "png", "mp4"], "nativeRu": True,
+                "limits": "100 requests per minute; images over 1280 px need full API access", "keyUrl": "https://pixabay.com/api/docs/"},
+    "giphy": {"name": "Giphy", "kinds": ["animated"], "sorts": ["relevance", "resolution"],
+              "safe": "filter", "key": "required", "formats": ["gif"], "nativeRu": False,
+              "limits": "beta key: 100 requests per hour", "keyUrl": "https://developers.giphy.com/dashboard/"},
+}
+ALL_SOURCES = tuple(CAPS)
+SORTS = ("relevance", "resolution", "newest", "popular")
 
-def src_wallhaven(q, page, kind, minres, keys, safe):
-    if kind in ("animated", "video"):
+
+class Ctx(object):
+    """Parameters of one source request."""
+
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+def landscape_px(minres):
+    return minres[0] * minres[1]
+
+
+def src_wallhaven(c):
+    if c.kind in ("animated", "video"):
         return [], False, "Wallhaven hosts still images only"
-    params = {"q": q, "page": page, "sorting": "relevance", "categories": "111", "purity": "100"}
-    if minres[0]:
-        params["atleast"] = "%dx%d" % minres
-    if keys.get("wallhaven"):
-        params["apikey"] = keys["wallhaven"]
-        if not safe:
-            params["purity"] = "110"
+    sorting = {"relevance": "relevance", "resolution": "relevance", "newest": "date_added", "popular": "favorites"}[c.sort]
+    # purity 100 = SFW only. Without Safe Search we add "sketchy" (110); the NSFW
+    # category is never requested.
+    params = {"q": c.q, "page": c.page, "sorting": sorting, "order": "desc", "categories": "111",
+              "purity": "100" if c.safe else "110"}
+    if c.minres[0]:
+        params["atleast"] = "%dx%d" % c.minres
+    if c.keys.get("wallhaven"):
+        params["apikey"] = c.keys["wallhaven"]
     d = http_get("https://wallhaven.cc/api/v1/search?" + urllib.parse.urlencode(params))
     out = []
     for w in d.get("data") or []:
@@ -225,32 +306,36 @@ def src_wallhaven(q, page, kind, minres, keys, safe):
             preview=(w.get("thumbs") or {}).get("large", ""), url=w.get("path", ""),
             width=int(w.get("dimension_x") or 0), height=int(w.get("dimension_y") or 0),
             format=fmt, size=int(w.get("file_size") or 0),
+            created=(w.get("created_at") or "").replace(" ", "T"),
+            favorites=int(w.get("favorites") or 0), views=int(w.get("views") or 0),
             provenance="unknown",
             provenanceReason=("Uploader cites an origin (" + src + "), but Wallhaven does not verify it." if src
                               else "Community upload without a stated origin."),
             sourceLink=src))
     meta = d.get("meta") or {}
-    return out, int(meta.get("current_page") or page) < int(meta.get("last_page") or 0), None
+    return out, int(meta.get("current_page") or c.page) < int(meta.get("last_page") or 0), None
 
 
-def src_commons(q, page, kind, minres, keys, safe):
-    terms = [q]
-    if kind == "video":
+def src_commons(c):
+    terms = [c.q]
+    if c.kind == "video":
         terms.append("filetype:video")
-    elif kind == "animated":
+    elif c.kind == "animated":
         terms.append("filemime:image/gif")
-    elif kind == "image":
+    elif c.kind == "image":
         terms.append("filetype:bitmap")
     else:
         terms.append("filetype:bitmap|video")
-    if minres[0]:
-        terms += ["filew:>%d" % (minres[0] - 1), "fileh:>%d" % (minres[1] - 1)]
+    if c.minres[0]:
+        terms += ["filew:>%d" % (c.minres[0] - 1), "fileh:>%d" % (c.minres[1] - 1)]
     params = {
         "action": "query", "format": "json", "generator": "search", "gsrnamespace": "6",
-        "gsrsearch": " ".join(terms), "gsrlimit": PER_PAGE, "gsroffset": (page - 1) * PER_PAGE,
-        "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata", "iiurlwidth": "480",
+        "gsrsearch": " ".join(terms), "gsrlimit": PER_PAGE, "gsroffset": (c.page - 1) * PER_PAGE,
+        "prop": "imageinfo", "iiprop": "url|size|mime|extmetadata|timestamp", "iiurlwidth": "480",
         "iiextmetadatafilter": "Artist|LicenseShortName|Credit|ObjectName",
     }
+    if c.sort == "newest":
+        params["gsrsort"] = "create_timestamp_desc"
     d = http_get("https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode(params))
     if d.get("error"):
         raise SourceError(str(d["error"].get("info") or d["error"]))
@@ -272,9 +357,10 @@ def src_commons(q, page, kind, minres, keys, safe):
         out.append(item(
             id="commons:%s" % p.get("pageid"), source="commons", sourceName="Wikimedia Commons",
             title=title, pageUrl=ii.get("descriptionurl", ""), thumb=thumb,
-            preview=ii.get("url", "") if fmt in ("gif", "mp4", "webm") else thumb,
+            preview=ii.get("url", "") if fmt == "gif" else thumb,
             url=ii.get("url", ""), width=int(ii.get("width") or 0), height=int(ii.get("height") or 0),
             format=fmt, size=int(ii.get("size") or 0), duration=float(ii.get("duration") or 0),
+            created=ii.get("timestamp", ""),
             author=val("Artist"), license=val("LicenseShortName"),
             provenance="verified" if own else "unknown",
             provenanceReason=("Commons records the uploader as the author (\"Own work\"), license " + val("LicenseShortName") + "."
@@ -282,13 +368,15 @@ def src_commons(q, page, kind, minres, keys, safe):
     return out, "continue" in d, None
 
 
-def src_openverse(q, page, kind, minres, keys, safe):
-    if kind == "video":
+def src_openverse(c):
+    if c.kind == "video":
         return [], False, "Openverse has no video search"
-    params = {"q": q, "page": page, "page_size": 20, "mature": "false" if safe else "true"}
-    if minres[0] >= 1920:
+    params = {"q": c.q, "page": c.page, "page_size": 20, "mature": "false" if c.safe else "true"}
+    if c.minres[0] >= 1920:
         params["size"] = "large"
-    if kind == "animated":
+    if c.minres[0]:
+        params["aspect_ratio"] = "wide"
+    if c.kind == "animated":
         params["extension"] = "gif"
     d = http_get("https://api.openverse.org/v1/images/?" + urllib.parse.urlencode(params))
     out = []
@@ -299,28 +387,43 @@ def src_openverse(q, page, kind, minres, keys, safe):
         w, h = int(r.get("width") or 0), int(r.get("height") or 0)
         out.append(item(
             id="openverse:" + r.get("id", ""), source="openverse", sourceName="Openverse / " + (r.get("source") or r.get("provider") or "?"),
-            title=r.get("title") or "", pageUrl=r.get("foreign_landing_url", ""), thumb=r.get("thumbnail", ""),
+            # Openverse answers browser-like clients (Qt's "Mozilla/5.0") with HTTP 403;
+            # its thumbnails are fetched by this helper with its own User-Agent instead.
+            title=r.get("title") or "", pageUrl=r.get("foreign_landing_url", ""), thumb=r.get("thumbnail", ""), thumbHelper=True,
             preview=r.get("thumbnail", ""), url=r.get("url", ""), width=w, height=h, format=fmt,
             size=int(r.get("filesize") or 0), author=r.get("creator") or "",
             license=((r.get("license") or "").upper() + " " + (r.get("license_version") or "")).strip(),
             provenance="unknown",
             provenanceReason="Openverse indexes the file from " + (r.get("source") or "a third-party site") + "; it does not verify the original upload."))
-    return out, int(d.get("page_count") or 0) > page, None
+    return out, int(d.get("page_count") or 0) > c.page, None
 
 
-def src_pexels(q, page, kind, minres, keys, safe, lang):
-    key = keys.get("pexels")
+def pick_preview_rendition(files, min_width=640):
+    """Smallest rendition that is still watchable: previews never stream the 4K original."""
+    usable = [f for f in files if int(f.get("width") or 0) >= min_width]
+    pool = usable or files
+    return min(pool, key=lambda f: int(f.get("width") or 0) * int(f.get("height") or 0)) if pool else None
+
+
+def src_pexels(c):
+    key = c.keys.get("pexels")
     if not key:
         return None, False, "needs a free Pexels API key"
-    if kind == "animated":
+    if c.kind == "animated":
         return [], False, "Pexels has no GIF animations"
     hdr = {"Authorization": key}
-    locale = "ru-RU" if lang == "ru" else "en-US"
+    locale = "ru-RU" if c.lang == "ru" else "en-US"
     out, more = [], False
-    if kind in ("all", "image"):
-        params = {"query": q, "page": page, "per_page": PER_PAGE, "locale": locale}
-        if minres[0] >= 3840:
+    if c.kind in ("all", "image"):
+        params = {"query": c.q, "page": c.page, "per_page": PER_PAGE, "locale": locale}
+        if c.minres[0]:
+            params["orientation"] = "landscape"
+        # Pexels size classes: small >= 4 MP, medium >= 12 MP, large >= 24 MP. Only a
+        # class that is a superset of the requested resolution is sent.
+        if landscape_px(c.minres) >= 24000000:
             params["size"] = "large"
+        elif landscape_px(c.minres) >= 4000000:
+            params["size"] = "small"
         d = http_get("https://api.pexels.com/v1/search?" + urllib.parse.urlencode(params), hdr)
         for p in d.get("photos") or []:
             src = p.get("src") or {}
@@ -333,10 +436,11 @@ def src_pexels(q, page, kind, minres, keys, safe, lang):
                 provenanceReason="Original upload by the photographer (" + (p.get("photographer") or "?") + ") on Pexels.",
                 notes=["Pexels reports the file size only after download."]))
         more = more or bool(d.get("next_page"))
-    if kind in ("all", "video"):
-        params = {"query": q, "page": page, "per_page": PER_PAGE, "locale": locale}
-        if minres[0]:
-            params["min_width"], params["min_height"] = minres
+    if c.kind in ("all", "video"):
+        params = {"query": c.q, "page": c.page, "per_page": PER_PAGE, "locale": locale}
+        if c.minres[0]:
+            params["min_width"], params["min_height"] = c.minres
+            params["orientation"] = "landscape"
         d = http_get("https://api.pexels.com/videos/search?" + urllib.parse.urlencode(params), hdr)
         for v in d.get("videos") or []:
             files = [f for f in (v.get("video_files") or []) if (f.get("file_type") or "").startswith("video/") and f.get("link")]
@@ -344,12 +448,14 @@ def src_pexels(q, page, kind, minres, keys, safe, lang):
             if not files:
                 continue
             best = files[0]
+            small = pick_preview_rendition(files)
             pics = v.get("video_pictures") or []
             slug = urllib.parse.urlparse(v.get("url", "")).path.strip("/").split("/")[-1]
             out.append(item(
                 id="pexels:v%s" % v.get("id"), source="pexels", sourceName="Pexels Video",
                 title=re.sub(r"[-\d]+$", "", slug).replace("-", " ").strip() or "Pexels video",
                 pageUrl=v.get("url", ""), thumb=(pics[0].get("picture") if pics else v.get("image", "")), preview=v.get("image", ""),
+                previewVideo=small.get("link", "") if small else "",
                 url=best.get("link", ""), width=int(best.get("width") or 0), height=int(best.get("height") or 0),
                 format=ext_from(best.get("file_type"), best.get("link")) or "mp4", fps=round(float(best.get("fps") or 0), 3),
                 size=int(best.get("size") or 0), duration=float(v.get("duration") or 0),
@@ -359,17 +465,26 @@ def src_pexels(q, page, kind, minres, keys, safe, lang):
     return out, more, None
 
 
-def src_pixabay(q, page, kind, minres, keys, safe, lang):
-    key = keys.get("pixabay")
+def src_pixabay(c):
+    key = c.keys.get("pixabay")
     if not key:
         return None, False, "needs a free Pixabay API key"
+    if c.kind == "animated":
+        return [], False, "Pixabay's API serves no animations"
     out, more = [], False
-    base = {"key": key, "q": q[:100], "page": page, "per_page": PER_PAGE, "safesearch": "true" if safe else "false",
-            "lang": "ru" if lang == "ru" else "en"}
-    if minres[0]:
-        base["min_width"], base["min_height"] = minres
-    if kind in ("all", "image", "animated"):
-        d = http_get("https://pixabay.com/api/?" + urllib.parse.urlencode(base))
+    base = {"key": key, "q": c.q[:100], "page": c.page, "per_page": PER_PAGE, "safesearch": "true" if c.safe else "false",
+            "lang": "ru" if c.lang == "ru" else "en"}
+    if c.sort == "newest":
+        base["order"] = "latest"
+    elif c.sort == "popular":
+        base["order"] = "popular"
+    if c.minres[0]:
+        base["min_width"], base["min_height"] = c.minres
+    if c.kind in ("all", "image"):
+        params = dict(base)
+        if c.minres[0]:
+            params["orientation"] = "horizontal"
+        d = http_get("https://pixabay.com/api/?" + urllib.parse.urlencode(params))
         for h in d.get("hits") or []:
             full = h.get("imageURL") or ""
             iw, ih = int(h.get("imageWidth") or 0), int(h.get("imageHeight") or 0)
@@ -380,47 +495,44 @@ def src_pixabay(q, page, kind, minres, keys, safe, lang):
                 s = min(1.0, 1280.0 / max(iw, ih, 1))
                 w, hh, orig = int(round(iw * s)), int(round(ih * s)), False
                 note = ["Pixabay serves at most 1280 px without full API access; the %dx%d original is not downloadable here." % (iw, ih)]
-            fmt = ext_from("", url) or "jpg"
-            if kind == "animated" and fmt != "gif":
-                continue
             out.append(item(
                 id="pixabay:i%s" % h.get("id"), source="pixabay", sourceName="Pixabay",
                 title=h.get("tags") or "Pixabay image", pageUrl=h.get("pageURL", ""), thumb=h.get("previewURL", ""),
-                preview=h.get("webformatURL", ""), url=url, width=w, height=hh, format=fmt,
+                preview=h.get("webformatURL", ""), url=url, width=w, height=hh, format=ext_from("", url) or "jpg",
                 size=int(h.get("imageSize") or 0) if orig else 0, author=h.get("user", ""), license="Pixabay Content License",
+                downloads=int(h.get("downloads") or 0), likes=int(h.get("likes") or 0),
                 provenance="verified", provenanceReason="Uploaded by " + (h.get("user") or "?") + " on Pixabay.",
                 notes=note, originalAvailable=orig))
-        more = more or page * PER_PAGE < int(d.get("totalHits") or 0)
-    if kind in ("all", "video"):
+        more = more or c.page * PER_PAGE < int(d.get("totalHits") or 0)
+    if c.kind in ("all", "video"):
         d = http_get("https://pixabay.com/api/videos/?" + urllib.parse.urlencode(base))
         for v in d.get("hits") or []:
             vids = v.get("videos") or {}
-            best = None
-            for k in ("large", "medium", "small", "tiny"):
-                f = vids.get(k) or {}
-                if f.get("url") and int(f.get("width") or 0) > 0:
-                    best = f
-                    break
-            if not best:
+            files = [vids[k] for k in ("large", "medium", "small", "tiny") if (vids.get(k) or {}).get("url") and int((vids.get(k) or {}).get("width") or 0) > 0]
+            if not files:
                 continue
+            best = files[0]
+            small = pick_preview_rendition(files)
             out.append(item(
                 id="pixabay:v%s" % v.get("id"), source="pixabay", sourceName="Pixabay Video",
                 title=v.get("tags") or "Pixabay video", pageUrl=v.get("pageURL", ""), thumb=best.get("thumbnail", ""),
-                preview=best.get("thumbnail", ""), url=best.get("url", ""), width=int(best.get("width") or 0),
+                preview=best.get("thumbnail", ""), previewVideo=small.get("url", "") if small else "",
+                url=best.get("url", ""), width=int(best.get("width") or 0),
                 height=int(best.get("height") or 0), format="mp4", size=int(best.get("size") or 0),
                 duration=float(v.get("duration") or 0), author=v.get("user", ""), license="Pixabay Content License",
+                downloads=int(v.get("downloads") or 0), likes=int(v.get("likes") or 0),
                 provenance="verified", provenanceReason="Uploaded by " + (v.get("user") or "?") + " on Pixabay."))
-        more = more or page * PER_PAGE < int(d.get("totalHits") or 0)
+        more = more or c.page * PER_PAGE < int(d.get("totalHits") or 0)
     return out, more, None
 
 
-def src_giphy(q, page, kind, minres, keys, safe):
-    key = keys.get("giphy")
+def src_giphy(c):
+    key = c.keys.get("giphy")
     if not key:
         return None, False, "needs a Giphy API key"
-    if kind not in ("all", "animated"):
+    if c.kind not in ("all", "animated"):
         return [], False, "Giphy hosts GIF animations only"
-    params = {"api_key": key, "q": q, "limit": PER_PAGE, "offset": (page - 1) * PER_PAGE, "rating": "pg-13" if safe else "r"}
+    params = {"api_key": key, "q": c.q, "limit": PER_PAGE, "offset": (c.page - 1) * PER_PAGE, "rating": "pg" if c.safe else "r"}
     d = http_get("https://api.giphy.com/v1/gifs/search?" + urllib.parse.urlencode(params))
     out = []
     for g in d.get("data") or []:
@@ -431,93 +543,143 @@ def src_giphy(q, page, kind, minres, keys, safe):
             pageUrl=g.get("url", ""), thumb=(im.get("fixed_width_still") or {}).get("url", ""),
             preview=(im.get("fixed_width") or {}).get("url", ""), url=o.get("url", ""),
             width=int(o.get("width") or 0), height=int(o.get("height") or 0), format="gif",
-            size=int(o.get("size") or 0), author=(g.get("user") or {}).get("display_name", "") or g.get("username", ""),
+            size=int(o.get("size") or 0), created=(g.get("import_datetime") or "").replace(" ", "T"),
+            author=(g.get("user") or {}).get("display_name", "") or g.get("username", ""),
             provenance="unknown", provenanceReason="Giphy does not state the origin of the animation."))
     pg = d.get("pagination") or {}
     return out, int(pg.get("offset") or 0) + int(pg.get("count") or 0) < int(pg.get("total_count") or 0), None
 
 
-SOURCE_FUNCS = {
-    "wallhaven": (src_wallhaven, False), "commons": (src_commons, False), "openverse": (src_openverse, False),
-    "pexels": (src_pexels, True), "pixabay": (src_pixabay, True), "giphy": (src_giphy, False),
-}
-# Sources that understand Russian natively always get the original text.
-NATIVE_RU = {"pexels", "pixabay"}
+SOURCE_FUNCS = {"wallhaven": src_wallhaven, "commons": src_commons, "openverse": src_openverse,
+                "pexels": src_pexels, "pixabay": src_pixabay, "giphy": src_giphy}
+
+
+def plan_skip(name, kind, sort, safe, keys):
+    """Why a source cannot take part in this search, as (code, text), or None."""
+    cap = CAPS[name]
+    if kind != "all" and kind not in cap["kinds"]:
+        return "kind", "%s has no %s" % (cap["name"], {"image": "still images", "animated": "animations", "video": "videos"}[kind])
+    if sort not in cap["sorts"]:
+        return ("sort-" + sort, "%s does not provide %s" % (cap["name"], "upload dates" if sort == "newest" else "reliable popularity data"))
+    if safe and cap["safe"] == "none":
+        return "safe", "%s has no safe-search filter; it is used only with Safe Search off" % cap["name"]
+    if cap["key"] == "required" and not keys.get(name):
+        return "key", "needs your own free %s API key" % cap["name"]
+    return None
+
+
+def guard(results, kind, minres):
+    """Client-side checks for what a source could not filter itself.
+    Returns the kept results and how many were hidden, by reason."""
+    hidden = {"lowres": 0, "unknownRes": 0, "reducedCopy": 0, "kind": 0}
+    out = []
+    for m in results:
+        if kind != "all" and m["kind"] != kind:
+            hidden["kind"] += 1
+            continue
+        if minres[0]:
+            if not (m["width"] and m["height"]):
+                hidden["unknownRes"] += 1
+                continue
+            if m["width"] < minres[0] or m["height"] < minres[1]:
+                hidden["reducedCopy" if not m["originalAvailable"] else "lowres"] += 1
+                continue
+        out.append(m)
+    return out, {k: v for k, v in hidden.items() if v}
+
+
+def remember_query(query):
+    items = [q for q in read_json(HISTORY_FILE, []) if isinstance(q, str) and q.strip().lower() != query.lower()]
+    items.insert(0, query)
+    ensure_private_dir(HUB_STATE)
+    write_json_atomic(HISTORY_FILE, items[:HISTORY_MAX], mode=0o600)
 
 
 def cmd_search(a):
+    """Streams one JSON line per event so the UI shows each source as soon as it answers:
+       {"event":"start", ...}  {"event":"source", ...} x N  {"event":"done", ...}"""
     query = (a.query or "").strip()
     if not query:
-        emit({"ok": False, "error": "empty query"})
+        emit({"event": "done", "ok": False, "error": "empty query"})
         return
+    if a.sort not in SORTS:
+        a.sort = "relevance"
     keys = load_keys()
     minres = RES.get(a.min, (0, 0))
-    sources = [s for s in (a.sources or ",".join(ALL_SOURCES)).split(",") if s in SOURCE_FUNCS]
+    wanted = [s for s in (a.sources or ",".join(ALL_SOURCES)).split(",") if s in SOURCE_FUNCS]
     lang = "ru" if has_cyrillic(query) else "en"
+    plan, active = [], []
+    for name in wanted:
+        skip = plan_skip(name, a.kind, a.sort, a.safe, keys)
+        plan.append({"source": name, "skipCode": skip[0], "skipped": skip[1]} if skip else {"source": name})
+        if not skip:
+            active.append(name)
     translated, terr = None, None
-    if lang == "ru" and a.translate == "auto" and any(s not in NATIVE_RU for s in sources):
+    if lang == "ru" and a.translate == "auto" and any(not CAPS[s]["nativeRu"] for s in active):
         translated, terr = translate(query)
+    for p in plan:
+        if "skipped" not in p:
+            p["query"] = query if (CAPS[p["source"]]["nativeRu"] or not translated) else translated
+    if a.remember and a.page == 1:
+        try:
+            remember_query(query)
+        except OSError:
+            pass
+    emit({"event": "start", "query": query, "lang": lang, "translated": translated, "translateError": terr,
+          "page": a.page, "kind": a.kind, "min": a.min, "sort": a.sort, "safe": a.safe, "sources": plan})
+
+    queries = {p["source"]: p.get("query", query) for p in plan}
 
     def run(name):
-        fn, takes_lang = SOURCE_FUNCS[name]
-        use_native = name in NATIVE_RU or not translated
-        q = query if use_native else translated
+        native = CAPS[name]["nativeRu"]
+        c = Ctx(q=queries[name], page=a.page, kind=a.kind, minres=minres, keys=keys, safe=a.safe,
+                lang=lang if (native or not translated) else "en", sort=a.sort)
         t0 = time.monotonic()
         try:
-            if takes_lang:
-                res, more, note = fn(q, a.page, a.kind, minres, keys, a.safe, lang if use_native else "en")
-            else:
-                res, more, note = fn(q, a.page, a.kind, minres, keys, a.safe)
-            return name, q, res, more, note, None, False, time.monotonic() - t0
+            res, more, note = SOURCE_FUNCS[name](c)
+            return name, res, more, note, None, False, time.monotonic() - t0
         except Offline as e:
-            return name, q, None, False, None, str(e), True, time.monotonic() - t0
+            return name, None, False, None, str(e), True, time.monotonic() - t0
         except SourceError as e:
-            return name, q, None, False, None, str(e), False, time.monotonic() - t0
+            return name, None, False, None, str(e), False, time.monotonic() - t0
         except Exception as e:  # a malformed answer must not kill the whole search
-            return name, q, None, False, None, "unexpected answer: %s" % e, False, time.monotonic() - t0
+            return name, None, False, None, "unexpected answer: %s" % e, False, time.monotonic() - t0
 
-    results, status, any_more, offline_count = [], [], False, 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources) or 1) as ex:
-        for name, q, res, more, note, err, off, dt in ex.map(run, sources):
-            offline_count += 1 if off else 0
-            st = {"source": name, "query": q, "count": len(res) if res else 0, "ms": int(dt * 1000)}
-            if err:
-                st["error"] = err
-            elif res is None:
-                st["skipped"] = note
-            else:
-                if note:
-                    st["note"] = note
-                elif not res:
-                    st["note"] = "no results for this query"
-                results.append(res)
-                any_more = any_more or more
-            status.append(st)
-
-    # Interleave sources so one provider does not bury the others.
-    merged, i = [], 0
-    while any(i < len(r) for r in results):
-        for r in results:
-            if i < len(r):
-                merged.append(r[i])
-        i += 1
-    # Client-side resolution guard for sources without a server-side filter.
-    if minres[0]:
-        merged = [m for m in merged if not (m["width"] and m["height"]) or (m["width"] >= minres[0] and m["height"] >= minres[1])]
-    if a.kind != "all":
-        merged = [m for m in merged if m["kind"] == a.kind]
     qc = read_json(QUALITY_CACHE, {})
-    for m in merged:
-        m["thumbCache"] = thumb_path(m["thumb"]) if m["thumb"] else ""
-        m["thumbCached"] = bool(m["thumbCache"]) and os.path.exists(m["thumbCache"])
-        if m["id"] in qc:
-            m["quality"] = qc[m["id"]]
-    tried = [s for s in status if "skipped" not in s]
-    emit({
-        "ok": True, "query": query, "lang": lang, "translated": translated, "translateError": terr,
-        "page": a.page, "kind": a.kind, "min": a.min, "results": merged, "sources": status, "hasMore": any_more,
-        "offline": bool(tried) and offline_count == len(tried),
-    })
+    any_more, offline_count = False, 0
+    if active:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(active)) as ex:
+            futures = [ex.submit(run, n) for n in active]
+            for f in concurrent.futures.as_completed(futures):
+                name, res, more, note, err, off, dt = f.result()
+                offline_count += 1 if off else 0
+                st = {"source": name, "query": queries[name], "count": 0, "ms": int(dt * 1000)}
+                kept = []
+                if err:
+                    st["error"] = err
+                    st["offline"] = off
+                elif res is None:
+                    st["skipped"] = note
+                else:
+                    kept, hidden = guard(res, a.kind, minres)
+                    for m in kept:
+                        m["thumbCache"] = thumb_path(m["thumb"]) if m["thumb"] else ""
+                        m["thumbCached"] = bool(m["thumbCache"]) and os.path.exists(m["thumbCache"])
+                        if m["id"] in qc:
+                            m["quality"] = qc[m["id"]]
+                    st["count"] = len(kept)
+                    st["received"] = len(res)
+                    if hidden:
+                        st["hidden"] = hidden
+                    if note:
+                        st["note"] = note
+                    elif not res:
+                        st["note"] = "no results for this query"
+                    st["hasMore"] = bool(more)
+                    any_more = any_more or more
+                emit({"event": "source", "source": name, "page": a.page, "status": st, "results": kept})
+    emit({"event": "done", "ok": True, "query": query, "page": a.page, "hasMore": any_more,
+          "offline": bool(active) and offline_count == len(active), "noActive": not active})
 
 
 # --------------------------------------------------------------------------- thumbs
@@ -537,21 +699,27 @@ def cmd_cache_thumbs(a):
     def fetch(u):
         p = thumb_path(u)
         if os.path.exists(p):
-            return 0
+            return p, False
         try:
             body = http_get(u, want_json=False, timeout=10)
         except Exception:
-            return 0
+            return "", False
         if len(body) > 4 * 1024 * 1024 or not sniff(body[:64]):
-            return 0
+            return "", False
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p + ".part", "wb") as f:
             f.write(body)
         os.replace(p + ".part", p)
-        return 1
+        return p, True
 
+    # One line per thumbnail as soon as it is ready (or failed), so cards fill in progressively.
+    done = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
-        done = sum(ex.map(fetch, urls))
+        futs = {ex.submit(fetch, u): u for u in urls}
+        for f in concurrent.futures.as_completed(futs):
+            path, fresh = f.result()
+            done += fresh
+            emit({"event": "thumb", "url": futs[f], "path": path.replace(os.sep, "/") if path else "", "failed": not path})
     prune_dir(THUMB_DIR, 300 * 1024 * 1024)
     emit({"ok": True, "cached": done})
 
@@ -1179,7 +1347,11 @@ def cmd_edit(a):
 # --------------------------------------------------------------------------- library / keys / status
 
 def cmd_local(a):
-    lib = read_json(LIBRARY_FILE, {})
+    # One entry per real file: the wallpaper folder contains the download folder, and
+    # symlinks or mixed separators must not list the same wallpaper twice.
+    def key(p):
+        return os.path.normcase(os.path.realpath(p))
+    lib = {key(k): v for k, v in read_json(LIBRARY_FILE, {}).items()}
     items, seen = [], set()
     for d in [d for d in a.dirs.split("|") if d]:
         if not os.path.isdir(d):
@@ -1194,14 +1366,14 @@ def cmd_local(a):
                 if ext not in MEDIA_EXT or fn.startswith("."):
                     continue
                 path = os.path.join(root, fn)
-                if path in seen:
+                if key(path) in seen:
                     continue
-                seen.add(path)
+                seen.add(key(path))
                 try:
                     st = os.stat(path)
                 except OSError:
                     continue
-                m = lib.get(path, {})
+                m = lib.get(key(path), {})
                 items.append({"path": path, "name": fn, "format": ext, "kind": kind_of(ext), "size": st.st_size,
                               "mtime": int(st.st_mtime), "source": m.get("sourceName", ""), "title": m.get("title", "") or fn,
                               "edited": bool(m.get("editedFrom")), "hub": bool(m),
@@ -1235,6 +1407,18 @@ def cmd_set_key(a):
     emit({"ok": True, "source": a.source, "set": bool(value)})
 
 
+def cmd_history(a):
+    items = [q for q in read_json(HISTORY_FILE, []) if isinstance(q, str)]
+    if a.clear:
+        items = []
+    elif a.remove:
+        items = [q for q in items if q != a.remove]
+    if a.clear or a.remove:
+        ensure_private_dir(HUB_STATE)
+        write_json_atomic(HISTORY_FILE, items, mode=0o600)
+    emit({"ok": True, "items": items[:HISTORY_MAX]})
+
+
 def cmd_status(a):
     online, detail = False, ""
     for host in ("wallhaven.cc", "commons.wikimedia.org"):
@@ -1247,7 +1431,7 @@ def cmd_status(a):
     keys = load_keys()
     emit({"ok": True, "online": online, "detail": "" if online else detail,
           "ffmpeg": bool(shutil.which("ffmpeg")), "ffprobe": bool(shutil.which("ffprobe")),
-          "keys": {k: bool(keys.get(k)) for k in KEY_SOURCES}})
+          "keys": {k: bool(keys.get(k)) for k in KEY_SOURCES}, "caps": CAPS})
 
 
 def main():
@@ -1260,7 +1444,9 @@ def main():
     s.add_argument("--min", default="any", choices=list(RES))
     s.add_argument("--translate", choices=["auto", "off"], default="auto")
     s.add_argument("--sources", default="")
+    s.add_argument("--sort", default="relevance", choices=list(SORTS))
     s.add_argument("--unsafe", dest="safe", action="store_false")
+    s.add_argument("--remember", action="store_true", help="add the query to the local search history")
     s.set_defaults(func=cmd_search)
     s = sp.add_parser("cache-thumbs")
     s.set_defaults(func=cmd_cache_thumbs)
@@ -1297,11 +1483,15 @@ def main():
     s.set_defaults(func=cmd_set_key)
     s = sp.add_parser("status")
     s.set_defaults(func=cmd_status)
+    s = sp.add_parser("history")
+    s.add_argument("--clear", action="store_true")
+    s.add_argument("--remove", default="")
+    s.set_defaults(func=cmd_history)
     a = ap.parse_args()
     try:
         a.func(a)
     except Exception as e:  # always answer with JSON so the UI never hangs
-        emit({"ok": False, "error": "%s: %s" % (type(e).__name__, e)})
+        emit({"event": "done", "ok": False, "error": "%s: %s" % (type(e).__name__, e)})
 
 
 if __name__ == "__main__":

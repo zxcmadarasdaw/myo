@@ -162,8 +162,10 @@ def module_checks():
             pass
     out.append({"name": "qmldir registrations", "ok": not missing,
                 "detail": ("missing: " + ", ".join(missing)) if missing else "all registered QML/JS files exist"})
-    for rel in ("Shell.qml", "wallpaper/WallpaperEngine.qml", "wallpaper/WallpaperGif.qml", "guide/wallpaper/hub/WallpaperHubTab.qml",
-                "guide/wallpaper/hub/HubPreview.qml", "guide/wallpaper/hub/WallpaperStudio.qml"):
+    for rel in ("Shell.qml", "wallpaper/WallpaperEngine.qml", "wallpaper/WallpaperGif.qml",
+                "singletons/system/WallpaperSearch.qml", "guide/wallpaper/search/WallpaperSearchTab.qml",
+                "guide/wallpaper/search/SearchCard.qml", "guide/wallpaper/search/SearchPreview.qml",
+                "guide/wallpaper/search/SearchSettings.qml", "guide/wallpaper/search/WallpaperStudio.qml"):
         ok = os.path.isfile(os.path.join(QS_DIR, rel))
         out.append({"name": rel, "ok": ok, "detail": "present" if ok else "missing"})
     eng = os.path.join(QS_DIR, "wallpaper", "WallpaperEngine.qml")

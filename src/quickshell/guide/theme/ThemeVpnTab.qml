@@ -13,7 +13,7 @@ import "../../network/vpn"
 // singleton): colours, material, lines and layout only, never a subscription or token.
 GuideTab {
     id: tab
-    subTabIndex: 4
+    subTabIndex: 3
 
     readonly property var st: VpnAppearance.style
     property string colorKey: "active"
