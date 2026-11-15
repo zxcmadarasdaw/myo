@@ -9,6 +9,8 @@ Item {
     id: controller
     readonly property bool onHyprland: (Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") || "") !== ""
     readonly property var settings: Config.getSetting("windowActions", {}) || ({})
+    readonly property string extraFloatShortcut: typeof settings.extraFloatShortcut === "string" ? settings.extraFloatShortcut : ""
+    property bool shortcutPending: false
     property string lastError: ""
     property var queue: []
     property bool initialized: false
@@ -23,13 +25,20 @@ Item {
     function initialize() {
         if (initialized || !onHyprland) return;
         initialized = true;
-        enqueue("bind", "");
+        if (Config.dataReady) enqueue("bind", "");
     }
 
     function enqueue(action, address) {
         if (!onHyprland) return;
+        if (action === "bind" && (!Config.dataReady || queue.some(request => request[0] === "bind"))) return;
         queue = queue.concat([[action, address || ""]]);
         startNext();
+    }
+
+    function configureFloatShortcut(value) {
+        if (!onHyprland || !Config.dataReady || shortcutPending) return;
+        shortcutPending = true;
+        enqueue("shortcut", value);
     }
 
     function startNext() {
@@ -38,7 +47,10 @@ Item {
         queue = queue.slice(1);
         output = "";
         let argv = ["python3", Caching.serpantinumDir + "/scripts/system/window_actions.py", request[0]];
-        if (request[1] !== "") argv.push(request[1]);
+        if (request[0] === "bind") argv.push(extraFloatShortcut);
+        else if (request[0] === "shortcut") argv.push("--", request[1]);
+        else if (request[1] !== "") argv.push(request[1]);
+        worker.action = request[0];
         worker.command = argv;
         worker.running = true;
     }
@@ -48,10 +60,22 @@ Item {
     function restore(address) { enqueue("restore", address); }
     function focus(address) { enqueue("focus", address); }
 
+    // Hyprland's workspace fullscreen flag also includes maximized windows.
+    function hasExclusiveFullscreen(workspace) {
+        let windows = workspace && workspace.toplevels ? workspace.toplevels.values : null;
+        return Boolean(windows && windows.some(window => {
+            let mode = window.lastIpcObject ? window.lastIpcObject.fullscreen : 0;
+            return mode === true || (Number(mode) & 2) !== 0;
+        }));
+    }
+
+    function refreshFullscreenState() { Hyprland.refreshToplevels(); }
+
     // Native CSD requests in 0.57.1 are ignored upstream. Foreign-toplevel
     // minimize requests DO emit this event; handle only their exact address.
     function handleEvent(name, data) {
         if (name === "configreloaded") { enqueue("bind", ""); return; }
+        if (name === "fullscreen") { Qt.callLater(controller.refreshFullscreenState); return; }
         if (name !== "minimized") return;
         let match = /^(?:0x)?([0-9a-fA-F]{1,16}),([01])$/.exec(String(data));
         if (!match) return;
@@ -66,14 +90,24 @@ Item {
         }
     }
 
+    Connections {
+        target: Config
+        function onDataReadyChanged() {
+            if (controller.initialized && Config.dataReady) controller.enqueue("bind", "");
+        }
+    }
+
     Process {
         id: worker
+        property string action
         running: false
         stdout: StdioCollector { onStreamFinished: controller.output = this.text }
         onExited: (code, status) => {
             try {
                 let result = JSON.parse(controller.output.trim());
                 controller.lastError = result.ok ? "" : result.error;
+                if (result.ok && result.action === "shortcut")
+                    controller.setSetting("extraFloatShortcut", result.shortcut);
                 if (result.conflicts && result.conflicts.length)
                     controller.lastError = "Shortcut already in use: " + result.conflicts.join(", ");
                 if (controller.lastError) console.warn("[windows] " + controller.lastError);
@@ -82,6 +116,7 @@ Item {
                 controller.lastError = "Window action failed (exit " + code + "): " + controller.output.trim();
                 console.warn("[windows] " + controller.lastError);
             }
+            if (action === "shortcut") controller.shortcutPending = false;
             Qt.callLater(controller.startNext);
         }
     }

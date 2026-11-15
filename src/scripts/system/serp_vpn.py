@@ -335,8 +335,18 @@ MESSAGES = {
                        "Не читается закреплённая версия sing-box в этой установке Serpantinum. Переустановите Serpantinum."),
     "sb_bundle_root": ("Installing sing-box for TUN mode needs administrator rights.",
                        "Для установки sing-box в режиме TUN нужны права администратора."),
-    "sb_checksum": ("The download is damaged: its SHA-256 does not match the one GitHub published ({detail}). Nothing was installed.",
-                    "Загрузка повреждена: SHA-256 не совпадает с опубликованным на GitHub ({detail}). Ничего не установлено."),
+    "sb_bundle_timeout": ("The local system installation timed out after 90 seconds.",
+                          "Локальная системная установка превысила лимит 90 секунд."),
+    "sb_bundle_deps": ("Missing Fedora packages: {detail}. Run install-vpn-bundle.sh --system from the offline kit.",
+                       "Не хватает пакетов Fedora: {detail}. Запустите install-vpn-bundle.sh --system из офлайн-комплекта."),
+    "sb_bundle_yaml": ("Clash YAML requires python3-pyyaml. Run install-vpn-bundle.sh --yaml from the offline kit.",
+                       "Для Clash YAML нужен python3-pyyaml. Запустите install-vpn-bundle.sh --yaml из офлайн-комплекта."),
+    "sb_system_offline": ("System engine installation here requires an offline bundle.",
+                           "Для системной установки движка здесь нужен офлайн-комплект."),
+    "setup_offline_profile": ("Offline setup requires a local profile or server links.",
+                              "Для офлайн-настройки нужен локальный профиль или ссылки на серверы."),
+    "sb_checksum": ("The archive's SHA-256 did not match ({detail}). Nothing was installed.",
+                    "SHA-256 архива не совпадает ({detail}). Ничего не установлено."),
     "sb_bad_archive": ("The downloaded archive is not a sing-box release ({detail}). Nothing was installed.",
                        "Скачанный архив не похож на выпуск sing-box ({detail}). Ничего не установлено."),
     "sb_not_working": ("The downloaded sing-box does not run on this system ({detail}). Nothing was installed.",
@@ -2252,12 +2262,16 @@ def singbox_info():
     found = []
     for p in sb.candidates():
         found.append({"path": p, "system": sb.system_path(p)})
-    bundle, _skipped = sb.find_bundle()
+    bundle, skipped = sb.find_bundle()
+    tun = setup_status({**load_settings_readonly(), "mode": "tun"}, "")
     return {"ok": True, "path": path, "source": source, "version": checked["version"], "works": checked["ok"],
             "error": checked["error"] if path else "", "managedPath": sb.managed_path(), "arch": sb.arch_name(),
-            "tunUsable": sb.system_path(path), "candidates": found, "installHint": INSTALL_HINT,
+            "tunUsable": tun["state"] == "ready", "tunError": tun["error"], "tunPackages": tun["packages"],
+            "tunPath": tun["path"], "tunVersion": tun["version"],
+            "candidates": found, "installHint": INSTALL_HINT,
             "bundle": {"found": bundle is not None, "dir": bundle["dir"] if bundle else "",
-                       "version": bundle["version"] if bundle else ""}}
+                       "version": bundle["version"] if bundle else "",
+                       "error": msg("sb_bundle_bad", "; ".join(skipped)) if skipped and not bundle else ""}}
 
 
 _INSTALL_LOG = None            # open file while `setup` / `singbox-install` runs
@@ -2300,15 +2314,29 @@ def _emit(event):
     print(json.dumps(event, ensure_ascii=False), flush=True)
 
 
-def singbox_install(as_json, source="auto", bundle_dir=""):
+def singbox_install(as_json, source="auto", bundle_dir="", system=False, ensure=False):
     """source: "auto" = an offline bundle when one is found, else the GitHub download;
     "bundle" = the bundle only (never the network); "online" = the download only."""
     sb = _singbox_module()
     emit = _emit if as_json else (lambda e: None)
-    if vpn_running():
+    if ensure and not system and source != "online":
+        path, _ = singbox_location()
+        checked = sb.probe(path, timeout=2) if path else {}
+        if checked.get("ok"):
+            return {"ok": True, "path": path, "version": checked["version"], "reused": True}
+    if vpn_running() or (system and tun_state() in ("activating", "deactivating")):
         raise VpnError("setup_connected")
     try:
-        offline = source == "bundle" or bool(bundle_dir) or (source == "auto" and sb.find_bundle()[0])
+        if system:
+            if source == "online":
+                raise VpnError("sb_system_offline")
+            health = setup_status({**load_settings_readonly(), "mode": "tun"}, "")
+            require_offline_tun(health)
+            if health["binaryReady"]:
+                return {"ok": True, "path": health["path"], "version": health["version"], "reused": True}
+            return install_offline_system_engine(bundle_dir or None, emit)
+        bundle, skipped = sb.find_bundle() if source == "auto" and not bundle_dir else (None, [])
+        offline = source == "bundle" or bool(bundle_dir) or bool(bundle or skipped)
         res = sb.install_from_bundle(emit, folder=bundle_dir or None) if offline else sb.install(emit)
     except sb.SingboxError as e:
         raise VpnError(e.code, e.detail)
@@ -2321,7 +2349,7 @@ def singbox_install(as_json, source="auto", bundle_dir=""):
 
 
 PACKAGE_HELPER = "/usr/libexec/serpantinum/serp-vpn-packages"
-SYSTEM_SINGBOX = ("/usr/bin/sing-box", "/usr/local/bin/sing-box")
+SYSTEM_SINGBOX = ("/usr/local/bin/sing-box", "/usr/bin/sing-box")
 TUN_DEVICE = "/dev/net/tun"
 TUN_TOOLS = {"iproute": ("/usr/sbin/ip", "/usr/bin/ip"), "nftables": ("/usr/sbin/nft", "/usr/bin/nft")}
 
@@ -2365,7 +2393,7 @@ HEARTBEAT = 10                # s between "still working" events (the panel's wa
 
 
 def _run_packages(args, emit, auth_timeout=AUTH_TIMEOUT, total_timeout=PACKAGES_TIMEOUT,
-                  heartbeat=HEARTBEAT, clock=time.monotonic):
+                  heartbeat=HEARTBEAT, clock=time.monotonic, stdin=subprocess.DEVNULL):
     """Runs pkexec + the package helper with two deadlines: the password (until the helper
     prints "started") and the whole run. Returns (rc, stdout). A cancel (SIGTERM -> SystemExit)
     or a deadline stops pkexec; once the helper runs as root it cannot be signalled from here,
@@ -2373,16 +2401,19 @@ def _run_packages(args, emit, auth_timeout=AUTH_TIMEOUT, total_timeout=PACKAGES_
     import queue
     import threading
     try:
-        proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        proc = subprocess.Popen(args, stdin=stdin, stdout=subprocess.PIPE,
                                 stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
     except OSError:
         return 127, ""
     lines = queue.Queue()
 
     def reader():
-        for line in proc.stdout:
-            lines.put(line)
-        lines.put(None)
+        try:
+            with proc.stdout:
+                for line in proc.stdout:
+                    lines.put(line)
+        finally:
+            lines.put(None)
 
     threading.Thread(target=reader, daemon=True).start()
     out, started, eof, began = [], False, False, clock()
@@ -2397,8 +2428,7 @@ def _run_packages(args, emit, auth_timeout=AUTH_TIMEOUT, total_timeout=PACKAGES_
                     out.append(line)
                     if '"started"' in line and not started:
                         started = True
-                        emit({"event": "stage", "stage": "transaction"})
-                    continue
+                        emit({"event": "stage", "stage": "bundle_install" if stdin != subprocess.DEVNULL else "transaction"})
             except queue.Empty:
                 pass
             if eof and proc.poll() is not None:
@@ -2424,25 +2454,56 @@ def _run_packages(args, emit, auth_timeout=AUTH_TIMEOUT, total_timeout=PACKAGES_
                     pass
 
 
-def install_fedora_packages(packages, emit, action="install"):
-    pkexec = _tool("SERP_VPN_PKEXEC", "pkexec")
-    if not pkexec or not _executable(PACKAGE_HELPER) or not _executable("/usr/bin/dnf5"):
-        raise VpnError("setup_admin")
-    emit({"event": "stage", "stage": "packages", "packages": packages})
-    rc, out = _run_packages([pkexec, "--disable-internal-agent", PACKAGE_HELPER, action, *packages], emit)
-    result = {}
+def helper_result(out):
     for line in reversed(out.strip().splitlines()):
         try:
             candidate = json.loads(line)
         except ValueError:
             continue
         if isinstance(candidate, dict) and "ok" in candidate:
-            result = candidate
-            break
+            return candidate
+    return {}
+
+
+def install_fedora_packages(packages, emit, action="install"):
+    pkexec = _tool("SERP_VPN_PKEXEC", "pkexec")
+    if not pkexec or not _executable(PACKAGE_HELPER) or not _executable("/usr/bin/dnf5"):
+        raise VpnError("setup_admin")
+    emit({"event": "stage", "stage": "packages", "packages": packages})
+    rc, out = _run_packages([pkexec, "--disable-internal-agent", PACKAGE_HELPER, action, *packages], emit)
+    result = helper_result(out)
     if rc in (126, 127) and not result:
         raise VpnError("setup_auth")
     if rc or result.get("ok") is not True:
         raise VpnError("setup_packages", _strip_ansi(result.get("detail") or f"DNF5 ({rc})"))
+
+
+def require_offline_tun(health):
+    if health["error"]:
+        raise VpnError("tun_not_installed" if not tun_installed() or
+                       not _tool("SERP_VPN_PKEXEC", "pkexec") else "setup_tun")
+    if health["packages"]:
+        raise VpnError("sb_bundle_deps", ", ".join(health["packages"]))
+
+
+def install_offline_system_engine(folder, emit):
+    sb = _singbox_module()
+    emit({"event": "stage", "stage": "bundle"})
+    bundle = sb.require_bundle(folder)
+    pkexec = _tool("SERP_VPN_PKEXEC", "pkexec")
+    if not pkexec or not _executable(PACKAGE_HELPER):
+        raise VpnError("setup_admin")
+    emit({"event": "stage", "stage": "packages", "source": "bundle"})
+    with sb.open_archive(bundle["archive"]) as archive:
+        rc, out = _run_packages([pkexec, "--disable-internal-agent", PACKAGE_HELPER, "offline-engine"],
+                                emit, total_timeout=AUTH_TIMEOUT + 100, stdin=archive)
+    result = helper_result(out)
+    if rc in (126, 127) and not result:
+        raise VpnError("setup_auth")
+    if rc or result.get("ok") is not True:
+        error = result.get("error") or {}
+        raise VpnError(error.get("code") or "sb_not_working", error.get("detail") or "offline system helper")
+    return {**result, "source": "bundle", "verified": True}
 
 
 def read_setup_file(path):
@@ -2480,11 +2541,13 @@ def check_setup_config(cfg, settings, binary):
         raise VpnError("check_failed", "sing-box check")
 
 
-def vpn_setup(source, name, emit, *, file_path="", system=False, allow_yaml=False):
+def vpn_setup(source, name, emit, *, file_path="", system=False, allow_yaml=False, offline_only=False):
     emit({"event": "stage", "stage": "system"})
     if vpn_running() or tun_state() in ("activating", "deactivating"):
         raise VpnError("setup_connected")
     settings = load_settings_readonly()
+    if offline_only and system:
+        raise VpnError("sb_system_offline")
     tun = settings["mode"] == "tun"
     health = setup_status(settings, singbox_bin())
     if health["error"]:
@@ -2493,6 +2556,10 @@ def vpn_setup(source, name, emit, *, file_path="", system=False, allow_yaml=Fals
     emit({"event": "stage", "stage": "binary"})
     binary = health["path"] if health["binaryReady"] else ""
     sb = _singbox_module()
+    local_bundle, bundle_errors = sb.find_bundle() if not system else (None, [])
+    offline = offline_only or bool(local_bundle or bundle_errors)
+    if tun and offline:
+        require_offline_tun(health)
     if not binary and not tun:
         binary = next((p for p in sb.candidates() if p != health["path"] and sb.probe(p, timeout=2)["ok"]), "")
     if not binary and not (tun or system) and not health["arch"]:
@@ -2500,6 +2567,8 @@ def vpn_setup(source, name, emit, *, file_path="", system=False, allow_yaml=Fals
 
     new_source = bool(file_path or source.strip())
     source = read_setup_file(file_path) if file_path else source.strip() or _source_text()
+    if offline_only and is_url(unwrap_source(source)):
+        raise VpnError("setup_offline_profile")
     prepared = None
     if source:
         emit({"event": "stage", "stage": "profile"})
@@ -2513,6 +2582,8 @@ def vpn_setup(source, name, emit, *, file_path="", system=False, allow_yaml=Fals
             if e.code == "no_servers":
                 # Parser errors can contain values supplied by the provider.
                 raise VpnError(e.code, "") from None
+            if e.code == "need_yaml" and offline:
+                raise VpnError("sb_bundle_yaml") from None
             if e.code != "need_yaml" or not allow_yaml:
                 raise
             install_fedora_packages(["python3-pyyaml"], emit)
@@ -2529,7 +2600,9 @@ def vpn_setup(source, name, emit, *, file_path="", system=False, allow_yaml=Fals
 
     archive = False
     if not binary:
-        if tun or system:
+        if tun and offline:
+            binary = install_offline_system_engine(None, emit)["path"]
+        elif tun or system:
             rpm_installed = _run(["/usr/bin/rpm", "-q", "sing-box"], timeout=5)[0] == 0
             action = "upgrade" if rpm_installed and health["version"] else "repair" if rpm_installed else "install"
             install_fedora_packages(["sing-box"], emit, action=action)
@@ -2537,7 +2610,7 @@ def vpn_setup(source, name, emit, *, file_path="", system=False, allow_yaml=Fals
         else:
             archive = True
             # A local bundle first: no network for the program itself.
-            installer = sb.install_from_bundle if sb.find_bundle()[0] else sb.install
+            installer = sb.install_from_bundle if offline else sb.install
             binary = installer(emit, validate=validate if prepared else None)["path"]
     if health["packages"]:
         install_fedora_packages(health["packages"], emit)
@@ -2756,14 +2829,18 @@ def main(argv):
             source = "bundle" if "--offline" in rest else "online" if "--online" in rest else "auto"
             bundle_dir = next((a[len("--bundle="):] for a in rest if a.startswith("--bundle=")), "")
             if bundle_dir.startswith("file:"):          # a folder chosen in the panel's dialog
-                bundle_dir = urllib.request.url2pathname(urllib.parse.urlsplit(bundle_dir).path)
-            data = singbox_install(as_json, source, bundle_dir)
+                url = urllib.parse.urlsplit(bundle_dir)
+                if url.netloc or url.query or url.fragment:
+                    raise VpnError("sb_bundle_bad", "local folder required")
+                bundle_dir = urllib.request.url2pathname(url.path)
+            data = singbox_install(as_json, source, bundle_dir, system="--system" in rest, ensure="--ensure" in rest)
         elif cmd == "setup":
             name = next((a[7:] for a in rest if a.startswith("--name=")), "")
             file_path = next((a[7:] for a in rest if a.startswith("--file=")), "")
             try:
                 data = vpn_setup(sys.stdin.read(), name, _emit if as_json else (lambda _: None),
-                                 file_path=file_path, system="--system" in rest, allow_yaml="--yaml" in rest)
+                                 file_path=file_path, system="--system" in rest, allow_yaml="--yaml" in rest,
+                                 offline_only="--offline" in rest)
             except _singbox_module().SingboxError as e:
                 raise VpnError(e.code, e.detail) from None
             except OSError as e:

@@ -790,6 +790,26 @@ try:
             finish(needle, status_off if needle == "status --json" else {"ok": True, "works": True, "candidates": [], "servers": SERVERS})
     passed.append("offline bundle: Install VPN Components -> --offline, bundle stage, VPN Engine Ready; chosen folder; clear error; Download stays online-only")
 
+    answer_status(dict(status_off, mode="tun"), lambda: not child("vpnDownload").property("visible"), "TUN mode")
+    do("singboxInfo")
+    until(lambda: running("singbox-info"), "TUN engine info")
+    finish("singbox-info", {"ok": True, "works": True, "tunUsable": False, "candidates": [],
+                            "bundle": {"found": True, "dir": "/b", "version": "1.14.4"}})
+    until(lambda: child("vpnInstallBundle").property("visible"), "TUN still needs a system engine when Proxy is ready")
+    do("installBundle", "file:///run/media/u/USB/vpn-bundle")
+    until(lambda: running("singbox-install"), "local TUN install started")
+    cmd = running("singbox-install")[0]["cmd"]
+    assert {"--offline", "--system", "--bundle=file:///run/media/u/USB/vpn-bundle"}.issubset(cmd), cmd
+    j("stream", "singbox-install", json.dumps({"event": "stage", "stage": "bundle_install"}))
+    assert not j("svc")["sb"]["canCancel"]
+    finish("singbox-install", {"ok": True, "path": "/usr/local/bin/sing-box", "version": "1.14.4", "source": "bundle"})
+    until(lambda: running("singbox-info"), "readiness after local TUN installation")
+    finish("singbox-info", {"ok": True, "works": True, "tunUsable": True, "tunPath": "/usr/local/bin/sing-box",
+                            "tunVersion": "1.14.4", "candidates": [], "bundle": {"found": True, "dir": "/b", "version": "1.14.4"}})
+    until(lambda: child("vpnEngineState").property("text") == S["sb.ready"], "system TUN engine ready")
+    answer_status(status_off, lambda: child("vpnDownload").property("visible"), "return to Proxy")
+    passed.append("TUN: local install targets the root-owned system engine and readiness is independent from Proxy")
+
     # Escape closes the open sheet first
     assert j("ui")["sheet"] == "singbox"
     assert do("back") == "true" and do("back") == "false"

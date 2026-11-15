@@ -809,7 +809,7 @@ fi
 # minimize/restore keys work even while the shell is busy, restarting or not running.
 if [[ "$1" == "window" ]]; then
     shift
-    exec python3 "$SERPANTINUM_DIR/scripts/system/window_actions.py" "$@"
+    QS_SETTINGS="$CONFIG_SETTINGS_JSON" exec python3 "$SERPANTINUM_DIR/scripts/system/window_actions.py" "$@"
 fi
 
 if [[ "$1" == "ipc" ]]; then

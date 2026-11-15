@@ -103,6 +103,7 @@ ShellRoot {
     }
 
     Component.onCompleted: {
+        WorkspaceSlots.sync();
         WindowActionsController.initialize();
         Qt.application.organization = "serpantinum";
         Qt.application.domain = "serpantinum.org";

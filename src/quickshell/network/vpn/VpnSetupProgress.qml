@@ -18,6 +18,7 @@ ColumnLayout {
         case "profile": return tr("setup.read_profile", "Reading VPN profile…");
         case "packages": return tr("setup.wait_auth", "Waiting for the administrator password (polkit window)…");
         case "transaction": return tr("setup.transaction", "Installing signed RPM packages (cannot be cancelled now)…");
+        case "bundle_install": return tr("sb.stage.bundle_install", "Verifying and installing system sing-box from the local bundle…");
         case "config": return tr("setup.check_config", "Checking VPN configuration…");
         case "bundle": return tr("sb.stage.bundle", "Reading the offline VPN bundle (no internet)…");
         case "release": return tr("sb.stage.release", "Looking up the latest release…");
@@ -29,8 +30,9 @@ ColumnLayout {
         }
     }
     readonly property string resultText: VpnService.sbSetup ? tr("setup.done", "VPN setup complete")
+        : (VpnService.sbResult || {}).reused ? tr("sb.ready", "VPN Engine Ready")
         : tr("sb.installed", "Installed sing-box {version}").replace("{version}", (VpnService.sbResult || {}).version || "")
-    readonly property bool timed: ["packages", "transaction"].indexOf(VpnService.sbStage) >= 0 && VpnService.sbElapsed > 0
+    readonly property bool timed: ["packages", "transaction", "bundle_install"].indexOf(VpnService.sbStage) >= 0 && VpnService.sbElapsed > 0
     readonly property string progressText: {
         let parts = [];
         if (timed) return tr("setup.elapsed", "{seconds} s").replace("{seconds}", VpnService.sbElapsed)
@@ -55,7 +57,8 @@ ColumnLayout {
             text: sh.installing ? sh.stageText : VpnService.sbResult ? sh.resultText
                 : VpnService.sbBundleFound
                     ? sh.tr("sb.bundle_found", "Offline bundle found: sing-box {version}. It installs without internet.").replace("{version}", VpnService.sbInfo.bundle.version || "")
-                    : sh.tr("sb.download_desc", "Download the official release from GitHub (SagerNet/sing-box) for this computer.")
+                    : (VpnService.sbInfo.bundle || {}).error
+                      || sh.tr("sb.bundle_unavailable", "Local VPN bundle missing. Choose a vpn-bundle folder or install online.")
             wrapMode: Text.Wrap
             font.family: ThemeBackend.fontFamily
             font.pixelSize: Scaler.s(11)
@@ -64,7 +67,7 @@ ColumnLayout {
         VpnPill {                            // local install from the offline bundle: no network
             objectName: "vpnInstallBundle"
             visible: sh.standalone && !sh.installing && VpnService.sbBundleFound
-                     && (!VpnService.sbReady || VpnService.sbInfo.version !== VpnService.sbInfo.bundle.version)
+                     && !VpnService.sbReady
             icon: "󰏗"
             text: sh.tr("sb.install_components", "Install VPN Components")
             enabled: !VpnService.busy && !VpnService.connected
@@ -72,7 +75,7 @@ ColumnLayout {
         }
         VpnPill {                            // download from GitHub (needs internet)
             objectName: "vpnDownload"
-            visible: sh.standalone && !sh.installing
+            visible: sh.standalone && !sh.installing && VpnService.mode !== "tun"
             icon: "󰇚"
             filled: !VpnService.sbBundleFound
             text: VpnService.sbError !== "" && VpnService.sbErrorCode.indexOf("sb_bundle") !== 0 ? sh.tr("sb.retry", "Retry")

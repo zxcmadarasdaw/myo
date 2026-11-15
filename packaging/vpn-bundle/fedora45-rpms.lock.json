@@ -1,0 +1,132 @@
+{
+  "source": "https://dl.fedoraproject.org/pub/fedora/linux/releases/45/Everything/x86_64/os/Packages/",
+  "rpms": [
+    {
+      "package": "elfutils-libelf",
+      "name": "elfutils-libelf-0.196-1.fc45.x86_64.rpm",
+      "size": 244110,
+      "sha256": "b1b4ee22354cc037c88d4736a792eb1b326f1bb7c26001d6a238eb1712c8e035"
+    },
+    {
+      "package": "gmp",
+      "name": "gmp-6.3.0-6.fc45.x86_64.rpm",
+      "size": 329507,
+      "sha256": "434884021f2e95f464950b6af962c79e7b3e9f3a89a17bc6a3e6307a555746f7"
+    },
+    {
+      "package": "iproute",
+      "name": "iproute-7.0.0-2.fc45.x86_64.rpm",
+      "size": 935873,
+      "sha256": "20e712af1dc17b629709345af74e4da72579ae4f8e34f334b32fd881cf5614c0"
+    },
+    {
+      "package": "iptables-libs",
+      "name": "iptables-libs-1.8.13-3.fc45.x86_64.rpm",
+      "size": 415476,
+      "sha256": "2e918ea84115596b7469fbe5a335e5f25cd438f8f3a412acd6f10c1c50550676"
+    },
+    {
+      "package": "jansson",
+      "name": "jansson-2.14-5.fc45.x86_64.rpm",
+      "size": 48058,
+      "sha256": "d393130f4ee3fbad5cf67182f1df314db098806613efbac52af17d73ed0414ae"
+    },
+    {
+      "package": "libbpf",
+      "name": "libbpf-1.7.0-2.fc45.x86_64.rpm",
+      "size": 210906,
+      "sha256": "4c578ab0705da8dbeb72cdc9937360cf685c4ac012e728fc49c40a2000a45f69"
+    },
+    {
+      "package": "libcap",
+      "name": "libcap-2.78-2.fc45.x86_64.rpm",
+      "size": 90751,
+      "sha256": "f8157b98f9c406247e8bba0af7acdbeb7034ff4796f329d778f4995ba9c7efaa"
+    },
+    {
+      "package": "libedit",
+      "name": "libedit-3.1-60.20260512cvs.fc45.x86_64.rpm",
+      "size": 112667,
+      "sha256": "90141313c7c0d632574ac138786c2a1fff7d9bbe70e881ff3ea858b58511fcbe"
+    },
+    {
+      "package": "libmnl",
+      "name": "libmnl-1.0.5-10.fc45.x86_64.rpm",
+      "size": 28614,
+      "sha256": "f3942db301eeb297aa67932b16c0f78a14d26161800a85b8fc9eeba61154bfc6"
+    },
+    {
+      "package": "libnetfilter_conntrack",
+      "name": "libnetfilter_conntrack-1.1.1-2.fc45.x86_64.rpm",
+      "size": 63697,
+      "sha256": "929bfe0bd5def4a1b8d9ce63b70e7a3bf688f5e15bcb9625f349d4f73c2d8e51"
+    },
+    {
+      "package": "libnfnetlink",
+      "name": "libnfnetlink-1.0.2-2.fc45.x86_64.rpm",
+      "size": 29887,
+      "sha256": "d332a8c13a1aff44d45b9106b883dcada5d50d8f399f13bd6dd5c23e8d516a1e"
+    },
+    {
+      "package": "libnftnl",
+      "name": "libnftnl-1.3.1-3.fc45.x86_64.rpm",
+      "size": 91975,
+      "sha256": "b79fbb57a0852c4e6e3b6d94221ac2c6ac195c166d846ea47297fd5ed69ee080"
+    },
+    {
+      "package": "libselinux",
+      "name": "libselinux-3.11-5.fc45.x86_64.rpm",
+      "size": 106608,
+      "sha256": "6420804a2eea7da60854ae14098c1b5c76bb44cda550abe2cf7962208097f23b"
+    },
+    {
+      "package": "libsepol",
+      "name": "libsepol-3.11-2.fc45.x86_64.rpm",
+      "size": 373972,
+      "sha256": "a1d3b04ff03dcc8314a068b4655af175d0301e74a3e6a852ea9880beb62ff4bc"
+    },
+    {
+      "package": "libyaml",
+      "name": "libyaml-0.2.5-19.fc45.x86_64.rpm",
+      "size": 63890,
+      "sha256": "70bec2023ddd79f8a7f10b5504126a8b568ce1116d786f05d45f604613d61cb8"
+    },
+    {
+      "package": "nftables",
+      "name": "nftables-1.1.6-4.fc45.x86_64.rpm",
+      "size": 459829,
+      "sha256": "6cd8d5b71430fa8aec48d012aa3b663d53dbf703ac7d753be633d35716b7dc64"
+    },
+    {
+      "package": "nftables-services",
+      "name": "nftables-services-1.1.6-4.fc45.noarch.rpm",
+      "size": 21833,
+      "sha256": "01755da25f0fca3082369a821cf627a5bef4c317ced0911991f5b0c9dc76ff10"
+    },
+    {
+      "package": "pcre2",
+      "name": "pcre2-10.47-1.fc45.2.x86_64.rpm",
+      "size": 283293,
+      "sha256": "697b365f18aa7adf45ee58f132680281689153f4e22cd93036ba902e1da98a25"
+    },
+    {
+      "package": "pcre2-syntax",
+      "name": "pcre2-syntax-10.47-1.fc45.2.noarch.rpm",
+      "size": 169021,
+      "sha256": "245863138d72e809240d9150d8ffbe25ee8ab796f9b5a97e043506d275f16d41"
+    },
+    {
+      "package": "psmisc",
+      "name": "psmisc-23.7-9.fc45.x86_64.rpm",
+      "size": 337346,
+      "sha256": "38e7d282eca68917e81eea8ab25268a7558e06831df0d1339a82701e5498096e"
+    },
+    {
+      "package": "python3-pyyaml",
+      "name": "python3-pyyaml-6.0.3-6.fc45.x86_64.rpm",
+      "size": 244653,
+      "sha256": "2e73b059d547089b7352922f75fc55a3ea4037ae5aadd124d7e4b451a8fc3527"
+    }
+  ],
+  "signingKeyFingerprint": "4F50A6114CD5C6976A7F1179655A4B02F577861E"
+}

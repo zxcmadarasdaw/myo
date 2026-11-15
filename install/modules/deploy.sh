@@ -387,8 +387,7 @@ remove_settings_desktop_entry() {
 # staged first so an interrupted copy never leaves a half-written tree.
 # Updates never overwrite compositor configs wholesale. A file the user has not edited
 # (identical to the version shipped by the previous commit) is replaced by the new one,
-# after a backup; an edited file is kept and only reported. Window keys such as Super+Z
-# are also bound at runtime by window_actions.py, so they work in either case.
+# after a backup; an edited file is kept and only reported.
 update_untouched_compositor_file() {
     local repo="$1" old_commit="$2" file="$3"
     shift 3
@@ -401,16 +400,21 @@ update_untouched_compositor_file() {
             *) target="$comp" ;;
         esac
         dest="$HOME/.config/$target/$comp_file"
-        if [ ! -e "$dest" ]; then
+        [ -f "$repo/$file" ] || continue
+        cmp -s "$repo/$file" "$dest" && continue
+        if [ -L "$dest" ]; then
+            echo -e "\e[33m[ NOTE ]\e[0m ~/.config/$target/$comp_file is a symlink and was kept; the new version is $repo/$file"
+        elif [ ! -e "$dest" ]; then
             mkdir -p "$(dirname "$dest")"
             cp "$repo/$file" "$dest"
         elif [ -n "$old_commit" ] && git -C "$repo" show "$old_commit:$file" 2>/dev/null | cmp -s - "$dest"; then
             backup="$HOME/.config/${target}_backup/update_$(date +%Y%m%d_%H%M%S)/$comp_file"
-            mkdir -p "$(dirname "$backup")"
-            cp -a "$dest" "$backup"
-            cp "$repo/$file" "$dest"
-            echo -e "\e[32m[ OK ]\e[0m Updated ~/.config/$target/$comp_file (backup: $backup)"
-        elif ! cmp -s "$repo/$file" "$dest"; then
+            if mkdir -p "$(dirname "$backup")" && cp -a "$dest" "$backup" && cp "$repo/$file" "$dest"; then
+                echo -e "\e[32m[ OK ]\e[0m Updated ~/.config/$target/$comp_file (backup: $backup)"
+            else
+                echo -e "\e[33m[ WARN ]\e[0m Could not back up or update ~/.config/$target/$comp_file" >&2
+            fi
+        else
             echo -e "\e[33m[ NOTE ]\e[0m ~/.config/$target/$comp_file has your own edits and was kept; the new version is $repo/$file"
         fi
     done
@@ -618,12 +622,23 @@ deploy_package() {
                                 cp "$REPO_ROOT/$file" "$HOME/.config/$target_config_name/$comp_file"
                             fi
                         done
-                    else
+                    elif [[ "$file" != compositors/hyprland/config/settings.lua && "$file" != compositors/hyprland/config/keybinds.lua ]]; then
                         update_untouched_compositor_file "$REPO_ROOT" "$OLD_COMMIT" "$file" "${COMPOSITORS[@]}"
                     fi
                 fi
             done <<< "$changed_files"
         fi
+    fi
+
+    # Apply the window-mode defaults on a local update too, even when the
+    # source tree has the same Git revision as the installed copy.
+    if [ "$is_update" = true ]; then
+        local previous="$OLD_COMMIT"
+        [ "$do_full_deploy" = false ] || previous=""
+        update_untouched_compositor_file "$REPO_ROOT" "$previous" \
+            compositors/hyprland/config/settings.lua "${COMPOSITORS[@]}"
+        update_untouched_compositor_file "$REPO_ROOT" "$previous" \
+            compositors/hyprland/config/keybinds.lua "${COMPOSITORS[@]}"
     fi
 
     # Program files are mirrored from the source tree on every run. The

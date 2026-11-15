@@ -381,8 +381,8 @@ PanelWindow {
     // Fullscreen on the workspaces shown on this dock's monitor, not on the focused one.
     readonly property bool isHyprlandFullscreen: {
         if (!hyprMonitor) return false;
-        if (hyprMonitor.activeWorkspace && hyprMonitor.activeWorkspace.hasFullscreen) return true;
-        return Boolean(hyprSpecialWorkspace && hyprSpecialWorkspace.hasFullscreen);
+        return WindowActionsController.hasExclusiveFullscreen(hyprMonitor.activeWorkspace)
+            || WindowActionsController.hasExclusiveFullscreen(hyprSpecialWorkspace);
     }
     // OsdController.isFullscreen is shared by every screen, so on Hyprland the per-monitor check replaces it.
     readonly property bool isFullscreenActive: hyprMonitor ? (isHyprlandFullscreen || isToplevelFullscreen) : (isOsdFullscreen || isToplevelFullscreen)

@@ -44,7 +44,11 @@ Shell overlays and controls are bound in `config/keybinds.lua` using `serpantinu
 - `volume` - audio output and input slider
 - `settings` - cheat sheet for keybindings
 
-Workspace switching is routed through the shell to update bar indicators:
+`Super+Right` and `Super+Left` switch to the next and previous workspace on the focused monitor. Hyprland prefers the nearest existing numbered workspace within the range shown by the bar. If none exists in that direction, the shortcut can open an empty slot within that range. The default range is 1–8. Set the number of slots and optional per-monitor numbering in the bar's workspace settings.
+
+The bar follows the active workspace reported by Hyprland for its own monitor. Its workspace buttons still switch directly to the selected number. `Super+Alt+Left/Right` also switches workspaces, and `Super+Alt+H/L` moves window focus horizontally. Regular floating windows stay on their own workspace when switching.
+
+The numbered shortcuts use the shell's workspace commands:
 
 ```lua
 for i = 1, 10 do

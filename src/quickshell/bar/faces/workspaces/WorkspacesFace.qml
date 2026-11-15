@@ -79,48 +79,15 @@ Item {
         return "pills";
     }
 
-    property int baseWorkspaceCount: {
-        let dummy = configRevision;
-        if (typeof Config !== "undefined" && Config.rawSettings) {
-            if (Config.rawSettings.bar && Config.rawSettings.bar.workspaceCount !== undefined) {
-                return Math.max(2, Math.min(10, Config.rawSettings.bar.workspaceCount));
-            }
-            if (Config.rawSettings.general && Config.rawSettings.general.workspaceCount !== undefined) {
-                return Math.max(2, Math.min(10, Config.rawSettings.general.workspaceCount));
-            }
-            if (Config.rawSettings.workspaceCount !== undefined) {
-                return Math.max(2, Math.min(10, Config.rawSettings.workspaceCount));
-            }
-        }
-        return 8;
-    }
-
-    readonly property var workspacesSettings: {
-        let dummy = configRevision;
-        if (typeof Config !== "undefined" && Config.rawSettings && Config.rawSettings.bar && Config.rawSettings.bar.workspaces)
-            return Config.rawSettings.bar.workspaces;
-        return {};
-    }
-
-    readonly property bool perMonitorNumbering: Compositor.name === "hyprland" && workspacesSettings.perMonitorNumbering === true
-    readonly property var monitorBlock: {
-        let m = workspacesSettings.monitors;
-        return (perMonitorNumbering && m && m[myOutput]) ? m[myOutput] : null;
-    }
-    readonly property int blockSize: {
-        let n = monitorBlock ? Math.floor(Number(monitorBlock.count)) : 0;
-        return n >= 1 ? n : 0;
-    }
-    readonly property int hyprBase: {
-        let n = monitorBlock ? Math.floor(Number(monitorBlock.first)) : 0;
-        return (blockSize > 0 && n >= 1) ? n - 1 : 0;
-    }
+    readonly property int baseWorkspaceCount: WorkspaceSlots.count
+    readonly property var monitorBlock: Compositor.name === "hyprland" ? (WorkspaceSlots.monitorRanges[myOutput] ?? null) : null
+    readonly property int blockSize: monitorBlock ? monitorBlock.count : 0
+    readonly property int hyprBase: monitorBlock ? monitorBlock.first - 1 : 0
 
     readonly property int hyprActiveId: {
         if (Compositor.name !== "hyprland") return -1;
-        const mon = Hyprland.monitors.values.find(m => m.name === myOutput);
-        const ws = (mon && mon.activeWorkspace) ? mon.activeWorkspace : Hyprland.focusedWorkspace;
-        return ws ? ws.id : -1;
+        const ws = myOutput ? Hyprland.monitors.values.find(m => m.name === myOutput)?.activeWorkspace : Hyprland.focusedWorkspace;
+        return ws && ws.id > 0 ? ws.id : -1;
     }
 
     property int workspaceCount: {
@@ -130,7 +97,7 @@ Item {
         if (act >= count) count = act + 1;
         if (Compositor.name === "niri" && niriMaxWorkspaceIndex >= count) count = niriMaxWorkspaceIndex + 1;
         if (Compositor.name === "mango" && mangoTagCount > 0) count = Math.min(count, mangoTagCount);
-        if (blockSize > 0) count = Math.min(count, blockSize);
+        if (blockSize > 0) return blockSize;
         return Math.max(2, count);
     }
 

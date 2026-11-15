@@ -1,5 +1,14 @@
 {
   "guide": {
+    "windows": {
+      "shortcut": {
+        "title": "Floating window shortcut",
+        "desc": "Super+Z switches the window mode. To also use Ctrl+Z globally, enter it and apply. This takes Ctrl+Z away from application Undo and terminal job control. Clear the field and apply to disable the extra shortcut."
+      },
+      "pin": {
+        "desc": "Super+Alt+Z pins a window in a corner on every workspace. Press again to return to tiling. Super+Shift+Z minimizes and Super+Ctrl+Z restores."
+      }
+    },
     "about": {
       "title": "Serpantinum",
       "loading": "Loading...",
@@ -2366,7 +2375,8 @@
         "release": "Looking up the latest release…",
         "test": "Testing the program…",
         "verify": "Checking the checksum…",
-        "bundle": "Reading the offline VPN bundle (no internet)…"
+        "bundle": "Reading the offline VPN bundle (no internet)…",
+        "bundle_install": "Verifying and installing system sing-box from the local bundle…"
       },
       "source": {
         "system": "system package",
@@ -2378,6 +2388,9 @@
       "not_installed": "VPN components are not installed",
       "install_components": "Install VPN Components",
       "bundle_found": "Offline bundle found: sing-box {version}. It installs without internet.",
+      "bundle_unavailable": "Local VPN bundle missing. Choose a vpn-bundle folder or install online.",
+      "tun_missing": "Missing packages: {packages}. Run the offline installer with --system.",
+      "tun_system": "TUN requires a system sing-box and administrator authorization to install it.",
       "bundle_pick": "Have the offline VPN bundle? Install from its folder without internet.",
       "bundle_pick_hint": "Choose the vpn-bundle folder of this Serpantinum release (for example on a USB stick).",
       "choose_bundle": "Choose the vpn-bundle folder",

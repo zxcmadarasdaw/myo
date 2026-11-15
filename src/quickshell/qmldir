@@ -77,6 +77,7 @@ singleton FocusTimer 1.0 singletons/system/FocusTimer.qml
 singleton Updater 1.0 singletons/system/Updater.qml
 singleton WindowTracker 1.0 singletons/system/WindowTracker.qml
 singleton WindowActionsController 1.0 singletons/widgetcontrols/WindowActionsController.qml
+singleton WorkspaceSlots 1.0 singletons/system/WorkspaceSlots.qml
 singleton ShellSurfaces 1.0 singletons/system/ShellSurfaces.qml
 singleton SurfaceField 1.0 singletons/system/SurfaceField.qml
 

@@ -14,9 +14,8 @@ architecture, into ~/.local/share/serpantinum/vpn/bin/sing-box:
      used), written with mode 755, and accepted only when `sing-box version` runs and
      reports a version. Then it replaces the previous managed binary atomically.
 
-This binary serves the proxy mode. The TUN mode's root service only runs a sing-box
-from /usr/bin or /usr/local/bin (installed by dnf), on purpose: a root service never
-runs a file a user process could have written.
+The TUN service uses the system binary installed by DNF or by the root-owned
+offline helper. The offline helper accepts only bytes matching its installed lock.
 """
 import hashlib
 import http.client
@@ -27,6 +26,7 @@ import re
 import shutil
 import socket
 import ssl
+import stat
 import subprocess
 import sys
 import tarfile
@@ -424,8 +424,8 @@ def read_bundle(folder, arch=None, lock=None):
         raise SingboxError("sb_bundle_arch", arch or "?")
     manifest_path = os.path.join(folder, "manifest.json")
     try:
-        with open(manifest_path, encoding="utf-8") as f:
-            manifest = json.load(f)
+        with open_archive(manifest_path) as f:
+            manifest = json.loads(f.read(65536))
         files = {item["arch"]: item for item in manifest["files"]}
     except FileNotFoundError:
         raise SingboxError("sb_bundle_missing", folder) from None
@@ -477,27 +477,60 @@ def _verified_binary(bundle, work, emit):
     return tmp_bin, digest
 
 
+def require_bundle(folder=None, arch=None):
+    if folder:
+        return read_bundle(folder, arch)
+    bundle, reasons = find_bundle(arch)
+    if bundle is not None:
+        return bundle
+    for directory in bundle_dirs():
+        if os.path.lexists(os.path.join(directory, "manifest.json")):
+            return read_bundle(directory, arch)
+    raise SingboxError("sb_bundle_missing", "; ".join(reasons))
+
+
+def open_archive(path):
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0) |
+                 getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise SingboxError("sb_bundle_bad", "archive is not a regular file")
+        return os.fdopen(fd, "rb")
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def copy_archive(archive, local, size):
+    if size > MAX_ARCHIVE:
+        raise SingboxError("sb_bundle_bad", "size")
+    with open(local, "wb") as out:
+        remaining = size
+        while remaining:
+            block = archive.read(min(remaining, 1 << 20))
+            if not block:
+                raise SingboxError("sb_bundle_bad", "size")
+            out.write(block)
+            remaining -= len(block)
+        if archive.read(1):
+            raise SingboxError("sb_bundle_bad", "size")
+
+
 def install_from_bundle(emit, folder=None, arch=None, validate=None):
-    """Offline install into the managed path (proxy mode). No network is used."""
+    """Offline install into the managed path (proxy mode)."""
     arch = arch or arch_name()
     if not arch:
         raise SingboxError("sb_arch", platform.machine() or "?")
     emit({"event": "stage", "stage": "bundle"})
-    if folder:
-        bundle = read_bundle(folder, arch)
-    else:
-        bundle, reasons = find_bundle(arch)
-        if bundle is None:
-            # A bundle that exists but is wrong: report its own reason, not "missing".
-            present = next((d for d in bundle_dirs() if os.path.isfile(os.path.join(d, "manifest.json"))), None)
-            if present:
-                read_bundle(present, arch)
-            raise SingboxError("sb_bundle_missing", "; ".join(reasons))
+    bundle = require_bundle(folder, arch)
     target_dir = managed_dir()
     os.makedirs(target_dir, mode=0o700, exist_ok=True)
     work = tempfile.mkdtemp(prefix=".install-", dir=target_dir)
     try:
-        tmp_bin, digest = _verified_binary(bundle, work, emit)
+        local = os.path.join(work, "archive.tar.gz")
+        with open_archive(bundle["archive"]) as archive:
+            copy_archive(archive, local, bundle["size"])
+        tmp_bin, digest = _verified_binary({**bundle, "archive": local}, work, emit)
         if validate is not None:
             validate(tmp_bin)
         final = managed_path()
@@ -509,23 +542,33 @@ def install_from_bundle(emit, folder=None, arch=None, validate=None):
 
 
 def install_system_from_bundle(folder, arch=None, target=SYSTEM_TARGET):
-    """Root only (the installer runs it as root): the same checks, then /usr/local/bin/sing-box
-    owned by root, which is what the TUN service accepts. Never writes outside `target`."""
     if hasattr(os, "geteuid") and os.geteuid() != 0:
         raise SingboxError("sb_bundle_root")
     bundle = read_bundle(folder, arch)
-    work = tempfile.mkdtemp(prefix="serpantinum-singbox-")
-    try:
+    with open_archive(bundle["archive"]) as archive:
+        return install_system_from_stream(archive, arch, target)
+
+
+def install_system_from_stream(archive, arch=None, target=SYSTEM_TARGET):
+    """Install a pinned release received on stdin by the root-owned helper."""
+    if hasattr(os, "geteuid") and os.geteuid() != 0:
+        raise SingboxError("sb_bundle_root")
+    arch = arch or arch_name()
+    lock = load_lock()
+    asset = lock["assets"].get(arch)
+    if not asset:
+        raise SingboxError("sb_bundle_arch", arch or "?")
+    # The caller opens the file as the unprivileged user. Hash a private snapshot
+    # so the bytes checked are exactly the bytes extracted by root.
+    target_dir = os.path.dirname(target)
+    os.makedirs(target_dir, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".serpantinum-singbox-", dir=target_dir) as work:
+        local = os.path.join(work, "archive.tar.gz")
+        copy_archive(archive, local, int(asset["size"]))
+        bundle = {"archive": local, "sha256": asset["sha256"], "version": lock["version"]}
         tmp_bin, digest = _verified_binary(bundle, work, lambda _event: None)
-        staged = target + ".new"
-        shutil.copyfile(tmp_bin, staged)
-        os.chmod(staged, 0o755)
-        if hasattr(os, "chown"):
-            os.chown(staged, 0, 0)
-        os.replace(staged, target)
+        os.replace(tmp_bin, target)
         return {"ok": True, "path": target, "version": bundle["version"], "sha256": digest}
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
 
 
 def system_path(path):
@@ -534,6 +577,14 @@ def system_path(path):
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["bundle-archive"]:
+        folder = next((a[len("--bundle="):] for a in sys.argv[2:] if a.startswith("--bundle=")), "")
+        try:
+            print(require_bundle(folder or None)["archive"])
+        except (SingboxError, OSError) as e:
+            print(getattr(e, "code", "sb_bundle_bad") + ": " + str(getattr(e, "detail", e)), file=sys.stderr)
+            sys.exit(1)
+        sys.exit(0)
     # `install-system --bundle DIR`: used by the installer as root (TUN mode needs a root-owned
     # sing-box). Without arguments: prints the architecture, the files found and the bundle.
     if sys.argv[1:2] == ["install-system"]:

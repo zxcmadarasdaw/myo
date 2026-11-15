@@ -16,38 +16,30 @@ VPN_UNIT_DST="/etc/systemd/system/serpantinum-vpn.service"
 VPN_POLICY_DST="/usr/share/polkit-1/actions/org.serpantinum.vpn.policy"
 VPN_RULES_DST="/etc/polkit-1/rules.d/49-serpantinum-vpn.rules"
 
-# Offline VPN engine. A release tarball built by packaging/vpn-bundle/build_vpn_bundle.py
-# --release carries serpantinum/vpn-bundle/ (official sing-box archive + manifest + SHA256SUMS).
-# When it is present, sing-box is installed from it without any download; the archive is
-# accepted only if it matches src/scripts/system/serp_vpn_singbox.lock.json. A plain
-# source checkout has no bundle: then nothing happens here and the VPN panel offers the
-# download (or choosing a bundle folder) instead.
+vpn_source_bundle() {
+    local dir
+    for dir in "$PROJECT_ROOT/vpn-bundle" "$PROJECT_ROOT/dist/vpn-bundle"; do
+        if [ -f "$dir/manifest.json" ]; then
+            printf '%s\n' "$dir"
+            return 0
+        fi
+    done
+    return 1
+}
+
 install_vpn_bundle() {
     local root="${PROJECT_ROOT:?}"
-    local bundle="$root/vpn-bundle"
-    local keep="${XDG_DATA_HOME:-$HOME/.local/share}/serpantinum/vpn-bundle"
-    local system_dir="$HOME/.local/share/serpantinum/src/scripts/system"
-    [ -f "$bundle/manifest.json" ] || return 0
+    local bundle args=()
+    bundle="$(vpn_source_bundle)" || return 0
+    if [ -x "$VPN_PACKAGES_DST" ] && [ -f "$VPN_UNIT_DST" ]; then
+        args+=(--system)
+    fi
 
     echo -e "\n\e[36m[ INFO ]\e[0m Installing the VPN engine from the offline bundle (no download)"
-    mkdir -p "$keep"
-    if [ "$(realpath "$bundle")" != "$(realpath -m "$keep")" ]; then
-        cp -f "$bundle"/manifest.json "$bundle"/SHA256SUMS "$bundle"/*.tar.gz "$keep"/ \
-            && cp -f "$bundle"/README.txt "$bundle"/install-vpn-bundle.sh "$keep"/ 2>/dev/null || true
-    fi
-    if ! timeout 120 python3 "$system_dir/serp_vpn.py" singbox-install --offline --bundle="$keep" >/dev/null; then
-        echo -e "\e[33m[ WARN ]\e[0m The offline VPN engine could not be installed; Super+N -> VPN shows why"
+    if ! SERPANTINUM_DIR="$HOME/.local/share/serpantinum/src" \
+        bash "$root/packaging/vpn-bundle/install-vpn-bundle.sh" --bundle="$bundle" "${args[@]}"; then
+        echo -e "\e[33m[ WARN ]\e[0m The offline VPN installation did not finish; see the error above"
         FAILED_PKGS+=("sing-box (offline bundle)")
-        return 0
-    fi
-    echo -e "\e[32m[ OK ]\e[0m VPN engine ready (proxy mode)"
-    # TUN mode runs sing-box as root and only from /usr/bin or /usr/local/bin.
-    if [ -x /usr/libexec/serpantinum/serp-vpn-root ] && [ ! -x /usr/bin/sing-box ]; then
-        if sudo timeout 120 python3 "$system_dir/serp_vpn_singbox.py" install-system --bundle="$keep" >/dev/null; then
-            echo -e "\e[32m[ OK ]\e[0m VPN engine ready (TUN mode): /usr/local/bin/sing-box"
-        else
-            echo -e "\e[33m[ WARN ]\e[0m sing-box for TUN mode was not installed; proxy mode works"
-        fi
     fi
 }
 
@@ -77,7 +69,7 @@ install_vpn_service() {
     fi
 
     # A minimal Fedora Hyprland session needs a GUI polkit agent for pkexec.
-    if command -v dnf5 >/dev/null && command -v Hyprland >/dev/null \
+    if ! vpn_source_bundle >/dev/null && command -v dnf5 >/dev/null && command -v Hyprland >/dev/null \
         && ! rpm -q --whatprovides PolicyKit-authentication-agent >/dev/null 2>&1; then
         if ! sudo dnf5 install -y lxqt-policykit; then
             FAILED_PKGS+=("lxqt-policykit")
@@ -85,6 +77,8 @@ install_vpn_service() {
     fi
 
     if sudo install -Dm755 -o root -g root "$root/src/scripts/system/serp_vpn_root.py" "$VPN_HELPER_DST" \
+        && sudo install -Dm644 -o root -g root "$root/src/scripts/system/serp_vpn_singbox.py" "$(dirname "$VPN_PACKAGES_DST")/serp_vpn_singbox.py" \
+        && sudo install -Dm644 -o root -g root "$root/src/scripts/system/serp_vpn_singbox.lock.json" "$(dirname "$VPN_PACKAGES_DST")/serp_vpn_singbox.lock.json" \
         && sudo install -Dm755 -o root -g root "$root/src/scripts/system/serp_vpn_packages.py" "$VPN_PACKAGES_DST" \
         && sudo install -Dm644 -o root -g root "$sys_dir/serpantinum-vpn.service" "$VPN_UNIT_DST" \
         && sudo install -Dm644 -o root -g root "$sys_dir/org.serpantinum.vpn.policy" "$VPN_POLICY_DST" \

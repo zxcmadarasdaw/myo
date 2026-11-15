@@ -111,6 +111,18 @@ class BundleTest(unittest.TestCase):
             self.skipTest("running as root")
         self.assertEqual(self.code(lambda: sb.install_system_from_bundle(str(self.bundle), "amd64")), "sb_bundle_root")
 
+    def test_system_stdin_uses_pinned_bytes_and_preserves_working_binary_on_error(self):
+        target = self.bundle / "system" / "sing-box"
+        with mock.patch.object(sb.os, "geteuid", return_value=0, create=True):
+            result = sb.install_system_from_stream(io.BytesIO(self.data), arch="amd64", target=str(target))
+            self.assertEqual(result["sha256"], self.sha)
+            binary = target.read_bytes()
+            for payload, code in ((self.data[:-1], "sb_bundle_bad"), (self.data + b"x", "sb_bundle_bad"),
+                                  (b"x" * len(self.data), "sb_checksum")):
+                self.assertEqual(self.code(lambda: sb.install_system_from_stream(io.BytesIO(payload), "amd64", str(target))), code)
+                self.assertEqual(target.read_bytes(), binary)
+            self.assertEqual(list(target.parent.iterdir()), [target])
+
     def test_shipped_lock_is_valid_and_pins_fedora_x86_64(self):
         lock = sb.load_lock(str(ROOT / "src/scripts/system/serp_vpn_singbox.lock.json"))
         self.assertIn("amd64", lock["assets"])
@@ -153,6 +165,48 @@ class ServiceTest(unittest.TestCase):
         self.vpn.singbox_install(False, "auto", "/chosen")
         self.assertEqual(self.calls[-1], ("bundle", "/chosen"))
 
+    def test_incompatible_bundle_is_reported_without_network_fallback(self):
+        self.fake.find_bundle = lambda: (None, ["sb_bundle_version"])
+        self.vpn.singbox_install(False)
+        self.assertEqual(self.calls, [("bundle", None)])
+
+    def test_tun_install_reuses_ready_system_and_otherwise_uses_offline_helper(self):
+        ready = {"binaryReady": True, "path": "/usr/bin/sing-box", "version": VERSION, "packages": [], "error": ""}
+        result = {"ok": True, "path": "/usr/local/bin/sing-box", "version": VERSION}
+        with mock.patch.object(self.vpn, "setup_status", return_value=ready), \
+             mock.patch.object(self.vpn, "tun_state", return_value="inactive"), \
+             mock.patch.object(self.vpn, "install_offline_system_engine", return_value=result) as install, \
+             mock.patch.object(self.vpn, "load_settings_readonly", return_value={}):
+            self.assertTrue(self.vpn.singbox_install(False, "bundle", system=True)["reused"])
+            install.assert_not_called()
+            ready["binaryReady"] = False
+            self.assertEqual(self.vpn.singbox_install(False, "bundle", "/usb", system=True), result)
+            self.assertEqual(install.call_args.args[0], "/usb")
+            ready["packages"] = ["nftables"]
+            with self.assertRaises(self.vpn.VpnError) as error:
+                self.vpn.singbox_install(False, "bundle", "/usb", system=True)
+            self.assertEqual(error.exception.code, "sb_bundle_deps")
+        self.assertEqual(self.calls, [])
+
+    def test_offline_system_helper_receives_archive_as_unprivileged_stdin(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "asset.tar.gz"
+            path.write_bytes(b"fixture")
+            self.fake.require_bundle.return_value = {"archive": str(path)}
+            self.fake.open_archive = sb.open_archive
+
+            def helper(args, _emit, **options):
+                self.assertEqual(args, ["pkexec", "--disable-internal-agent", self.vpn.PACKAGE_HELPER, "offline-engine"])
+                self.assertEqual(options["stdin"].read(), b"fixture")
+                return 0, '{"event":"started"}\n{"ok":true,"path":"/usr/local/bin/sing-box"}\n'
+
+            with mock.patch.object(self.vpn, "_executable", return_value=True), \
+                 mock.patch.object(self.vpn, "_tool", return_value="pkexec"), \
+                 mock.patch.object(self.vpn, "_run_packages", side_effect=helper):
+                result = self.vpn.install_offline_system_engine("/usb", lambda event: None)
+        self.assertTrue(result["verified"])
+        self.assertEqual(result["source"], "bundle")
+
     def test_messages_exist_in_both_languages(self):
         for code in ("sb_bundle_missing", "sb_bundle_bad", "sb_bundle_version", "sb_bundle_arch",
                      "sb_bundle_lock", "sb_bundle_root"):
@@ -179,6 +233,26 @@ class BuildScriptTest(unittest.TestCase):
         sys.path.insert(0, str(ROOT / "packaging/vpn-bundle"))
         import build_vpn_bundle as build
         self.assertTrue(build.DOWNLOAD.startswith("https://github.com/SagerNet/sing-box/releases/download/"))
+
+    def test_offline_build_writes_linux_package_lists_and_checksums(self):
+        sys.path.insert(0, str(ROOT / "packaging/vpn-bundle"))
+        import build_vpn_bundle as build
+        with tempfile.TemporaryDirectory() as tmp:
+            cache, out = Path(tmp) / "cache", Path(tmp) / "out"
+            (cache / "fedora45").mkdir(parents=True)
+
+            def cached(parent, name, data):
+                (parent / name).write_bytes(data)
+                return {"name": name, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+
+            engine = cached(cache, NAME, archive_bytes())
+            rpm = cached(cache / "fedora45", "iproute-test.rpm", b"fixture")
+            lock = {"version": VERSION, "source": "test", "assets": {"amd64": engine}}
+            fedora = {"source": "https://test.invalid/", "rpms": [{**rpm, "package": "iproute"}]}
+            with mock.patch.object(build, "fetch", side_effect=AssertionError("network used")):
+                build.build_bundle(lock, ["amd64"], out, cache, False, fedora, offline=True)
+            self.assertEqual((out / "rpms/packages.tsv").read_bytes(), b"iproute\tiproute-test.rpm\n")
+            self.assertNotIn(b"\r", (out / "SHA256SUMS").read_bytes())
 
 
 if __name__ == "__main__":

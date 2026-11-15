@@ -244,12 +244,20 @@ VpnSheet {
                 if (VpnService.setup.error) return VpnService.setup.error;
                 let packages = (VpnService.setup.packages || []).slice();
                 let rpm = VpnService.mode === "tun" && VpnService.setup.binaryReady !== true;
-                if (rpm) packages.unshift("sing-box");
+                if (rpm && !VpnService.sbBundleFound) packages.unshift("sing-box");
                 let parts = [];
-                if (VpnService.setupNeeded && VpnService.mode === "proxy")
+                if (VpnService.setupNeeded && VpnService.sbBundleFound) {
+                    parts.push(sh.tr("sb.bundle_found", "Offline bundle found: sing-box {version}. It installs without internet.")
+                        .replace("{version}", VpnService.sbInfo.bundle.version || ""));
+                    if (packages.length > 0)
+                        parts.push(sh.tr("sb.tun_missing", "Missing packages: {packages}. Run the offline installer with --system.")
+                            .replace("{packages}", packages.join(", ")));
+                } else if (VpnService.setupNeeded && VpnService.mode === "proxy")
                     parts.push(sh.tr("setup.archive_plan", "sing-box from SagerNet GitHub, installed for this user."));
-                if (packages.length > 0) parts.push(sh.tr("setup.rpm_plan", "System packages via polkit: {packages}").replace("{packages}", packages.join(", ")));
-                if (sh.yamlPossible && sh.hasInput) parts.push(sh.tr("setup.yaml_plan", "Clash YAML may require python3-pyyaml via polkit."));
+                if (packages.length > 0 && !VpnService.sbBundleFound)
+                    parts.push(sh.tr("setup.rpm_plan", "System packages via polkit: {packages}").replace("{packages}", packages.join(", ")));
+                if (sh.yamlPossible && sh.hasInput && !VpnService.sbBundleFound)
+                    parts.push(sh.tr("setup.yaml_plan", "Clash YAML may require python3-pyyaml via polkit."));
                 return parts.join("\n");
             }
             wrapMode: Text.Wrap

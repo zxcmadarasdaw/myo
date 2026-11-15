@@ -15,19 +15,73 @@ hl.bind(mainMod .. " + CTRL + Right", hl.dsp.window.move({ direction = "r" }))
 hl.bind(mainMod .. " + CTRL + Up", hl.dsp.window.move({ direction = "u" }))
 hl.bind(mainMod .. " + CTRL + Down", hl.dsp.window.move({ direction = "d" }))
 
-hl.bind(mainMod .. " + Left", hl.dsp.focus({ direction = "left" }))
-hl.bind(mainMod .. " + Right", hl.dsp.focus({ direction = "right" }))
 hl.bind(mainMod .. " + Up", hl.dsp.focus({ direction = "up" }))
 hl.bind(mainMod .. " + Down", hl.dsp.focus({ direction = "down" }))
--- Previous / next workspace. Super+Left/Right already move focus between windows, so
--- these use Alt; "r-1"/"r+1" stay on the current monitor.
-hl.bind(mainMod .. " + ALT + Left", hl.dsp.focus({ workspace = "r-1" }))
-hl.bind(mainMod .. " + ALT + Right", hl.dsp.focus({ workspace = "r+1" }))
+hl.bind(mainMod .. " + ALT + H", hl.dsp.focus({ direction = "left" }))
+hl.bind(mainMod .. " + ALT + L", hl.dsp.focus({ direction = "right" }))
+
+local function stepWorkspace(direction)
+  local current = hl.get_active_workspace()
+  if not current or not current.monitor then return end
+  if not current.id or current.id < 1 then
+    local target = hl.get_workspace(direction > 0 and "m+1" or "m-1")
+    if target and target ~= current then hl.dispatch(hl.dsp.focus({ workspace = target })) end
+    return
+  end
+
+  local monitor = current.monitor.name
+  local slots = _G.serpantinumWorkspaceSlots or { count = 8, monitors = {} }
+  local block = slots.monitors[monitor]
+  local first = block and block.first or 1
+  local last = first + (block and block.count or slots.count) - 1
+  local inside = current.id >= first and current.id <= last
+  local nearest, beyond, occupied = nil, nil, {}
+  for _, workspace in ipairs(hl.get_workspaces()) do
+    local id = workspace.id
+    if id and id > 0 and not workspace.special then
+      occupied[id] = true
+      if workspace.monitor and workspace.monitor.name == monitor and (id - current.id) * direction > 0 then
+        if id >= first and id <= last then
+          if not nearest or (id - nearest) * direction < 0 then nearest = id end
+        elseif not beyond or (id - beyond) * direction < 0 then
+          beyond = id
+        end
+      end
+    end
+  end
+
+  -- Existing spaces take priority. Only materialize a numbered slot of the bar
+  -- on demand, staying within the configured range and skipping other outputs.
+  if not nearest and inside then
+    for id = current.id + direction, direction > 0 and last or first, direction do
+      local reserved = false
+      for output, range in pairs(slots.monitors) do
+        if output ~= monitor and id >= range.first and id < range.first + range.count then
+          reserved = true
+          break
+        end
+      end
+      if not occupied[id] and not reserved then
+        nearest = id
+        break
+      end
+    end
+  end
+  local target = nearest or ((not block or not inside) and beyond)
+  if target then hl.dispatch(hl.dsp.focus({ workspace = target })) end
+end
+
+local function previousWorkspace() stepWorkspace(-1) end
+local function nextWorkspace() stepWorkspace(1) end
+hl.bind(mainMod .. " + Left", previousWorkspace)
+hl.bind(mainMod .. " + Right", nextWorkspace)
+hl.bind(mainMod .. " + ALT + Left", previousWorkspace)
+hl.bind(mainMod .. " + ALT + Right", nextWorkspace)
 
 hl.bind(mainMod .. " + Q", hl.dsp.window.close())
 -- Window states. Tiled / Floating / Fullscreen are separate:
---   Super+Z          Tiled <-> Floating (leaves fullscreen first; a first float is 75 % of
---                    the screen, centred; later it returns where you left it)
+--   Super+Z          Floating <-> previous maximized or tiled mode (70 % on first float)
+--                    An extra shortcut such as Ctrl+Z can be enabled in Serpantinum settings.
 --   Super+Shift+F    real fullscreen on/off (games, video)
 --   Super+Alt+F      maximized: fills the work area, bar and gaps stay
 --   Super+Alt+Z      pin a small window in a corner on every workspace (again: back to tiling)
@@ -37,10 +91,10 @@ hl.bind(mainMod .. " + Q", hl.dsp.window.close())
 -- The window commands run a script directly, not through the Quickshell IPC.
 hl.bind(mainMod .. " + ALT + F", hl.dsp.window.fullscreen({ mode = "maximized", action = "toggle" }))
 hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" }))
-hl.bind(mainMod .. " + Z", hl.dsp.exec_cmd("serpantinum window float --notify"))
-hl.bind(mainMod .. " + ALT + Z", hl.dsp.exec_cmd("serpantinum window pin --notify"))
-hl.bind(mainMod .. " + SHIFT + Z", hl.dsp.exec_cmd("serpantinum window minimize --notify"))
-hl.bind(mainMod .. " + CTRL + Z", hl.dsp.exec_cmd("serpantinum window restore --notify"))
+hl.bind(mainMod .. " + Z", hl.dsp.exec_cmd("serpantinum window float --notify"), { description = "Serpantinum window: float" })
+hl.bind(mainMod .. " + ALT + Z", hl.dsp.exec_cmd("serpantinum window pin --notify"), { description = "Serpantinum window: pin" })
+hl.bind(mainMod .. " + SHIFT + Z", hl.dsp.exec_cmd("serpantinum window minimize --notify"), { description = "Serpantinum window: minimize" })
+hl.bind(mainMod .. " + CTRL + Z", hl.dsp.exec_cmd("serpantinum window restore --notify"), { description = "Serpantinum window: restore" })
 
 hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd("serpantinum brightness lower"), { locked = true })
 hl.bind("XF86MonBrightnessUp", hl.dsp.exec_cmd("serpantinum brightness raise"), { locked = true })

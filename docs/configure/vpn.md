@@ -17,16 +17,27 @@ A subscription client in the network panel (**Super+N**), in the spirit of Hiddi
 Open **Super+N → VPN**, enter a link or choose a local profile, then click **Install and configure VPN**. Serpantinum checks the current mode and sing-box, shows progress and validates the profile before saving it. A working installation is reused. After setup, choose a server and press **Connect** to start the VPN.
 
 - **Proxy** uses the architecture-specific SagerNet GitHub archive and requires the published SHA-256. During the download you can see bytes, speed and retries, or cancel. The verified binary is placed in `~/.local/share/serpantinum/vpn/bin/sing-box` after the version and configuration checks succeed.
-- **TUN** uses a signed system package. On Fedora the Serpantinum installer supplies a polkit helper for the panel. It uses the official SagerNet RPM repository for the transaction and asks for administrator authentication. The panel also offers that source for Proxy if GitHub fails. PyYAML is requested only when the profile actually requires it.
+- **TUN** uses a system installation of sing-box. The Fedora panel can install it from the bundled archive via polkit. The official SagerNet RPM remains available as an explicit online action. A working system installation is reused.
 - **Connection → sing-box** still lists installed binaries and accepts a path for Proxy. A working binary has to answer `sing-box version`.
 
 ### Offline VPN bundle (no internet)
 
-A release of Serpantinum can ship `vpn-bundle/`: the official sing-box archive from github.com/SagerNet/sing-box (unchanged), `manifest.json` and `SHA256SUMS`. The version, size and SHA-256 are pinned in `src/scripts/system/serp_vpn_singbox.lock.json`. A bundle is accepted only when it matches these pinned values; its own manifest does not decide. No server, subscription, key or token is included.
+The Fedora 45 x86_64 package includes the official sing-box archive, the Fedora-signed RPMs for `iproute`, `nftables`, optional `python3-pyyaml` and their supporting libraries, Proxy/TUN check templates, `manifest.json` and `SHA256SUMS`. RPM dependencies assume a working Fedora 45 system with Python, DNF5, systemd and the distribution's trusted signing keys. The kit includes only a loopback test profile. [SagerNet release](https://github.com/SagerNet/sing-box/releases/tag/v1.14.4) · [Fedora signing keys](https://fedoraproject.org/security/)
 
-- **Installer:** when `vpn-bundle/` lies next to the installer (the offline release tarball), it is copied to `~/.local/share/serpantinum/vpn-bundle` and sing-box is installed from it. Proxy mode needs no root. When the TUN service is installed, it also installs `/usr/local/bin/sing-box` with sudo. Nothing is downloaded.
-- **Panel:** **Super+N → VPN → sing-box** shows **VPN Engine Ready**, or **Install VPN Components** when a bundle is found. **Download** stays a separate, online-only button. **Choose folder…** installs from a bundle on a USB stick or in Downloads.
-- **By hand:** `vpn-bundle/install-vpn-bundle.sh` (proxy) or `install-vpn-bundle.sh --system` (also TUN).
+- **Installer:** the bundled VPN files are used locally and retained under `~/.local/share/serpantinum/vpn-bundle` or the equivalent `XDG_DATA_HOME` path. The main installer can still use the network for the desktop and other components.
+- **Panel:** select **Proxy** or **TUN** in **Super+N → VPN → Connection**, then open **sing-box**. **Install VPN Components** or **Choose folder…** uses a local bundle. TUN authenticates via the system helper. If Fedora tools are missing, the panel names the packages and points to the local installer below. Online GitHub and RPM installation have separate actions.
+- **By hand:** from a bundled release or the retained bundle, run the following commands on the matching Serpantinum installation.
+
+```bash
+cd vpn-bundle
+sha256sum -c SHA256SUMS
+bash install-vpn-bundle.sh                     # Proxy
+bash install-vpn-bundle.sh --system            # Proxy and TUN, with sudo
+bash install-vpn-bundle.sh --system --yaml     # also support Clash YAML
+bash install-vpn-bundle.sh --system --check    # config and system checks
+```
+
+The TUN helper verifies a private copy of the archive against its root-owned lock before replacing the binary at `/usr/local/bin/sing-box`. Local RPM installation disables repositories and checks RPM signatures. A missing graphical polkit agent can be bypassed by using the terminal installer with `sudo`. A remote subscription or a connection to a VPN server still needs that service to be reachable.
 - **Fedora Live:** without persistent storage everything is gone after a reboot, including sing-box. Keep the bundle on a USB stick and install it again after each boot. This needs no internet.
 
 Building a bundle (developer, needs internet; the archives never go into Git, `dist/` and `/vpn-bundle/` are ignored):
@@ -34,6 +45,7 @@ Building a bundle (developer, needs internet; the archives never go into Git, `d
 ```bash
 python3 packaging/vpn-bundle/build_vpn_bundle.py --verify-api            # dist/vpn-bundle (x86_64)
 python3 packaging/vpn-bundle/build_vpn_bundle.py --arch all --release    # + dist/serpantinum-<version>-offline.tar.gz
+python3 packaging/vpn-bundle/build_vpn_bundle.py --offline-build        # from verified local cache only
 ```
 
 The script downloads only from the GitHub release URL and refuses a file whose size or SHA-256 differs from the lock file. `--verify-api` also compares the hash with the digest GitHub publishes. Upload the tarball and its `.sha256` to the GitHub release page. To move to a newer sing-box, change the lock file in a reviewed commit, then rebuild.
@@ -43,7 +55,7 @@ The script downloads only from the GitHub release URL and refuses a file whose s
 - Downloading has a 30 s stall timeout, four resuming attempts, and a 15 min limit for the whole download.
 - The administrator password (polkit) must be answered within 3 minutes. DNF5 is stopped by the root helper after 20 minutes.
 - The panel stops a helper that sends nothing for 90 s, so no progress animation runs forever.
-- Everything can be cancelled except a running RPM transaction.
+- Cancellation is available during download and authorization. Once authorized, the root helper owns the transaction and its timeout. The local sing-box install has a 90 s limit.
 - Every install appends to `~/.local/state/serpantinum/vpn/install.log` (stages, retries, the error code). It never contains links, servers or configs. The error in the panel names this file.
 
 When updating an existing Fedora installation of Serpantinum, run the updated Serpantinum installer to register the package helper and policy. The installer supplies `lxqt-policykit` on minimal Fedora Hyprland systems that lack a packaged authentication agent. Hyprland starts the agent at sign-in. If a Live session loses the binary at reboot, reopening the VPN tab offers setup again.
@@ -130,7 +142,9 @@ When you connect in TUN mode:
    From the servers it takes only known proxy types. It refuses chaining (`detour`) and any key that names a file. It runs `sing-box check` and only then replaces `/etc/serpantinum-vpn/config.json`. If the check fails, the previous config stays.
 3. `systemctl restart serpantinum-vpn` starts it.
 
-sing-box must be at least 1.12 and live in `/usr/bin` or `/usr/local/bin`, which is where the dnf package puts it.
+sing-box must be at least 1.12. The service looks for `/usr/local/bin/sing-box` first, then `/usr/bin/sing-box`. The kernel provides `/dev/net/tun`. The unit grants `CAP_NET_ADMIN` for the interface and the policy routes. `--check` validates the kernel device, tools, loaded unit and generated configs. It leaves the network state unchanged.
+
+On Fedora, test an actual connection using your profile. In Proxy mode, test an application through `127.0.0.1:2080`. In TUN mode, compare `ip -4 rule`, `ip -6 rule`, `ip link show serp-tun0` and `resolvectl status` before connecting, while connected and after disconnecting. During the connection verify DNS and the exit IP from an application without proxy settings. After disconnection confirm that the TUN interface is gone and normal DNS and routing return. If starting TUN fails, inspect `journalctl -u serpantinum-vpn.service -n 50 --no-pager`.
 
 **Remove** in the panel (`serpantinum vpn clear`) also deletes the root config.
 

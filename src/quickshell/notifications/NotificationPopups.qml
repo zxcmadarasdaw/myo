@@ -46,7 +46,7 @@ PanelWindow {
     readonly property bool isFullscreenActive: {
         try {
             if (typeof Hyprland !== "undefined" && Hyprland.focusedWorkspace) {
-                return Boolean(Hyprland.focusedWorkspace.hasFullscreen || (Hyprland.activeToplevel && Hyprland.activeToplevel.fullscreen));
+                return WindowActionsController.hasExclusiveFullscreen(Hyprland.focusedWorkspace);
             }
         } catch (e) {}
         return false;

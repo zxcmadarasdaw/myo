@@ -96,9 +96,8 @@ Item {
     property string sbRetryDetail: ""
     property int sbRetryWait: 0
     property bool sbSetup: false
-    // Every stage can be cancelled except a running RPM transaction (the root helper ends it
-    // itself after 20 min; stopping it half-way could leave the RPM database locked).
-    readonly property bool sbCanCancel: sbInstalling && sbStage !== "transaction" && sbStage !== "done"
+    // The privileged helper owns the deadline after authorization.
+    readonly property bool sbCanCancel: sbInstalling && ["transaction", "bundle_install", "done"].indexOf(sbStage) < 0
     property real sbElapsed: 0                // s, from heartbeat events (polkit wait / RPM transaction)
     property string sbLogPath: ""             // <state>/vpn/install.log of the last failed install
     property bool sbTimedOut: false
@@ -216,9 +215,10 @@ Item {
     function installSingbox(source, folder) {
         let args = source === "online" ? ["--online"] : source === "bundle" ? ["--offline"] : [];
         if (folder) args.push("--bundle=" + folder);
+        if (source === "bundle" && mode === "tun") args.push("--system");
         return startInstall(false, args, "", source === "bundle" || !!folder || (source !== "online" && sbBundleFound));
     }
-    readonly property bool sbReady: sbInfo.works === true
+    readonly property bool sbReady: mode === "tun" ? sbInfo.tunUsable === true : sbInfo.works === true
     readonly property bool sbBundleFound: !!(sbInfo.bundle && sbInfo.bundle.found)
     function prepareVpn(link, name, path, system, yaml) {
         let args = [];
@@ -425,7 +425,14 @@ Item {
         repeat: true
         running: root.sbInstalling
         onTriggered: {
-            if (!sbProc.running || Date.now() - root.sbLastEvent < root.sbWatchdogMs) return;
+            if (!sbProc.running) {
+                root.sbInstalling = false;
+                root.sbStage = "";
+                if (!root.sbError && !root.sbResult)
+                    root.sbError = I18n.t("vpn.errors.backend", "The VPN helper failed (is python3 installed?).");
+                return;
+            }
+            if (Date.now() - root.sbLastEvent < root.sbWatchdogMs) return;
             root.sbTimedOut = true;
             sbProc.running = false;
         }
@@ -605,6 +612,7 @@ Item {
     onPanelOpenChanged: {
         if (panelOpen) {
             refresh();
+            singboxInfo();
             if (servers.length === 0 && started) listProc.running = true;
             if (connected && exitIp === null) ipDelay.restart();
         } else {

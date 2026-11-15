@@ -11,9 +11,40 @@ SettingsBlob {
 
     SettingsRow {
         rootObj: section.rootObj
+        icon: "󰖲"
+        title: I18n.t("guide.windows.shortcut.title", "Floating window shortcut")
+        description: I18n.t("guide.windows.shortcut.desc", "Super+Z switches the window mode. To also use Ctrl+Z globally, enter it and apply. This takes Ctrl+Z away from application Undo and terminal job control. Clear the field and apply to disable the extra shortcut.")
+
+        Row {
+            spacing: section.rootObj.s(8)
+            Input {
+                id: floatShortcutInput
+                width: section.rootObj.s(150)
+                height: section.rootObj.s(32)
+                text: WindowActionsController.extraFloatShortcut
+                placeholderText: "Ctrl + Z"
+                fontPixelSize: section.rootObj.s(12)
+                cornerRadius: ThemeBackend.borderRadius
+                maximumLength: 48
+                onAccepted: function(value) { WindowActionsController.configureFloatShortcut(value); }
+            }
+            ClickButton {
+                height: section.rootObj.s(32)
+                buttonText: I18n.t("guide.general.processes.hotkey.apply", "Apply")
+                enabled: !WindowActionsController.shortcutPending && Config.dataReady
+                cornerRadius: ThemeBackend.borderRadius
+                accentColor: ThemeBackend.mauve
+                textColor: ThemeBackend.crust
+                onClicked: WindowActionsController.configureFloatShortcut(floatShortcutInput.text)
+            }
+        }
+    }
+
+    SettingsRow {
+        rootObj: section.rootObj
         icon: "󰐃"
         title: I18n.t("guide.windows.pin.title", "Pinned windows — Super+Alt+Z")
-        description: I18n.t("guide.windows.pin.desc", "Super+Z switches the active window between tiled and floating. Super+Alt+Z pins a small window in a corner on every workspace; press again to return it to tiling. Super+Shift+Z minimizes; Super+Ctrl+Z restores.")
+        description: I18n.t("guide.windows.pin.desc", "Super+Alt+Z pins a window in a corner on every workspace. Press again to return to tiling. Super+Shift+Z minimizes and Super+Ctrl+Z restores.")
         Row {
             spacing: section.rootObj.s(4)
             Repeater {

@@ -11,6 +11,9 @@ VpnSheet {
     function tr(key, en) { return I18n.t("vpn." + key, en); }
     readonly property var info: VpnService.sbInfo
     readonly property bool installing: VpnService.sbInstalling
+    readonly property bool tun: VpnService.mode === "tun"
+    readonly property string enginePath: (tun ? info.tunPath : info.path) || ""
+    readonly property string engineVersion: (tun ? info.tunVersion : info.version) || ""
 
     onOpenChanged: if (open) VpnService.singboxInfo()
 
@@ -37,9 +40,9 @@ VpnSheet {
                 Layout.fillWidth: true
                 Layout.preferredHeight: stateCol.implicitHeight + Scaler.s(18)
                 radius: Scaler.s(10)
-                color: sh.info.works ? Qt.alpha(VpnAppearance.style.active || "#7fd4ff", 0.08) : Qt.alpha(ThemeBackend.red, 0.10)
+                color: VpnService.sbReady ? Qt.alpha(VpnAppearance.style.active || "#7fd4ff", 0.08) : Qt.alpha(ThemeBackend.red, 0.10)
                 border.width: 1
-                border.color: sh.info.works ? Qt.alpha(VpnAppearance.style.active || "#7fd4ff", 0.3) : Qt.alpha(ThemeBackend.red, 0.35)
+                border.color: VpnService.sbReady ? Qt.alpha(VpnAppearance.style.active || "#7fd4ff", 0.3) : Qt.alpha(ThemeBackend.red, 0.35)
                 ColumnLayout {
                     id: stateCol
                     anchors.left: parent.left
@@ -50,8 +53,8 @@ VpnSheet {
                     Text {
                         Layout.fillWidth: true
                         objectName: "vpnEngineState"
-                        text: sh.info.works ? sh.tr("sb.ready", "VPN Engine Ready")
-                            : (sh.info.path ? sh.tr("sb.broken", "The chosen sing-box does not run: {error}").replace("{error}", sh.info.error || "?")
+                        text: VpnService.sbReady ? sh.tr("sb.ready", "VPN Engine Ready")
+                            : (!sh.tun && sh.enginePath ? sh.tr("sb.broken", "The chosen sing-box does not run: {error}").replace("{error}", sh.info.error || "?")
                                             : sh.tr("sb.not_installed", "VPN components are not installed"))
                         wrapMode: Text.Wrap
                         font.family: ThemeBackend.fontFamily
@@ -61,16 +64,16 @@ VpnSheet {
                     }
                     Text {
                         Layout.fillWidth: true
-                        visible: sh.info.works === true
-                        text: sh.tr("sb.found", "In use: sing-box {version}").replace("{version}", sh.info.version || "?")
+                        visible: VpnService.sbReady
+                        text: sh.tr("sb.found", "In use: sing-box {version}").replace("{version}", sh.engineVersion || "?")
                         font.family: ThemeBackend.fontFamily
                         font.pixelSize: Scaler.s(11)
                         color: VpnAppearance.style.text || "#eef1f6"
                     }
                     Text {
                         Layout.fillWidth: true
-                        visible: (sh.info.path || "") !== ""
-                        text: (sh.info.path || "") + "  ·  " + sh.tr("sb.source." + (sh.info.source || "system"), sh.info.source || "")
+                        visible: sh.enginePath !== ""
+                        text: sh.enginePath + "  ·  " + sh.tr("sb.source." + (sh.tun ? "system" : sh.info.source || "system"), "System")
                         elide: Text.ElideMiddle
                         font.family: ThemeBackend.fontFamily
                         font.pixelSize: Scaler.s(10)
@@ -78,8 +81,11 @@ VpnSheet {
                     }
                     Text {
                         Layout.fillWidth: true
-                        visible: sh.info.works === true && sh.info.tunUsable === false
-                        text: sh.tr("setup.tun_rpm", "TUN uses the system sing-box RPM.")
+                        visible: sh.tun && !VpnService.sbReady
+                        text: sh.info.tunError || ((sh.info.tunPackages || []).length
+                            ? sh.tr("sb.tun_missing", "Missing packages: {packages}. Run the offline installer with --system.")
+                                .replace("{packages}", sh.info.tunPackages.join(", "))
+                            : sh.tr("sb.tun_system", "TUN requires a system sing-box and administrator authorization to install it."))
                         wrapMode: Text.Wrap
                         font.family: ThemeBackend.fontFamily
                         font.pixelSize: Scaler.s(10)

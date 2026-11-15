@@ -2,6 +2,7 @@
 """Polkit entry point for the Fedora VPN components installed by Serpantinum."""
 import json
 import os
+import signal
 import subprocess
 import sys
 
@@ -9,6 +10,7 @@ import sys
 PACKAGES = {"sing-box", "python3-pyyaml", "iproute", "nftables"}
 REPO = "serpantinum-sagernet"
 DNF_TIMEOUT = 20 * 60
+OFFLINE_TIMEOUT = 90
 
 
 def command(packages, action):
@@ -25,8 +27,36 @@ def command(packages, action):
     return args + [verb, *packages]
 
 
+def offline_engine():
+    # Python's isolated mode ignores the caller's PYTHONPATH. Import the copy
+    # installed alongside this root-owned entry point and its pinned asset lock.
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+    from serp_vpn_singbox import SingboxError, install_system_from_stream
+
+    def expire(_signum, _frame):
+        raise SingboxError("sb_bundle_timeout")
+
+    print(json.dumps({"event": "started"}), flush=True)
+    signal.signal(signal.SIGALRM, expire)
+    signal.alarm(OFFLINE_TIMEOUT)
+    try:
+        result = install_system_from_stream(sys.stdin.buffer)
+    except SingboxError as exc:
+        result = {"ok": False, "error": {"code": exc.code, "detail": exc.detail}}
+    except OSError as exc:
+        result = {"ok": False, "error": {"code": "setup_storage", "detail": exc.strerror or type(exc).__name__}}
+    finally:
+        signal.alarm(0)
+    print(json.dumps(result), flush=True)
+    return 0 if result["ok"] else 1
+
+
 def main(args):
-    if os.geteuid() != 0 or not args or args[0] not in {"install", "repair", "upgrade"}:
+    if os.geteuid() != 0 or not args:
+        return 64
+    if args == ["offline-engine"]:
+        return offline_engine()
+    if args[0] not in {"install", "repair", "upgrade"}:
         return 64
     packages = args[1:]
     if not packages or len(set(packages)) != len(packages) or set(packages) - PACKAGES:

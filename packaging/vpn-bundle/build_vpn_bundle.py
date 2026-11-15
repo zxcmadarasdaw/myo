@@ -22,7 +22,6 @@ release page / API) in a reviewed commit, then rebuild.
 import argparse
 import datetime
 import hashlib
-import io
 import json
 import os
 from pathlib import Path
@@ -30,6 +29,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -63,60 +63,116 @@ def api_digests(version):
     return {a["name"]: str(a.get("digest") or "").removeprefix("sha256:") for a in data.get("assets", [])}
 
 
-def get_asset(lock, arch, cache, verify_api):
-    asset = lock["assets"][arch]
+def cached_asset(asset, url, cache, offline):
     cached = cache / asset["name"]
-    if not (cached.is_file() and sha256(cached) == asset["sha256"]):
-        url = DOWNLOAD.format(version=lock["version"], name=asset["name"])
+    if cached.is_file() and cached.stat().st_size == asset["size"] and sha256(cached) == asset["sha256"]:
+        return cached
+    if offline:
+        raise SystemExit(f"verified cache entry required: {cached}")
+    fd, filename = tempfile.mkstemp(prefix=".download-", suffix=".part", dir=cache)
+    os.close(fd)
+    partial = Path(filename)
+    try:
         print(f"download {url}")
-        partial = cached.with_suffix(".part")
         fetch(url, partial)
+        if partial.stat().st_size != asset["size"] or sha256(partial) != asset["sha256"]:
+            raise SystemExit(f"{asset['name']}: size or SHA-256 differs from the lock")
         partial.replace(cached)
-    size, digest = cached.stat().st_size, sha256(cached)
-    if size != asset["size"] or digest != asset["sha256"]:
-        cached.unlink(missing_ok=True)
-        raise SystemExit(f"{asset['name']}: size/sha256 {size}/{digest} differ from the lock; nothing was built")
+    finally:
+        partial.unlink(missing_ok=True)
+    return cached
+
+
+def get_asset(lock, arch, cache, verify_api, offline=False):
+    asset = lock["assets"][arch]
     if verify_api:
         published = api_digests(lock["version"]).get(asset["name"], "")
         if published != asset["sha256"]:
             raise SystemExit(f"{asset['name']}: GitHub publishes {published or 'no digest'}, the lock says {asset['sha256']}")
-    print(f"ok  {asset['name']}  {digest}")
+    url = DOWNLOAD.format(version=lock["version"], name=asset["name"])
+    cached = cached_asset(asset, url, cache, offline)
+    print(f"ok  {asset['name']}  {asset['sha256']}")
     return cached, asset
 
 
-def build_bundle(lock, arches, out, cache, verify_api):
-    if out.exists():
-        shutil.rmtree(out)
+def write_templates(out):
+    sys.path.insert(0, str(LOCK.parent))
+    import serp_vpn
+    import serp_vpn_root
+
+    settings = {**serp_vpn.DEFAULT_SETTINGS, "secret": "local-check-only"}
+    server = {"protocol": "socks", "tag": "local-test", "address": "127.0.0.1", "port": 1}
+    proxy = serp_vpn.build_config([server], settings)
+    tun = serp_vpn_root.build(serp_vpn.tun_payload(proxy, settings))
+    for mode, config in (("proxy", proxy), ("tun", tun)):
+        (out / f"{mode}.check.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
+def write_bundle(lock, arches, out, cache, verify_api, fedora, offline):
     out.mkdir(parents=True)
     files = []
     for arch in arches:
-        source, asset = get_asset(lock, arch, cache, verify_api)
+        source, asset = get_asset(lock, arch, cache, verify_api, offline)
         shutil.copyfile(source, out / asset["name"])
         files.append({"arch": arch, "file": asset["name"], "size": asset["size"], "sha256": asset["sha256"]})
     manifest = {"format": 1, "component": "sing-box", "version": lock["version"], "source": lock["source"],
                 "builtAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "files": files}
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    (out / "SHA256SUMS").write_text("".join(f"{f['sha256']}  {f['file']}\n" for f in files), encoding="utf-8")
+    if fedora:
+        rpm_dir, rpm_cache = out / "rpms", cache / "fedora45"
+        rpm_dir.mkdir()
+        rpm_cache.mkdir(exist_ok=True)
+        for asset in fedora["rpms"]:
+            name = asset["name"]
+            path = cached_asset(asset, f"{fedora['source']}{name[0]}/{name}", rpm_cache, offline)
+            shutil.copyfile(path, rpm_dir / name)
+        (rpm_dir / "packages.tsv").write_text("".join(f"{a['package']}\t{a['name']}\n" for a in fedora["rpms"]),
+                                             encoding="utf-8", newline="\n")
+        manifest["fedora"] = {"release": 45, "arch": "x86_64", **fedora}
+    write_templates(out)
     shutil.copyfile(HERE / "README.txt", out / "README.txt")
     shutil.copyfile(HERE / "install-vpn-bundle.sh", out / "install-vpn-bundle.sh")
     os.chmod(out / "install-vpn-bundle.sh", 0o755)
+    (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
+    checksums = "".join(f"{sha256(path)}  {path.relative_to(out).as_posix()}\n" for path in sorted(out.rglob("*")) if path.is_file())
+    (out / "SHA256SUMS").write_text(checksums, encoding="utf-8", newline="\n")
+    return manifest
+
+
+def build_bundle(lock, arches, out, cache, verify_api, fedora=None, offline=False):
+    if out.is_symlink() or (out.exists() and not (out / "manifest.json").is_file()):
+        raise SystemExit(f"bundle output is not a managed bundle directory: {out}")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".vpn-bundle-", dir=out.parent) as temp:
+        stage, backup = Path(temp) / "stage", Path(temp) / "previous"
+        manifest = write_bundle(lock, arches, stage, cache, verify_api, fedora, offline)
+        if out.exists():
+            out.rename(backup)
+        try:
+            stage.rename(out)
+        except OSError:
+            if backup.exists():
+                backup.rename(out)
+            raise
     print(f"bundle: {out}")
     return manifest
 
 
-def build_release(out_bundle, dist):
-    """Serpantinum at HEAD (git archive, so only committed files) + vpn-bundle/, one tarball."""
+def build_release(out_bundle, dist, revision="HEAD"):
+    """A Git snapshot plus the offline bundle in one tarball."""
     version = (ROOT / "version.txt").read_text(encoding="utf-8").strip()
     target = dist / f"serpantinum-{version}-offline.tar.gz"
-    tree = subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar", "--prefix=serpantinum/", "HEAD"],
-                          capture_output=True, check=True).stdout
-    with tarfile.open(target, "w:gz") as release:
-        with tarfile.open(fileobj=io.BytesIO(tree)) as source:
-            for member in source.getmembers():
+    with tempfile.TemporaryDirectory(prefix=".vpn-release-", dir=dist) as temp:
+        archive, output = Path(temp) / "source.tar", Path(temp) / target.name
+        with archive.open("wb") as stream:
+            subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar", "--prefix=serpantinum/", revision],
+                           stdout=stream, check=True)
+        with tarfile.open(output, "w:gz") as release, tarfile.open(archive) as source:
+            for member in source:
                 release.addfile(member, source.extractfile(member) if member.isfile() else None)
-        release.add(out_bundle, arcname="serpantinum/vpn-bundle")
-    (dist / (target.name + ".sha256")).write_text(f"{sha256(target)}  {target.name}\n", encoding="utf-8")
+            release.add(out_bundle, arcname="serpantinum/vpn-bundle")
+        output.replace(target)
+    (dist / (target.name + ".sha256")).write_text(f"{sha256(target)}  {target.name}\n", encoding="utf-8", newline="\n")
     print(f"release: {target}")
 
 
@@ -127,6 +183,8 @@ def main():
     parser.add_argument("--cache", type=Path, default=ROOT / "dist/.cache")
     parser.add_argument("--verify-api", action="store_true", help="also compare with the digest GitHub publishes")
     parser.add_argument("--release", action="store_true", help="also build the offline Serpantinum tarball")
+    parser.add_argument("--revision", default="HEAD", help="Git commit or tree for --release")
+    parser.add_argument("--offline-build", action="store_true", help="build only from previously verified cache entries")
     args = parser.parse_args()
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     arches = sorted(lock["assets"]) if args.arch == "all" else [args.arch]
@@ -134,9 +192,12 @@ def main():
     if unknown:
         raise SystemExit(f"no pinned asset for {unknown}; known: {sorted(lock['assets'])}")
     args.cache.mkdir(parents=True, exist_ok=True)
-    build_bundle(lock, arches, args.out, args.cache, args.verify_api)
+    if args.offline_build and args.verify_api:
+        parser.error("--offline-build and --verify-api are mutually exclusive")
+    fedora = json.loads((HERE / "fedora45-rpms.lock.json").read_text(encoding="utf-8")) if "amd64" in arches else None
+    build_bundle(lock, arches, args.out, args.cache, args.verify_api, fedora, args.offline_build)
     if args.release:
-        build_release(args.out, args.out.parent)
+        build_release(args.out, args.out.parent, args.revision)
     return 0
 
 

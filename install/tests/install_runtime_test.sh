@@ -93,6 +93,40 @@ test_deploy_sync() {
     rm -rf "$home"
 }
 
+test_window_config_update() {
+    local home repo config revision
+    home="$(new_home)"
+    repo="$home/repo"
+    config="$home/.config/hypr/config"
+    mkdir -p "$repo/compositors/hyprland/config" "$config"
+    printf '%s\n' '-- shipped settings' > "$repo/compositors/hyprland/config/settings.lua"
+    printf '%s\n' '-- shipped keys' > "$repo/compositors/hyprland/config/keybinds.lua"
+    cp "$repo/compositors/hyprland/config/settings.lua" "$config/settings.lua"
+    printf '%s\n' '-- customized keys' > "$config/keybinds.lua"
+    git -C "$repo" init -q
+    git -C "$repo" add compositors
+    git -C "$repo" -c user.name=Test -c user.email=test@example.invalid commit -qm baseline
+    revision="$(git -C "$repo" rev-parse HEAD)"
+    cp "$ROOT/compositors/hyprland/config/"{settings,keybinds}.lua "$repo/compositors/hyprland/config/"
+
+    (
+        export HOME="$home"
+        source "$ROOT/install/modules/deploy.sh"
+        setup_pam_service() { :; }
+        deploy_package "$repo" "$revision" "$revision" false current hyprland
+    ) >/dev/null
+
+    if cmp -s "$ROOT/compositors/hyprland/config/settings.lua" "$config/settings.lua" \
+        && grep -q -- '-- shipped settings' "$home/.config/hypr_backup/"update_*/config/settings.lua; then
+        ok "local update deploys the stock Hyprland window modes with a backup"
+    else
+        bad "local update of the shipped Hyprland window modes"
+    fi
+    grep -qx -- '-- customized keys' "$config/keybinds.lua" \
+        && ok "local update preserves customized Hyprland shortcuts" || bad "custom Hyprland shortcuts were changed"
+    rm -rf "$home"
+}
+
 # ---------------------------------------------------------------------------
 # 3. verify_installation refuses to report success when required packages or
 #    a Lua-capable Hyprland are missing.
@@ -287,6 +321,7 @@ EOF
 
 test_first_launch
 test_deploy_sync
+test_window_config_update
 test_verify
 test_supervisor
 test_fedora_terra

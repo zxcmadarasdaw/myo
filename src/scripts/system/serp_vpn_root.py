@@ -31,9 +31,8 @@ CONF = os.path.join(CONF_DIR, "config.json")
 TUN_NAME = "serp-tun0"
 TABLE = 2022           # iproute2_table_index in the template
 RULE_INDEX = 9000      # iproute2_rule_index in the template (sing-box uses a few priorities from here)
-SINGBOX_PATHS = ("/usr/bin/sing-box", "/usr/local/bin/sing-box")
+SINGBOX_PATHS = ("/usr/local/bin/sing-box", "/usr/bin/sing-box")
 IP_BIN = ("/usr/sbin/ip", "/usr/bin/ip", "/sbin/ip")
-NFT_BIN = ("/usr/sbin/nft", "/usr/bin/nft")
 MIN_SINGBOX = (1, 12)
 
 OUTBOUND_TYPES = {"vless", "vmess", "trojan", "shadowsocks", "hysteria2", "hysteria", "tuic", "socks", "http", "anytls"}
@@ -249,8 +248,8 @@ def rules_to_delete(rule_text):
         if not m:
             continue
         pref, rest = int(m.group(1)), m.group(2)
-        ours = (RULE_INDEX <= pref < RULE_INDEX + 20 or f"lookup {TABLE}" in rest
-                or f"iif {TUN_NAME}" in rest or f"oif {TUN_NAME}" in rest)
+        ours = (RULE_INDEX <= pref < RULE_INDEX + 20
+                or re.search(rf"\b(?:iif|oif) {TUN_NAME}(?:\s|$)", rest) is not None)
         if ours and pref not in (0, 32766, 32767):
             prefs.append(pref)
     return prefs
@@ -271,12 +270,8 @@ def cmd_cleanup():
         if p and p.returncode == 0:
             _run_quiet([ip, "link", "delete", TUN_NAME])
             removed += 1
-    nft = _first(NFT_BIN)
-    if nft:
-        p = _run_quiet([nft, "list", "table", "inet", "sing-box"])
-        if p and p.returncode == 0:
-            _run_quiet([nft, "delete", "table", "inet", "sing-box"])
-            removed += 1
+    # The template uses auto_route without auto_redirect. Other sing-box
+    # instances can own an nftables table called sing-box.
     print(json.dumps({"ok": True, "removed": removed}))
     return 0
 
