@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "bin/serpantinum": {
-    "mtime": 1794660871.5232227,
-    "seen": 1794663611.4570081,
-    "ast_hash": "69820f7f90e166b2556aea0e99b5e6c7",
+    "mtime": 1794721180.674628,
+    "seen": 1794721400.3156383,
+    "ast_hash": "2ecb6ddbb0653519855d9722826d32c3",
     "semantic_hash": ""
   },
   "bin/serpantinumd": {
@@ -18,9 +18,9 @@
     "semantic_hash": ""
   },
   "compositors/hyprland/config/autostart.lua": {
-    "mtime": 1794492500.35315,
-    "seen": 1794647463.0014575,
-    "ast_hash": "cb4dcd6d71e37d64300b4b048d2fa8b7",
+    "mtime": 1794672680.8159516,
+    "seen": 1794719019.5550897,
+    "ast_hash": "0220e7dfd9a21c1fe247a2ca51993a0f",
     "semantic_hash": ""
   },
   "compositors/hyprland/config/env.lua": {
@@ -30,9 +30,9 @@
     "semantic_hash": ""
   },
   "compositors/hyprland/config/keybinds.lua": {
-    "mtime": 1794644617.9394655,
-    "seen": 1794647463.0014575,
-    "ast_hash": "6ab334a4e526eac1853c64799ed2dd2f",
+    "mtime": 1794721345.2028267,
+    "seen": 1794721400.3171456,
+    "ast_hash": "9096eeefc810f7ffb2c04a99fce96f9f",
     "semantic_hash": ""
   },
   "compositors/hyprland/config/monitors.lua": {
@@ -72,9 +72,9 @@
     "semantic_hash": ""
   },
   "install/install.sh": {
-    "mtime": 1794651598.9798832,
-    "seen": 1794652797.1812692,
-    "ast_hash": "26657a39775b8b560d4c3acbdbfc3f95",
+    "mtime": 1794722095.262954,
+    "seen": 1794722397.178962,
+    "ast_hash": "371922a2e65a5b80dc5b715f61a7153e",
     "semantic_hash": ""
   },
   "install/modules/audio.sh": {
@@ -102,9 +102,9 @@
     "semantic_hash": ""
   },
   "install/modules/deploy.sh": {
-    "mtime": 1794492500.357669,
-    "seen": 1794647463.0014575,
-    "ast_hash": "9d5555ad56fe6d558733e28291f5431f",
+    "mtime": 1794721253.1776698,
+    "seen": 1794721400.3222857,
+    "ast_hash": "2f695385a2f3ddac06c742dc526bdd73",
     "semantic_hash": ""
   },
   "install/modules/deps.sh": {
@@ -294,9 +294,9 @@
     "semantic_hash": ""
   },
   "install/tests/themess_test.py": {
-    "mtime": 1794663397.8273294,
-    "seen": 1794663611.471246,
-    "ast_hash": "c464e1241ae97394409c38c30c3318a2",
+    "mtime": 1794718987.3208342,
+    "seen": 1794719019.570168,
+    "ast_hash": "661342487fa22453a214fa10bb6fcf04",
     "semantic_hash": ""
   },
   "install/tests/wallpaper_qml_test.py": {
@@ -306,9 +306,9 @@
     "semantic_hash": ""
   },
   "install/tests/widget_extensions_qml_test.py": {
-    "mtime": 1794647328.2140205,
-    "seen": 1794647463.0014575,
-    "ast_hash": "db65ded771250422ca486a705d6a8aaa",
+    "mtime": 1794718987.325368,
+    "seen": 1794719019.571171,
+    "ast_hash": "dc1f8e0f57632731b7ce40b63e58cb05",
     "semantic_hash": ""
   },
   "mr robot/Mr-Robot.json": {
@@ -378,9 +378,9 @@
     "semantic_hash": ""
   },
   "src/assets/languages/en.json": {
-    "mtime": 1794662476.049247,
-    "seen": 1794663611.4754977,
-    "ast_hash": "cb722aa3aefb16c4df6eaae8de4d6569",
+    "mtime": 1794672925.51549,
+    "seen": 1794719019.574195,
+    "ast_hash": "e25797453d49467d9b3b306a995b0532",
     "semantic_hash": ""
   },
   "src/assets/languages/es.json": {
@@ -456,9 +456,9 @@
     "semantic_hash": ""
   },
   "src/assets/languages/ru.json": {
-    "mtime": 1794662544.4903266,
-    "seen": 1794663611.4800394,
-    "ast_hash": "85f15551854155a82a43853cfd959395",
+    "mtime": 1794672925.516555,
+    "seen": 1794719019.578208,
+    "ast_hash": "5a26e2834233bd1fe56201a7e130104c",
     "semantic_hash": ""
   },
   "src/assets/languages/tr.json": {
@@ -1722,9 +1722,9 @@
     "semantic_hash": ""
   },
   "src/scripts/system/serp_pty.py": {
-    "mtime": 1794562779.1658041,
-    "seen": 1794647463.0014575,
-    "ast_hash": "0afad1b8fe2ef5ddc3ebfe9e7ff72656",
+    "mtime": 1794669098.103233,
+    "seen": 1794719019.649366,
+    "ast_hash": "1dcfab7acdac93f3deea0f3a5c17c90a",
     "semantic_hash": ""
   },
   "src/scripts/system/suspend.sh": {
@@ -1734,21 +1734,21 @@
     "semantic_hash": ""
   },
   "src/scripts/system/window_actions.py": {
-    "mtime": 1794644553.650981,
-    "seen": 1794647463.0014575,
-    "ast_hash": "87986486469dbfd3bbf235900515bf09",
+    "mtime": 1794721164.4121203,
+    "seen": 1794721400.4239836,
+    "ast_hash": "f2e9e485b29654ee97b582c321fa5150",
     "semantic_hash": ""
   },
   "src/scripts/themess/schema.py": {
-    "mtime": 1794662568.8536487,
-    "seen": 1794663611.5520642,
-    "ast_hash": "74c78154e416f006662d666e02d3ee8e",
+    "mtime": 1794667446.1055198,
+    "seen": 1794719019.6508713,
+    "ast_hash": "a54409c2785c244d23c4abb7f8fe5863",
     "semantic_hash": ""
   },
   "src/scripts/themess/themess.py": {
-    "mtime": 1794569532.0423079,
-    "seen": 1794647463.0014575,
-    "ast_hash": "8220c1f1f53a33fe85594aa9ebb7b819",
+    "mtime": 1794718987.3353095,
+    "seen": 1794719019.6508713,
+    "ast_hash": "2403cc4948e3991d19bd624cb8ed33e7",
     "semantic_hash": ""
   },
   "src/scripts/theming/apptheme.py": {
@@ -2400,9 +2400,9 @@
     "semantic_hash": ""
   },
   "docs/components/serpantinum-audio.md": {
-    "mtime": 1794567511.1983483,
-    "seen": 1794647463.0024588,
-    "ast_hash": "b7db4dd1a32466cdeb31042c7937facd",
+    "mtime": 1794664934.1017253,
+    "seen": 1794719019.6900775,
+    "ast_hash": "16b673c4638c8b9c0a1a7a8320457948",
     "semantic_hash": ""
   },
   "docs/components/serpantinum-core.md": {
@@ -2472,9 +2472,9 @@
     "semantic_hash": ""
   },
   "docs/configure/widget-extensions.md": {
-    "mtime": 1794647436.9660947,
-    "seen": 1794647463.0024588,
-    "ast_hash": "6b7613f46df730cc3c09503da59433ef",
+    "mtime": 1794666410.1572428,
+    "seen": 1794719019.6946087,
+    "ast_hash": "87840473fae88b8a635f11ddbe3b8664",
     "semantic_hash": ""
   },
   "docs/installation/fedora-troubleshooting.md": {
@@ -2640,74 +2640,74 @@
     "semantic_hash": ""
   },
   "reports/music-studio/AlbumCover.png": {
-    "mtime": 1794663445.3054032,
-    "seen": 1794663611.603553,
+    "mtime": 1794718887.246416,
+    "seen": 1794719019.705179,
     "ast_hash": "b1e2595bb3338004c517740f2bdf05dd",
     "semantic_hash": ""
   },
   "reports/music-studio/CompactGlass.png": {
-    "mtime": 1794663444.8100367,
-    "seen": 1794663611.603553,
+    "mtime": 1794718886.7895463,
+    "seen": 1794719019.705179,
     "ast_hash": "b1e2595bb3338004c517740f2bdf05dd",
     "semantic_hash": ""
   },
   "reports/music-studio/FloatingPlayer.png": {
-    "mtime": 1794663445.9848762,
-    "seen": 1794663611.603553,
+    "mtime": 1794718887.942393,
+    "seen": 1794719019.705179,
     "ast_hash": "a6f20b27c7129d7c89bd669e7e89ae7c",
     "semantic_hash": ""
   },
   "reports/music-studio/Minimal.png": {
-    "mtime": 1794663445.0718517,
-    "seen": 1794663611.603553,
+    "mtime": 1794718887.019328,
+    "seen": 1794719019.705179,
     "ast_hash": "a0cdaeb6763206f9b697a165b558c8bd",
     "semantic_hash": ""
   },
   "reports/music-studio/NeonMusic.png": {
-    "mtime": 1794663445.7580185,
-    "seen": 1794663611.603553,
+    "mtime": 1794718887.700104,
+    "seen": 1794719019.705179,
     "ast_hash": "ef047e0a6cea9b102ce91bfa90f93094",
     "semantic_hash": ""
   },
   "reports/music-studio/Vinyl.png": {
-    "mtime": 1794663445.5353637,
-    "seen": 1794663611.603553,
+    "mtime": 1794718887.4753544,
+    "seen": 1794719019.705179,
     "ast_hash": "2c34455cd493bf1cba90b059b5659710",
     "semantic_hash": ""
   },
   "reports/music-studio/compact-minimum.png": {
-    "mtime": 1794663446.0963068,
-    "seen": 1794663611.603553,
-    "ast_hash": "306778129c4d509bdb50382b8fbe53e4",
+    "mtime": 1794718999.1282265,
+    "seen": 1794719019.705179,
+    "ast_hash": "cccde00650587bc50a43a7a2a9741142",
     "semantic_hash": ""
   },
   "reports/music-studio/studio-liquid.png": {
-    "mtime": 1794663447.601254,
-    "seen": 1794663611.603553,
+    "mtime": 1794718889.6958332,
+    "seen": 1794719019.705179,
     "ast_hash": "cb41687c02ddc6f0e61274aac621eaba",
     "semantic_hash": ""
   },
   "reports/music-studio/studio-mica.png": {
-    "mtime": 1794663447.746892,
-    "seen": 1794663611.603553,
+    "mtime": 1794718889.8151643,
+    "seen": 1794719019.705179,
     "ast_hash": "cb41687c02ddc6f0e61274aac621eaba",
     "semantic_hash": ""
   },
   "reports/music-studio/studio-minimal.png": {
-    "mtime": 1794663447.981628,
-    "seen": 1794663611.603553,
+    "mtime": 1794718890.0481758,
+    "seen": 1794719019.705179,
     "ast_hash": "2d4fb9d9d38f15e1902831fff1406fda",
     "semantic_hash": ""
   },
   "reports/music-studio/studio-neon.png": {
-    "mtime": 1794663447.865358,
-    "seen": 1794663611.603553,
+    "mtime": 1794718889.9301896,
+    "seen": 1794719019.705179,
     "ast_hash": "32a97871650d7f5eec6fe47a83ec90ff",
     "semantic_hash": ""
   },
   "reports/music-studio/studio-small-unavailable.png": {
-    "mtime": 1794663448.2103436,
-    "seen": 1794663611.603553,
+    "mtime": 1794718890.2774456,
+    "seen": 1794719019.705179,
     "ast_hash": "7a6c513f264c47ae5211766a1655af4d",
     "semantic_hash": ""
   },
@@ -3162,9 +3162,9 @@
     "semantic_hash": ""
   },
   "install/tests/vpn_qml_test.py": {
-    "mtime": 1794663057.2578652,
-    "seen": 1794663611.471246,
-    "ast_hash": "7b208d811dfdbd0aabd11dd586221b83",
+    "mtime": 1794672585.4154477,
+    "seen": 1794719019.570168,
+    "ast_hash": "c11dc540dedfaee2d7ac3214663bd1fc",
     "semantic_hash": ""
   },
   "install/tests/vpn_test.py": {
@@ -3174,27 +3174,27 @@
     "semantic_hash": ""
   },
   "src/scripts/system/serp_vpn.py": {
-    "mtime": 1794660855.1019258,
-    "seen": 1794663611.5520642,
-    "ast_hash": "58840663159bfa55c95354ff4f334fe4",
+    "mtime": 1794721988.9223404,
+    "seen": 1794722397.280991,
+    "ast_hash": "aba9889b1839181f962fb8cffd1437a8",
     "semantic_hash": ""
   },
   "docs/configure/vpn.md": {
-    "mtime": 1794663583.731678,
-    "seen": 1794663611.594878,
-    "ast_hash": "6ce029060b5f8e3440be8ec600495745",
+    "mtime": 1794672702.7362392,
+    "seen": 1794719019.6946087,
+    "ast_hash": "f24566309e087e8d7cca9c25b511cd9e",
     "semantic_hash": ""
   },
   "install/modules/vpn.sh": {
-    "mtime": 1794651588.360883,
-    "seen": 1794652797.1873295,
-    "ast_hash": "8b58331c23565861f2234b79439a94e3",
+    "mtime": 1794722092.9365373,
+    "seen": 1794722397.1869934,
+    "ast_hash": "376ef80c6dc2403cadf9c014ef7bb7cd",
     "semantic_hash": ""
   },
   "install/tests/vpn_tun_test.py": {
-    "mtime": 1794652704.4090192,
-    "seen": 1794652797.1924045,
-    "ast_hash": "db466cd6b99555c83348b069609098c4",
+    "mtime": 1794672281.379051,
+    "seen": 1794719019.570168,
+    "ast_hash": "fa4fda0446b47c849632ca8ad8ffe6b7",
     "semantic_hash": ""
   },
   "src/scripts/system/serp_vpn_root.py": {
@@ -3204,9 +3204,9 @@
     "semantic_hash": ""
   },
   "install/tests/vpn_studio_backend_test.py": {
-    "mtime": 1794661093.5297203,
-    "seen": 1794663611.471246,
-    "ast_hash": "94beb0689d17194e4acbf92f89e74ed6",
+    "mtime": 1794672875.277001,
+    "seen": 1794719019.570168,
+    "ast_hash": "89c4ab34b092f8034e608776dc53b7de",
     "semantic_hash": ""
   },
   "src/quickshell/network/vpn/VpnGeometry.js": {
@@ -3216,15 +3216,249 @@
     "semantic_hash": ""
   },
   "src/scripts/system/serp_vpn_singbox.py": {
-    "mtime": 1794660696.0060382,
-    "seen": 1794663611.5520642,
-    "ast_hash": "0fac5771292573a7ee770ce68a6821c2",
+    "mtime": 1794722317.0520341,
+    "seen": 1794722397.2819948,
+    "ast_hash": "ef8babfc3cf516d114abb86f8b2c2889",
     "semantic_hash": ""
   },
   "animmmmm/video_2026-11-14_14-08-35.mp4": {
     "mtime": 1794661724.9791057,
     "seen": 1794663611.6127892,
     "ast_hash": "20a0b419c6e68211f1018ddfb5d66b3d",
+    "semantic_hash": ""
+  },
+  "install/tests/fastfetch_media_qml_test.py": {
+    "mtime": 1794718987.3198297,
+    "seen": 1794719019.5656354,
+    "ast_hash": "44dae88729d79d6831dc98dc7ae0226e",
+    "semantic_hash": ""
+  },
+  "install/tests/wallpaper_audio_qml_test.py": {
+    "mtime": 1794665177.4131374,
+    "seen": 1794719019.570168,
+    "ast_hash": "e0aa1e7f4d122da156f8d5587381a211",
+    "semantic_hash": ""
+  },
+  "src/quickshell/singletons/audio/AudioStream.js": {
+    "mtime": 1794664326.6730404,
+    "seen": 1794719019.6382592,
+    "ast_hash": "d2f33ff36ff9896f804a6da96b6197e5",
+    "semantic_hash": ""
+  },
+  "src/quickshell/singletons/audio/WallpaperAudioActivity.js": {
+    "mtime": 1794664819.6413739,
+    "seen": 1794719019.6382592,
+    "ast_hash": "85ed7a04853ff72aa955d16fcc20f587",
+    "semantic_hash": ""
+  },
+  "src/quickshell/widgets/faces/common/AtelierStyles.js": {
+    "mtime": 1794667734.9700077,
+    "seen": 1794719019.6402674,
+    "ast_hash": "033549a1a503ba98aa771a0e056931b5",
+    "semantic_hash": ""
+  },
+  "src/scripts/system/serp_gpu.py": {
+    "mtime": 1794668828.2047741,
+    "seen": 1794719019.649366,
+    "ast_hash": "b03d18b9a739e9e42317148f202a11d5",
+    "semantic_hash": ""
+  },
+  "src/scripts/system/serp_vpn_packages.py": {
+    "mtime": 1794672281.3837514,
+    "seen": 1794719019.649366,
+    "ast_hash": "0f1b2005a54f6f92cb896d32f90d403c",
+    "semantic_hash": ""
+  },
+  "themess/ErrorOverdrive/animations.json": {
+    "mtime": 1794669768.0189095,
+    "seen": 1794719019.6649516,
+    "ast_hash": "6cc9cc976b388b48055184526f87bfd2",
+    "semantic_hash": ""
+  },
+  "themess/ErrorOverdrive/canvas.json": {
+    "mtime": 1794669768.0208733,
+    "seen": 1794719019.6649516,
+    "ast_hash": "35e9c4cfc9a7a9cc3e75230ee21352ef",
+    "semantic_hash": ""
+  },
+  "themess/ErrorOverdrive/dock.json": {
+    "mtime": 1794669768.02185,
+    "seen": 1794719019.6649516,
+    "ast_hash": "d6f434d45b8a344e207a1b6009179ffc",
+    "semantic_hash": ""
+  },
+  "themess/ErrorOverdrive/fastfetch.json": {
+    "mtime": 1794669768.023809,
+    "seen": 1794719019.6649516,
+    "ast_hash": "8eebf674dc44d3b92de624c71d0840e4",
+    "semantic_hash": ""
+  },
+  "themess/ErrorOverdrive/launcher.json": {
+    "mtime": 1794669768.0228283,
+    "seen": 1794719019.6649516,
+    "ast_hash": "1cf781f55966d708f0ee8613bc0a8129",
+    "semantic_hash": ""
+  },
+  "themess/ErrorOverdrive/materials.json": {
+    "mtime": 1794669768.0164235,
+    "seen": 1794719019.6649516,
+    "ast_hash": "efc67b8f7702db2270f4f394f2894565",
+    "semantic_hash": ""
+  },
+  "themess/ErrorOverdrive/notifications.json": {
+    "mtime": 1794669768.0228283,
+    "seen": 1794719019.6649516,
+    "ast_hash": "a512456debb934c6a09b2fa6cb3eaebe",
+    "semantic_hash": ""
+  },
+  "themess/ErrorOverdrive/palette.json": {
+    "mtime": 1794669768.0154312,
+    "seen": 1794719019.6649516,
+    "ast_hash": "24ab20d1dbf3aecc48d5587561887e39",
+    "semantic_hash": ""
+  },
+  "themess/ErrorOverdrive/panels.json": {
+    "mtime": 1794669768.0164235,
+    "seen": 1794719019.6649516,
+    "ast_hash": "5180ba36a6928151d9071e288267ef83",
+    "semantic_hash": ""
+  },
+  "themess/ErrorOverdrive/studio.json": {
+    "mtime": 1794669768.023809,
+    "seen": 1794719019.6649516,
+    "ast_hash": "56327b7c41c35f8f6bc147f4709c6dfc",
+    "semantic_hash": ""
+  },
+  "themess/ErrorOverdrive/theme.json": {
+    "mtime": 1794718987.336318,
+    "seen": 1794719019.6649516,
+    "ast_hash": "4892ad96153939247156b32dff9636a3",
+    "semantic_hash": ""
+  },
+  "themess/ErrorOverdrive/widgets.json": {
+    "mtime": 1794669768.0247872,
+    "seen": 1794719019.6649516,
+    "ast_hash": "408057fd941c142ed5da0e061e3c5e34",
+    "semantic_hash": ""
+  },
+  "themess/MochiNight/animations.json": {
+    "mtime": 1794669768.0070348,
+    "seen": 1794719019.6714768,
+    "ast_hash": "b14d477b0a72d110e8dff38efc4b3da0",
+    "semantic_hash": ""
+  },
+  "themess/MochiNight/canvas.json": {
+    "mtime": 1794669768.0090184,
+    "seen": 1794719019.6714768,
+    "ast_hash": "35e9c4cfc9a7a9cc3e75230ee21352ef",
+    "semantic_hash": ""
+  },
+  "themess/MochiNight/dock.json": {
+    "mtime": 1794669768.0090184,
+    "seen": 1794719019.6714768,
+    "ast_hash": "55097e493146320b1ade77d75066eae6",
+    "semantic_hash": ""
+  },
+  "themess/MochiNight/launcher.json": {
+    "mtime": 1794669768.0099995,
+    "seen": 1794719019.6714768,
+    "ast_hash": "02dc185d96a62c55e951a3eeae0924b6",
+    "semantic_hash": ""
+  },
+  "themess/MochiNight/materials.json": {
+    "mtime": 1794669768.004767,
+    "seen": 1794719019.6714768,
+    "ast_hash": "602fe2388e18fcbc0018614d40fa6b59",
+    "semantic_hash": ""
+  },
+  "themess/MochiNight/notifications.json": {
+    "mtime": 1794669768.0099995,
+    "seen": 1794719019.6714768,
+    "ast_hash": "a512456debb934c6a09b2fa6cb3eaebe",
+    "semantic_hash": ""
+  },
+  "themess/MochiNight/palette.json": {
+    "mtime": 1794669768.0037806,
+    "seen": 1794719019.6714768,
+    "ast_hash": "f639d4b7101818dc2081e83b2b4b4daf",
+    "semantic_hash": ""
+  },
+  "themess/MochiNight/panels.json": {
+    "mtime": 1794669768.0057442,
+    "seen": 1794719019.6714768,
+    "ast_hash": "2febf3c2b62d964976a7547749d49d06",
+    "semantic_hash": ""
+  },
+  "themess/MochiNight/studio.json": {
+    "mtime": 1794669768.0109768,
+    "seen": 1794719019.6714768,
+    "ast_hash": "97550ebd2ef00fcda33ab1e91de0ec65",
+    "semantic_hash": ""
+  },
+  "themess/MochiNight/theme.json": {
+    "mtime": 1794718987.336318,
+    "seen": 1794719019.6714768,
+    "ast_hash": "8777c3653475486c99b186cdfb3530b6",
+    "semantic_hash": ""
+  },
+  "themess/MochiNight/widgets.json": {
+    "mtime": 1794669768.0119715,
+    "seen": 1794719019.6714768,
+    "ast_hash": "432b584aab85b5b4227846d437653efe",
+    "semantic_hash": ""
+  },
+  "themess/ERROR_GIRL_THEMES.md": {
+    "mtime": 1794718763.47652,
+    "seen": 1794719019.697629,
+    "ast_hash": "759556453fea55640327deb80b95ad59",
+    "semantic_hash": ""
+  },
+  "themess/.shared/error-girl/error-girl.webm": {
+    "mtime": 1794717607.7010114,
+    "seen": 1794719019.7301056,
+    "ast_hash": "a7d25cd8bb55093efa9f193716cafbec",
+    "semantic_hash": ""
+  },
+  "themess/.shared/error-girl/fastfetch-girl.webm": {
+    "mtime": 1794669426.1492004,
+    "seen": 1794719019.7301056,
+    "ast_hash": "9c7a79233feccd262c20cb24c41c1ff4",
+    "semantic_hash": ""
+  },
+  "install/tests/window_actions_test.py": {
+    "mtime": 1794721343.3655727,
+    "seen": 1794721400.3353631,
+    "ast_hash": "8cc600ad0cf08091b65388e72e3e0812",
+    "semantic_hash": ""
+  },
+  "install/tests/vpn_bundle_test.py": {
+    "mtime": 1794722186.8184695,
+    "seen": 1794722397.1959174,
+    "ast_hash": "619510a3866733da5e3e52e7e420751e",
+    "semantic_hash": ""
+  },
+  "packaging/vpn-bundle/build_vpn_bundle.py": {
+    "mtime": 1794722048.4449372,
+    "seen": 1794722397.2004414,
+    "ast_hash": "285e1407c605375d178f208f1936e830",
+    "semantic_hash": ""
+  },
+  "packaging/vpn-bundle/install-vpn-bundle.sh": {
+    "mtime": 1794722062.3683517,
+    "seen": 1794722397.2004414,
+    "ast_hash": "83c973f95f3750dfd9cbc9acd35625ea",
+    "semantic_hash": ""
+  },
+  "src/scripts/system/serp_vpn_singbox.lock.json": {
+    "mtime": 1794721897.521535,
+    "seen": 1794722397.2819948,
+    "ast_hash": "1ba11ca17b8bd292093fb7e346c64df3",
+    "semantic_hash": ""
+  },
+  "packaging/vpn-bundle/README.txt": {
+    "mtime": 1794722068.9495862,
+    "seen": 1794722397.3342857,
+    "ast_hash": "55a8f3c4628586e8efab83d9bcaefd4f",
     "semantic_hash": ""
   },
   "website/package-lock.json": {
