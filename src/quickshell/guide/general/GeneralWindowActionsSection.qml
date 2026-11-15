@@ -12,8 +12,8 @@ SettingsBlob {
     SettingsRow {
         rootObj: section.rootObj
         icon: "󰐃"
-        title: I18n.t("guide.windows.pin.title", "Pinned windows — Super+Z")
-        description: I18n.t("guide.windows.pin.desc", "Pin the active window across workspaces; press again to return it to tiling. Super+Shift+Z minimizes; Super+Ctrl+Z restores.")
+        title: I18n.t("guide.windows.pin.title", "Pinned windows — Super+Alt+Z")
+        description: I18n.t("guide.windows.pin.desc", "Super+Z switches the active window between tiled and floating. Super+Alt+Z pins a small window in a corner on every workspace; press again to return it to tiling. Super+Shift+Z minimizes; Super+Ctrl+Z restores.")
         Row {
             spacing: section.rootObj.s(4)
             Repeater {

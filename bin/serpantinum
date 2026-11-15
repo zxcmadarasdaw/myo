@@ -805,6 +805,13 @@ if [[ "$1" == "msg" ]]; then
     exec "$SERPANTINUM_DIR/scripts/qs_manager.sh" "$@"
 fi
 
+# Window actions run the script directly: no Quickshell IPC, so Super+Z and the
+# minimize/restore keys work even while the shell is busy, restarting or not running.
+if [[ "$1" == "window" ]]; then
+    shift
+    exec python3 "$SERPANTINUM_DIR/scripts/system/window_actions.py" "$@"
+fi
+
 if [[ "$1" == "ipc" ]]; then
     if [[ "$2" == "-h" || "$2" == "--help" ]]; then
         show_ipc_help
@@ -825,6 +832,12 @@ if [[ "$1" == "ipc" ]]; then
     fi
 
     shift
+    # `quickshell ipc` needs a subcommand (call/show/prop). Older binds wrote the short
+    # form "serpantinum ipc <target> <function>"; treat it as a call.
+    case "$1" in
+        call|show|prop|-*|"") ;;
+        *) set -- call "$@" ;;
+    esac
     exec quickshell -p "$SHELL_QML" ipc "$@"
 fi
 

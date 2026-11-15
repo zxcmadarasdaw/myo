@@ -25,11 +25,22 @@ hl.bind(mainMod .. " + ALT + Left", hl.dsp.focus({ workspace = "r-1" }))
 hl.bind(mainMod .. " + ALT + Right", hl.dsp.focus({ workspace = "r+1" }))
 
 hl.bind(mainMod .. " + Q", hl.dsp.window.close())
+-- Window states. Tiled / Floating / Fullscreen are separate:
+--   Super+Z          Tiled <-> Floating (leaves fullscreen first; a first float is 75 % of
+--                    the screen, centred; later it returns where you left it)
+--   Super+Shift+F    real fullscreen on/off (games, video)
+--   Super+Alt+F      maximized: fills the work area, bar and gaps stay
+--   Super+Alt+Z      pin a small window in a corner on every workspace (again: back to tiling)
+--   Super+Shift+Z    minimize (Serpantinum keeps it in a hidden workspace; dock restores it)
+--   Super+Ctrl+Z     restore the last minimized window
+--   Super+LMB drag   move, Super+RMB drag   resize (top of this file)
+-- The window commands run a script directly, not through the Quickshell IPC.
 hl.bind(mainMod .. " + ALT + F", hl.dsp.window.fullscreen({ mode = "maximized", action = "toggle" }))
-hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.float({ action = "toggle" }))
-hl.bind(mainMod .. " + Z", hl.dsp.exec_cmd("serpantinum ipc windows pin"))
-hl.bind(mainMod .. " + SHIFT + Z", hl.dsp.exec_cmd("serpantinum ipc windows minimize"))
-hl.bind(mainMod .. " + CTRL + Z", hl.dsp.exec_cmd("serpantinum ipc windows restore"))
+hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" }))
+hl.bind(mainMod .. " + Z", hl.dsp.exec_cmd("serpantinum window float --notify"))
+hl.bind(mainMod .. " + ALT + Z", hl.dsp.exec_cmd("serpantinum window pin --notify"))
+hl.bind(mainMod .. " + SHIFT + Z", hl.dsp.exec_cmd("serpantinum window minimize --notify"))
+hl.bind(mainMod .. " + CTRL + Z", hl.dsp.exec_cmd("serpantinum window restore --notify"))
 
 hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd("serpantinum brightness lower"), { locked = true })
 hl.bind("XF86MonBrightnessUp", hl.dsp.exec_cmd("serpantinum brightness raise"), { locked = true })

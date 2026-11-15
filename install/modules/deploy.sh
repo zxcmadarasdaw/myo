@@ -385,6 +385,37 @@ remove_settings_desktop_entry() {
 
 # Replace <dst> with a copy of <src> (without Python caches). The copy is
 # staged first so an interrupted copy never leaves a half-written tree.
+# Updates never overwrite compositor configs wholesale. A file the user has not edited
+# (identical to the version shipped by the previous commit) is replaced by the new one,
+# after a backup; an edited file is kept and only reported. Window keys such as Super+Z
+# are also bound at runtime by window_actions.py, so they work in either case.
+update_untouched_compositor_file() {
+    local repo="$1" old_commit="$2" file="$3"
+    shift 3
+    local comp_part="${file#compositor*/}"
+    local comp_name="${comp_part%%/*}" comp_file="${comp_part#*/}" comp target dest backup
+    for comp in "$@"; do
+        [[ "$comp" == "$comp_name" ]] || continue
+        case "$comp" in
+            hyprland) target="hypr" ;;
+            *) target="$comp" ;;
+        esac
+        dest="$HOME/.config/$target/$comp_file"
+        if [ ! -e "$dest" ]; then
+            mkdir -p "$(dirname "$dest")"
+            cp "$repo/$file" "$dest"
+        elif [ -n "$old_commit" ] && git -C "$repo" show "$old_commit:$file" 2>/dev/null | cmp -s - "$dest"; then
+            backup="$HOME/.config/${target}_backup/update_$(date +%Y%m%d_%H%M%S)/$comp_file"
+            mkdir -p "$(dirname "$backup")"
+            cp -a "$dest" "$backup"
+            cp "$repo/$file" "$dest"
+            echo -e "\e[32m[ OK ]\e[0m Updated ~/.config/$target/$comp_file (backup: $backup)"
+        elif ! cmp -s "$repo/$file" "$dest"; then
+            echo -e "\e[33m[ NOTE ]\e[0m ~/.config/$target/$comp_file has your own edits and was kept; the new version is $repo/$file"
+        fi
+    done
+}
+
 sync_program_dir() {
     local src="$1" dst="$2" stage
     [ -d "$src" ] || return 0
@@ -587,6 +618,8 @@ deploy_package() {
                                 cp "$REPO_ROOT/$file" "$HOME/.config/$target_config_name/$comp_file"
                             fi
                         done
+                    else
+                        update_untouched_compositor_file "$REPO_ROOT" "$OLD_COMMIT" "$file" "${COMPOSITORS[@]}"
                     fi
                 fi
             done <<< "$changed_files"

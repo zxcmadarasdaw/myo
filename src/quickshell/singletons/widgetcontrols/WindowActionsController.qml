@@ -88,6 +88,7 @@ Item {
 
     IpcHandler {
         target: "windows"
+        function toggleFloating(): void { controller.enqueue("float", ""); }
         function pin(): void { controller.pin(); }
         function minimize(): void { controller.minimize(""); }
         function restore(): void { controller.restore(""); }

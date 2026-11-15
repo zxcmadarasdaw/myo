@@ -12,7 +12,14 @@ import subprocess
 import sys
 
 SPECIAL = "special:serpantinum-minimized"
-BINDINGS = {"SUPER + Z": "pin", "SUPER + SHIFT + Z": "minimize", "SUPER + CTRL + Z": "restore"}
+# Super+Z is plain Tiled <-> Floating; pinning across workspaces moved to Super+Alt+Z.
+# The commands call this script directly ("serpantinum window ..."), not through the
+# Quickshell IPC, so the keys keep working while the shell is busy or restarting.
+BINDINGS = {"SUPER + Z": "float", "SUPER + ALT + Z": "pin",
+            "SUPER + SHIFT + Z": "minimize", "SUPER + CTRL + Z": "restore"}
+MODMASK = {"SUPER": 64, "SHIFT": 1, "CTRL": 4, "ALT": 8}
+LEGACY_COMMAND = "serpantinum ipc windows "   # binds written by older releases
+FLOAT_KEY = "_floating"                      # remembered floating geometry per window
 
 
 class ActionError(RuntimeError):
@@ -135,18 +142,30 @@ def place(area, size, corner, obstacles):
     raise ActionError("No room to pin without covering desktop widgets; reduce the configured size")
 
 
+def float_fraction(settings):
+    raw = settings.get("windowActions", {})
+    raw = raw if isinstance(raw, dict) else {}
+    return number(raw.get("floatFraction"), .75, .4, 1)
+
+
 def bind_plan(binds):
-    """Same binds -j / eval mechanism as ProcessExplorerController; do not steal keys."""
+    """Same binds -j / eval mechanism as ProcessExplorerController; do not steal keys.
+
+    A key still bound to an older Serpantinum window command (Super+Z used to pin) is
+    rebound; a key the user bound to anything else is reported as a conflict."""
     expressions, conflicts = [], []
     for combo, action in BINDINGS.items():
-        command = "serpantinum ipc windows " + action
-        mask = 64 | (1 if "SHIFT" in combo else 0) | (4 if "CTRL" in combo else 0)
+        command = "serpantinum window " + action + " --notify"
+        mask = sum(MODMASK[part.strip()] for part in combo.split("+")[:-1])
         if any(command == b.get("arg") for b in binds):
             continue
-        if any(str(b.get("key", "")).lower() == "z" and b.get("modmask") == mask
-               and not b.get("submap") for b in binds):
+        taken = [b for b in binds if str(b.get("key", "")).lower() == "z" and b.get("modmask") == mask
+                 and not b.get("submap")]
+        if any(not str(b.get("arg", "")).startswith(LEGACY_COMMAND) for b in taken):
             conflicts.append(combo)
             continue
+        if taken:
+            expressions.append("hl.unbind(" + lua_string(combo) + ")")
         expressions.append("hl.bind(" + lua_string(combo) + ", hl.dsp.exec_cmd(" + lua_string(command) + "))")
     return expressions, conflicts
 
@@ -227,6 +246,69 @@ class WindowActions:
         self.focus(key)
         return {"action": "restored" if key in hidden else "focused", "address": key}
 
+    def monitor_of(self, win):
+        monitor = next((m for m in self.ctl.query("monitors") if m["id"] == win.get("monitor")), None)
+        if monitor is None:
+            raise ActionError("Window monitor is unavailable")
+        return monitor
+
+    def float_toggle(self):
+        """Super+Z: Tiled <-> Floating with Hyprland's own float dispatcher.
+
+        Fullscreen is left first. A window that floats for the first time gets a
+        comfortable size (75 % of the usable area) centred on its monitor; later it
+        comes back where the user left it. Nothing else about the window changes."""
+        key, win = self.window()
+        if win.get("workspace", {}).get("id", 0) <= 0:
+            raise ActionError("Restore the window from its special workspace first")
+        clients = self.clients()
+        saved = self.state.get(FLOAT_KEY)
+        saved = {k: v for k, v in saved.items() if k in clients} if isinstance(saved, dict) else {}
+        fullscreen = bool(win.get("fullscreen") or win.get("fullscreenClient"))
+
+        def remember():
+            self.state[FLOAT_KEY] = saved
+            self.save(self.state)
+
+        if win.get("floating") and not fullscreen:
+            saved[key] = [*win["at"], *win["size"]]
+            if win.get("pinned"):
+                self.dispatch("window.pin", key, action="off")
+            self.dispatch("window.float", key, action="off")
+            remember()
+            return {"action": "tiled", "address": key}
+        if fullscreen:
+            self.dispatch("window.fullscreen_state", key, internal=0, client=0, action="set")
+            if win.get("floating"):          # a floating window in fullscreen: back to its float
+                return {"action": "floating", "address": key}
+
+        area = usable_rect(self.monitor_of(win), self.settings, 16)
+        ax, ay, aw, ah = area
+        geometry = saved.get(key)
+        if not (isinstance(geometry, list) and len(geometry) == 4
+                and ax <= geometry[0] + geometry[2] / 2 <= ax + aw
+                and ay <= geometry[1] + geometry[3] / 2 <= ay + ah):
+            fraction = float_fraction(self.settings)
+            w, h = round(aw * fraction), round(ah * fraction)
+            geometry = [ax + (aw - w) // 2, ay + (ah - h) // 2, w, h]
+        x, y, w, h = (round(v) for v in geometry)
+        w, h = min(w, aw), min(h, ah)
+        self.dispatch("window.float", key, action="on")
+        self.dispatch("window.resize", key, x=w, y=h, relative=False)
+        # Clients may refuse sizes below their minimum: place what they actually took.
+        actual = self.clients().get(key)
+        if actual is None:
+            raise ActionError("Window closed while floating")
+        w, h = actual.get("size", [w, h])
+        if key not in saved:
+            x, y = ax + (aw - w) // 2, ay + (ah - h) // 2
+        x = max(ax, min(x, ax + aw - w))
+        y = max(ay, min(y, ay + ah - h))
+        self.dispatch("window.move", key, x=round(x), y=round(y), relative=False)
+        saved.pop(key, None)
+        remember()
+        return {"action": "floating", "address": key, "geometry": [round(x), round(y), w, h]}
+
     def pin(self):
         key, win = self.window()
         if win.get("pinned"):
@@ -304,9 +386,21 @@ def locked_state():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("pin", "minimize", "restore", "focus", "bind"))
+    parser.add_argument("action", choices=("float", "pin", "minimize", "restore", "focus", "bind"))
     parser.add_argument("address", nargs="?")
+    parser.add_argument("--notify", action="store_true",
+                        help="report a failure as a desktop notification (key bindings have no terminal)")
     args = parser.parse_args()
+    code, payload = run(args)
+    print(json.dumps(payload, ensure_ascii=False))
+    if code and args.notify:
+        with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+            subprocess.run(["notify-send", "-a", "Serpantinum", "-u", "low", "Window action failed",
+                            payload.get("error", "")], timeout=5, capture_output=True)
+    return code
+
+
+def run(args):
     try:
         if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
             raise ActionError("A running Hyprland session is required")
@@ -321,17 +415,17 @@ def main():
             settings = read_json(config, {})
             with locked_state() as (state, save):
                 actions = WindowActions(ctl, state, save, settings)
-                if args.action == "pin":
+                if args.action == "float":
+                    result = actions.float_toggle()
+                elif args.action == "pin":
                     result = actions.pin()
                 elif args.action == "minimize":
                     result = actions.minimize(args.address)
                 else:
                     result = actions.restore(args.address)
-        print(json.dumps({"ok": True, **result}, ensure_ascii=False))
-        return 0
+        return 0, {"ok": True, **result}
     except (ActionError, OSError, ValueError) as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
-        return 1
+        return 1, {"ok": False, "error": str(exc)}
 
 
 if __name__ == "__main__":
