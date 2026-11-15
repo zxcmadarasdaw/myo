@@ -159,6 +159,7 @@ def video_snapshot(data, suffix, size=(1920, 1080)):
     if not has_magic(data):
         raise ValueError("wallpaper data does not match its extension")
     guard = ["-nostdin", "-v", "error", "-protocol_whitelist", "file", "-f", demuxer]
+    codec = ""
     try:
         with tempfile.TemporaryDirectory(prefix="serpantinum-themess-") as folder:
             path = Path(folder) / ("wallpaper" + suffix)
@@ -173,7 +174,8 @@ def video_snapshot(data, suffix, size=(1920, 1080)):
             if not streams:
                 raise ValueError("wallpaper video has no video stream")
             first = streams[0]
-            if first.get("codec_name") not in VIDEO_CODECS:
+            codec = str(first.get("codec_name") or "")
+            if codec not in VIDEO_CODECS:
                 raise ValueError("unsupported video codec (use H.264, HEVC, VP8, VP9 or AV1)")
             width, height = int(first.get("width") or 0), int(first.get("height") or 0)
             if not (16 <= width <= VIDEO_MAX_SIDE and 16 <= height <= VIDEO_MAX_SIDE):
@@ -192,6 +194,11 @@ def video_snapshot(data, suffix, size=(1920, 1080)):
     except FileNotFoundError as error:
         raise ValueError("ffmpeg and ffprobe are required to validate wallpaper") from error
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as error:
+        if codec in ("h264", "hevc") and isinstance(error, subprocess.CalledProcessError):
+            # Fedora's ffmpeg-free has no full H.264/HEVC decoder; Qt Multimedia uses the same
+            # libraries, so the video would not play either.
+            raise ValueError(f"this system's ffmpeg cannot decode {codec.upper()} video "
+                             "(Fedora ffmpeg-free): use a VP9/AV1 WebM, or install ffmpeg from RPM Fusion") from error
         raise ValueError("wallpaper video could not be decoded within the supported limits") from error
     if not frame.stdout.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError("wallpaper contains no decodable frame")

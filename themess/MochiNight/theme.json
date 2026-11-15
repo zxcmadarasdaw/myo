@@ -14,6 +14,6 @@
     "notifications": "notifications.json",
     "studio": "studio.json",
     "widgets": "widgets.json",
-    "wallpaper": "@shared/error-girl/error-girl.mp4"
+    "wallpaper": "@shared/error-girl/error-girl.webm"
   }
 }

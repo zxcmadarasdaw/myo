@@ -15,7 +15,7 @@
     "studio": "studio.json",
     "fastfetch": "fastfetch.json",
     "widgets": "widgets.json",
-    "wallpaper": "@shared/error-girl/error-girl.mp4",
+    "wallpaper": "@shared/error-girl/error-girl.webm",
     "fastfetchMedia": "@shared/error-girl/fastfetch-girl.webm"
   }
 }

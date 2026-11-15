@@ -69,6 +69,7 @@ KEPT_MINIMAL = {
     "terminal": "terminal/TerminalMinimal.qml",
 }
 VARIANT_RE = re.compile(r'^\s*"(\w+)":\s*\{\s*file:\s*"([^"]+)",\s*icon:\s*"([^"]*)",\s*label:\s*(.+?)\s*\},?\s*$')
+ATELIER_RE = re.compile(r'^\s*"(\w+)":\s*registry\.atelierVariant\("([^"]+)"\),?\s*$')
 
 
 def registry_variants(text, type_name):
@@ -78,6 +79,11 @@ def registry_variants(text, type_name):
     for line in text[block:].splitlines()[1:]:
         if re.match(r"^\s{12}\}", line):
             break
+        atelier = ATELIER_RE.match(line)
+        if atelier:     # registry.atelierVariant(file): icon "A", the shared Atelier label
+            out[atelier.group(1)] = {"file": atelier.group(2), "icon": "A",
+                                     "label": 'I18n.t("widgets.variants.atelier", "Atelier")'}
+            continue
         m = VARIANT_RE.match(line)
         assert m, f"{type_name}: unparsed variant line: {line!r}"
         out[m.group(1)] = {"file": m.group(2), "icon": m.group(3), "label": m.group(4)}
@@ -188,14 +194,16 @@ with tempfile.TemporaryDirectory(prefix="widget-ext-qml-") as directory:
     root = Path(directory)
     for rel in ("singletons/info/NetStats.qml", "singletons/system/TerminalTrust.qml",
                 "singletons/widgetcontrols/ProcessExplorerController.qml",
-                "singletons/widgetcontrols/ScreenToggleController.qml"):
+                "singletons/widgetcontrols/ScreenToggleController.qml",
+                "singletons/theme/FastfetchMedia.qml"):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(SRC / rel, root / rel)
     for rel in ("widgets/faces/network", "widgets/faces/filedock", "widgets/faces/terminal",
                 "widgets/faces/common", "widgets/faces/clock", "widgets/faces/text", "widgets/faces/visualizer",
                 "widgets/faces/image", "widgets/faces/weather", "widgets/faces/battery", "widgets/faces/usage",
                 "widgets/faces/music", "widgets/faces/timer", "widgets/faces/user", "widgets/faces/notes",
-                "widgets/faces/github"):
+                "widgets/faces/github", "widgets/faces/calendar",
+                "notifications/weather"):
         shutil.copytree(SRC / rel, root / rel)
     # real reusables used by the new faces (the rest of reusables/ is stubbed below)
     for rel in ("reusables/display/ImageBox.qml", "reusables/display/BoundedImage.qml",
@@ -207,7 +215,8 @@ with tempfile.TemporaryDirectory(prefix="widget-ext-qml-") as directory:
     # ---- root singletons (stubs + the two real ones) -----------------------------
     write(root, "qmldir", "singleton NetStats 1.0 singletons/info/NetStats.qml\n"
                           "singleton TerminalTrust 1.0 singletons/system/TerminalTrust.qml\n"
-                          "singleton ProcessExplorerController 1.0 singletons/widgetcontrols/ProcessExplorerController.qml\n")
+                          "singleton ProcessExplorerController 1.0 singletons/widgetcontrols/ProcessExplorerController.qml\n"
+                          "singleton FastfetchMedia 1.0 singletons/theme/FastfetchMedia.qml\n")
     singleton(root, ".", "Caching",
               'property string serpantinumDir: "/opt/serpantinum"; property string stateDir: "/state"; '
               'function getStateDir(n) { return "/state/" + n; } '
@@ -232,7 +241,8 @@ with tempfile.TemporaryDirectory(prefix="widget-ext-qml-") as directory:
                 ' property int clampedBorderRadius: 12; property real elementOpacity: 0.8; property bool liquidGlass: false;'
                 ' property bool glassActive: false')
     # singletons read by the Restrained/Lush faces
-    singleton(root, ".", "GpuCompatibility", "property bool blurAllowed: false; property bool shadersAllowed: false; "
+    singleton(root, ".", "Wallpaper", "property bool captureLite: false; property var audioEngine: null")
+    singleton(root, ".", "GpuCompatibility","property bool blurAllowed: false; property bool shadersAllowed: false; "
                                              "property var effective: ({ profile: 'safe', blur: false, shaders: false }); "
                                              "function observeShader(k, s, l) {}")
     singleton(root, ".", "Sounds", "function playSfx(n) {}")
@@ -240,7 +250,12 @@ with tempfile.TemporaryDirectory(prefix="widget-ext-qml-") as directory:
                                      "function registerConsumer() { consumers++; } function unregisterConsumer() { consumers--; }")
     singleton(root, ".", "DateTime", 'property var now: new Date(2026, 10, 14, 10, 42); property string hour: "10"; '
                                      'property string minute: "42"; property string amPm: ""; property string dayName: "Saturday"; '
-                                     'property string fullDate: "14 November 2026"')
+                                     'property string fullDate: "14 November 2026"; property string dayNameShort: "Sat"; '
+                                     'property string shortDate: "14.11"')
+    singleton(root, ".", "GpuStats", "property bool available: true; property bool received: true; property int percent: 37; "
+                                     "property int temp: 54; property int vramUsedMb: 2100; property int vramTotalMb: 8192; "
+                                     "property int interval: 2; property int subscribers: 0; "
+                                     "function subscribe() { subscribers++; } function unsubscribe() { subscribers--; }")
     singleton(root, ".", "Weather", 'property string currentTemp: "21.4"; property string currentIcon: "☀"; '
                                     'property string currentHex: "#f9e2af"; property bool isReady: true; property bool isLoading: false; '
                                     'property var data: ({ city: "Paris", forecast: [{ desc: "Clear sky", max: 23, min: 12 }] })')
@@ -299,7 +314,7 @@ Item {
     implicitWidth: 120; implicitHeight: 30
 }""")
     write(root, "reusables/WallpaperBlur.qml", "import QtQuick\nItem { property real radius }")
-    write(root, "reusables/GlassFill.qml", "import QtQuick\nItem { property bool active: false; property real radius; property color tintColor; property real tintAmount; "
+    write(root, "reusables/GlassFill.qml", "import QtQuick\nItem { property bool active: false; property bool allowed: true; property real radius; property color tintColor; property real tintAmount; "
                                            "property real shadow; property real press; property real pulse }")
     write(root, "reusables/ClickButton.qml", """import QtQuick
 Rectangle {
@@ -757,6 +772,33 @@ Window {
     assert j("counters") == {"spectrum": 0, "sys": 0}, j("counters")     # subscriptions released on destroy
     passed.append(f"Restrained/Lush: {len(styled)} faces load on dark and light themes, at minimum and large sizes, "
                   f"preview and live ({loaded} instances); nothing launched; subscriptions released")
+
+    # ---- Atelier: every face in every style (the Mochi Night / ERROR//OVERDRIVE looks) ---------
+    atelier = sorted(str(p.relative_to(SRC / "widgets/faces")).replace("\\", "/")
+                     for p in (SRC / "widgets/faces").glob("*/*Atelier.qml"))
+    assert len(atelier) >= 18, atelier
+    styles = re.findall(r'"(\w+)"', re.search(r"IDS\s*=\s*\[([^\]]*)\]",
+                        (SRC / "widgets/faces/common/AtelierStyles.js").read_text(encoding="utf-8")).group(1))
+    assert len(styles) == 9, styles
+    loaded = 0
+    for light in (False, True):
+        j("setLight", light)
+        for rel in atelier:
+            for style in (styles if not light else styles[:2]):
+                key = "a_" + rel.replace("/", "_") + style
+                props = json.dumps({"faceStyle": style})
+                assert j("makeAt", key + "p", "widgets/faces/" + rel, False,
+                         json.dumps({"previewMode": True, "faceStyle": style}), 320, 200) == "ok", (rel, style)
+                assert j("makeAt", key + "l", "widgets/faces/" + rel, True, props, 640, 300) == "ok", (rel, style)
+                pump(0.02)
+                j("resize", key + "l", 160, 60)
+                pump(0.02)
+                j("drop", key + "p"); j("drop", key + "l")
+                loaded += 2
+        pump(0.1)
+    j("setLight", False)
+    passed.append(f"Atelier: {len(atelier)} faces x {len(styles)} styles load as preview and live, "
+                  f"dark and light, large and small ({loaded} instances)")
 
     # previews ignore input, live faces act
     j("makeAt", "tp", "widgets/faces/timer/TimerFaceLush.qml", False, json.dumps({"previewMode": True}), 360, 280)

@@ -73,7 +73,7 @@ Item {
         let argv = ["python3", script, "--cols", String(core.cols), "--rows", String(core.rows)];
         if (core.mode === "fastfetch" || core.mode === "fetchShell") {
             const layouts = {
-                full: "OS:Kernel:Uptime:CPU:GPU:Memory:Disk:Shell:WM:Terminal",
+                full: "OS:Kernel:Uptime:Packages:CPU:GPU:Memory:Disk:Display:Shell:WM:Terminal",
                 minimal: "OS:CPU:GPU:Memory"
             };
             const modules = layouts[core.fetchVariant];

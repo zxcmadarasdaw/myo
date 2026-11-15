@@ -63,8 +63,10 @@ with tempfile.TemporaryDirectory(prefix="fastfetch-qt-", ignore_cleanup_errors=T
     for name in files:
         directory = "widgets/faces/terminal/"
         write(directory + name, (SOURCE / (directory + name)).read_text(encoding="utf-8"))
+    # The Atelier look of the terminal (ERROR//OVERDRIVE) resolves its tokens through the real kit.
     for name in ("singletons/theme/FastfetchMedia.qml", "guide/display/FastfetchMediaSection.qml",
-                 "singletons/system/Caching.qml"):
+                 "singletons/system/Caching.qml", "widgets/faces/common/AtelierKit.qml",
+                 "widgets/faces/common/AtelierCard.qml", "widgets/faces/common/AtelierStyles.js"):
         write(name, (SOURCE / name).read_text(encoding="utf-8"))
     write("qmldir", """singleton FastfetchMedia 1.0 singletons/theme/FastfetchMedia.qml
 singleton Caching 1.0 singletons/system/Caching.qml

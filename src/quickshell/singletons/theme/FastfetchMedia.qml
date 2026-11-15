@@ -2,7 +2,9 @@ pragma Singleton
 import QtQuick
 import "../../"
 
-Item {
+// QtObject, not Item: `enabled` below is this module's own setting and must not shadow
+// Item.enabled (Qt 6.10 reports that as an override of a base member).
+QtObject {
     id: root
     readonly property var presets: ({
         obsidian: {name: "Obsidian", layout: "classic", width: 43, height: 88, radius: 14, gap: 12, bg: "#0e1118", fg: "#e6edf6", accent: "#8badde", alpha: 0.96, border: 0.28, font: "IBM Plex Mono", material: "solid"},

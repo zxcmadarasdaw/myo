@@ -306,6 +306,33 @@ class ThemessTest(unittest.TestCase):
         self.package_file("fastfetch.json", {"appearance": appearance, "path": "/tmp/foreign.mp4"})
         self.assertTrue(self.report()["errors"])
 
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg and ffprobe required")
+    def test_bundled_error_girl_themes_scan_clean_and_share_one_free_codec_video(self):
+        # Mochi Night and ERROR//OVERDRIVE name their media as @shared/...; both must scan
+        # without errors with every widget variant they use, and the shared clips must not be
+        # H.264/HEVC: Fedora's ffmpeg-free (and so Qt Multimedia there) cannot decode them.
+        caps = dict(CAPS, widgetTypes={kind: ["atelier"] for kind in (
+            "time", "calendar", "weather", "terminal", "music", "visualizer", "cpu", "gpu", "ram", "disk",
+            "network")}, barModules=CAPS["barModules"] + ["focus", "media", "bt"],
+            barMenu=["launcher", "settings", "shuffle"], workspacesStyles=["pills", "numbers"],
+            timeStyles=["classic", "badge"])
+        media = set()
+        for name in ("MochiNight", "ErrorOverdrive"):
+            plan = themess.scan(str(ROOT / "themess" / name), caps)
+            self.assertEqual(plan.errors, [], name)
+            self.assertEqual(plan.warnings, [], name)
+            components = json.loads((ROOT / "themess" / name / "theme.json").read_text(encoding="utf-8"))["components"]
+            self.assertEqual({item["kind"] for item in plan.components}, set(components), name)
+            self.assertTrue(plan.image, name)
+            media |= {value for key, value in components.items() if key in themess.MEDIA_KINDS}
+        self.assertTrue(all(value.startswith(themess.SHARED_PREFIX) for value in media), media)
+        for value in media:
+            path = ROOT / "themess/.shared" / value[len(themess.SHARED_PREFIX):]
+            probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                    "stream=codec_name", "-of", "csv=p=0", str(path)],
+                                   capture_output=True, text=True, check=True)
+            self.assertIn(probe.stdout.strip(), {"vp8", "vp9", "av1"}, path.name)
+
     @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg required")
     def test_mr_robot_applies_all_real_components_and_restores_exact_files(self):
         settings = {"general": {"performance": False}, "launcher": {"terminalCommand": "kitty -e"},
