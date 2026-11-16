@@ -151,6 +151,47 @@ class MusicEffectsTests(unittest.TestCase):
         self.assertFalse(state["mono"])
         self.assertTrue(state["dyneq"])
 
+    def test_live_remix_boost_and_original_use_the_existing_engine(self):
+        state = self.eq.execute("set_remix_tone", ["bass", "4"])
+        self.assertEqual([float(n) for n in self.calls[-1][3:13]], [4, 4, 4] + [0] * 7)
+        self.assertEqual(state["dynamics"], "balanced")
+        self.eq.execute("set_remix_tone", ["treble", "2"])
+        self.assertEqual([float(n) for n in self.calls[-1][3:13]], [4, 4, 4] + [0] * 4 + [2, 2, 2])
+        with self.assertRaises(ValueError):
+            self.eq.execute("set_remix_tone", ["bass", "4.5"])
+        state = self.eq.execute("set_effects", ["false"])
+        self.assertFalse(state["effects"])
+        self.assertEqual([float(n) for n in self.calls[-1][3:13]], [0] * 10)
+
+    def test_remix_metadata_survives_restart_and_edits_do_not_touch_audio(self):
+        self.eq.execute("set_remix_tone", ["bass", "3"])
+        self.eq.execute("save_remix", ["Mine", "1.35"])
+        self.eq.execute("rename_remix", ["Mine", "Renamed"])
+        self.eq.execute("duplicate_remix", ["Slowed", "Copy"])
+        self.eq.execute("delete_remix", ["Copy"])
+        with self.assertRaises(ValueError):
+            self.eq.execute("save_remix", ["Invalid", "0"])
+        with self.assertRaises(ValueError):
+            self.eq.execute("save_remix", ["Renamed"])
+        self.assertEqual(len(self.calls), 1)
+        fresh = eqmod.Equalizer(self.eq.state_dir, self.eq.run_dir, self.eq.runner)
+        self.assertEqual(list(fresh.custom_remixes()), ["Renamed"])
+        self.assertEqual(fresh.custom_remixes()["Renamed"]["rate"], 1.35)
+        self.assertFalse(fresh.presets_file.exists())
+        self.eq.execute("set_effects", ["false"])
+        state = fresh.execute("load_remix", ["Renamed"])
+        self.assertTrue(state["effects"])
+        self.assertEqual(state["b1"], 3)
+        self.assertEqual(len(self.calls), 3)
+
+    def test_factory_remixes_have_engine_parameters_and_optional_player_rate(self):
+        for name, preset in eqmod.REMIXES.items():
+            with self.subTest(name=name):
+                expected = [preset["settings"][f"b{i}"] for i in range(1, 11)]
+                state = self.eq.execute("load_remix", [name])
+                self.assertEqual([float(n) for n in self.calls[-1][3:13]], expected)
+                self.assertIn(state["dynamics"], ("balanced", "night"))
+
 
 if __name__ == "__main__":
     unittest.main()

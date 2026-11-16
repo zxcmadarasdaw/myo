@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import QtQuick.Layouts
+import QtQuick.Controls as Controls
 import "../"
 import "../reusables"
 import "../reusables/media"
@@ -160,7 +161,43 @@ ColumnLayout {
                 font.pixelSize: root.s(12); 
                 Behavior on color { ColorAnimation { duration: 600 } }
             }
-            Item { Layout.fillWidth: true }
+            Item {
+                id: speedSlot
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                ClickButton {
+                    anchors.centerIn: parent
+                    objectName: "musicSpeed"
+                    height: Math.min(speedSlot.height, root.s(18))
+                    maxWidth: Math.max(1, speedSlot.width)
+                    horizontalPadding: root.s(6)
+                    textFontSize: root.s(10)
+                    accentColor: ThemeBackend.surface0
+                    textColor: root.dynamicTextColor
+                    buttonText: qsTr("Speed") + "  " + quickSpeed.readout
+                    onClicked: speedPopup.visible ? speedPopup.close() : speedPopup.open()
+                }
+                Controls.Popup {
+                    id: speedPopup
+                    objectName: "musicSpeedPopup"
+                    x: (speedSlot.width - width) / 2
+                    y: -height - 6
+                    width: 280
+                    padding: 10
+                    focus: true
+                    closePolicy: Controls.Popup.CloseOnEscape | Controls.Popup.CloseOnPressOutside
+                    background: Rectangle {
+                        radius: ThemeBackend.borderRadius
+                        color: ThemeBackend.base
+                        border.color: ThemeBackend.surface1
+                    }
+                    contentItem: PlaybackSpeed { id: quickSpeed }
+                    Connections {
+                        target: root
+                        function onActiveChanged() { if (!root.active) speedPopup.close(); }
+                    }
+                }
+            }
             Text { 
                 text: root.formatTime(root.targetPlayer ? root.targetPlayer.length : 0); 
                 color: root.dynamicTextColor; 

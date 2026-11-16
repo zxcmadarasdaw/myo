@@ -9,7 +9,8 @@
 //   display / label: sans | serif | mono   (font families, see AtelierKit)
 //   meter:   line | hair | pill | blocks | ticks | bar
 //   radius, pad: scaled by AtelierKit; fill: opacity of the surface (0 = none)
-var IDS = ["matte", "premium", "minimal", "retro", "elegant", "editorial", "technical", "borderless", "compact"];
+var IDS = ["matte", "premium", "minimal", "retro", "elegant", "editorial", "technical", "borderless", "compact",
+           "velvet", "retro_tech", "cyber", "asymmetric"];
 
 var STYLES = {
     matte: {
@@ -56,12 +57,33 @@ var STYLES = {
         frame: "plain", header: "none", display: "sans", label: "sans",
         radius: 8, fill: 0.9, fillTone: "base", border: 0.1, accentBorder: false,
         displayWeight: 400, caps: true, tracking: 1.0, pad: 0.65, meter: "line", spark: false
+    },
+    velvet: {
+        frame: "velvet", header: "serif", display: "serif", label: "sans",
+        radius: 14, fill: 0.97, fillTone: "base", border: 0.12, accentBorder: false,
+        displayWeight: 400, caps: false, tracking: 0.6, pad: 1.15, meter: "hair", spark: false
+    },
+    retro_tech: {
+        frame: "window", header: "titlebar", display: "mono", label: "mono",
+        radius: 0, fill: 0.98, fillTone: "base", border: 0.45, accentBorder: true,
+        displayWeight: 600, caps: true, tracking: 2.0, pad: 0.80, meter: "ticks", spark: true
+    },
+    cyber: {
+        frame: "cyber", header: "code", display: "mono", label: "mono",
+        radius: 0, fill: 0.96, fillTone: "crust", border: 0.3, accentBorder: true,
+        displayWeight: 500, caps: true, tracking: 1.25, pad: 0.95, meter: "blocks", spark: true
+    },
+    asymmetric: {
+        frame: "rail", header: "kicker", display: "sans", label: "sans",
+        radius: 4, fill: 0.93, fillTone: "base", border: 0.1, accentBorder: false,
+        displayWeight: 500, caps: true, tracking: 2.4, pad: 0.85, meter: "pill", spark: true
     }
 };
 
 var LABELS = {
     matte: "Matte", premium: "Premium Dark", minimal: "Minimal", retro: "Retro", elegant: "Elegant",
-    editorial: "Editorial", technical: "Technical", borderless: "Borderless", compact: "Compact"
+    editorial: "Editorial", technical: "Technical", borderless: "Borderless", compact: "Compact",
+    velvet: "Velvet", retro_tech: "Retro Tech", cyber: "Cyber", asymmetric: "Asymmetric"
 };
 
 function get(id) {

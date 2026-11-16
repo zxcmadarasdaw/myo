@@ -14,7 +14,7 @@ the test supplies. Checks:
     is open;
   * the server picker shows only the subscription's servers, "Unknown" for no country;
   * subscriptions: add / switch / rename / remove call the right commands;
-  * sing-box download: live progress, speed, retry, cancel (nothing installed), success;
+  * local engine readiness and repair instructions, profile import retry, cancellation and timeout;
   * closed sheets are invisible AND disabled (cannot catch the mouse);
   * the six themes, preview / apply / cancel / reset / save as custom theme; the stored
     appearance holds no link or token;
@@ -271,11 +271,9 @@ Window {
                                 pinging: VpnService.pinging, panelOpen: VpnService.panelOpen,
                                 exitIp: VpnService.exitIp, ipState: VpnService.ipState,
                                 subs: VpnService.subs, activeSub: VpnService.activeSub,
-                                sb: { installing: VpnService.sbInstalling, stage: VpnService.sbStage, done: VpnService.sbDone,
-                                      total: VpnService.sbTotal, speed: VpnService.sbSpeed, attempt: VpnService.sbAttempt,
-                                      canCancel: VpnService.sbCanCancel, elapsed: VpnService.sbElapsed,
-                                      logPath: VpnService.sbLogPath, errorCode: VpnService.sbErrorCode,
-                                      error: VpnService.sbError, result: VpnService.sbResult, checksum: VpnService.sbChecksum } });
+                                sb: { installing: VpnService.sbInstalling, stage: VpnService.sbStage,
+                                      canCancel: VpnService.sbCanCancel, logPath: VpnService.sbLogPath,
+                                      error: VpnService.sbError, result: VpnService.sbResult } });
     }
     function ui() {
         return JSON.stringify({ phaseText: studio.phaseText, message: studio.message, sheet: studio.sheet,
@@ -293,9 +291,7 @@ Window {
         case "renameSub": VpnService.renameSub(a, b); break;
         case "removeSub": VpnService.removeSub(a); break;
         case "select": VpnService.select(a); break;
-        case "install": VpnService.installSingbox(); break;
-        case "installBundle": VpnService.installSingbox("bundle", a); break;
-        case "installOnline": VpnService.installSingbox("online", ""); break;
+        case "prepareVpn": return VpnService.prepareVpn(a, "", b) ? "true" : "false";
         case "singboxInfo": VpnService.singboxInfo(); break;
         case "stall": VpnService.sbLastEvent = Date.now() - VpnService.sbWatchdogMs - 1000; break;
         case "cancelInstall": VpnService.cancelInstall(); break;
@@ -618,197 +614,84 @@ try:
                    ({"ok": True, "servers": SERVERS} if needle == "list --json" else {"active": "aaaaaaaa", "items": [SUB_A]}))
     passed.append("subscriptions: switch / rename / remove run sub-use / sub-rename / sub-remove with the id")
 
-    # Actual setup action, with a failed first attempt and the retained link on retry.
+    studio = win.findChild(QObject, "mainStudio")
+    sb_sheet = studio.findChild(QObject, "vpnSheet_singbox")
+    engine_state = sb_sheet.findChild(QObject, "vpnEngineState")
+    repair = sb_sheet.findChild(QObject, "vpnCopyRepair")
     answer_status(dict(STATUS_NONE, setup={"state": "missing", "binaryReady": False, "yaml": True}),
                   lambda: j("ui")["phaseText"] == S["setup.required"], "missing engine status")
     do("primary")
-    until(lambda: sheet_state("subs") == (True, True), "missing engine opens the input sheet")
-    setup_sheet = win.findChild(QObject, "mainStudio").findChild(QObject, "vpnSheet_subs")
-    setup_button = setup_sheet.findChild(QObject, "vpnSetupAction")
-    assert setup_button is not None
-    assert not setup_button.property("visible")
-    assert setup_sheet.findChild(QObject, "vpnSetupLink").setProperty("text", link)
-    assert setup_sheet.property("hasInput"), setup_sheet.property("hasInput")
-    until(lambda: setup_button.property("visible"), "install action under the input")
-    assert setup_button.property("text") == S["setup.install"]
-    setup_button.clicked.emit()
-    until(lambda: running("setup --json") and running("setup --json")[0]["stdinClosed"], "setup receives source")
-    assert running("setup --json")[0]["written"] == [link + "\n"]
-    assert link not in str(running("setup --json")[0]["cmd"])
-    finish("setup --json", {"ok": False, "error": {"code": "sb_http", "message": "HTTP 503"}}, 1)
-    until(lambda: setup_button.property("text") == S["sb.retry"], "retry stays in the same sheet")
-    setup_button.clicked.emit()
-    until(lambda: running("setup --json") and running("setup --json")[0]["stdinClosed"], "setup retry")
-    assert running("setup --json")[0]["written"] == [link + "\n"]
-    j("stream", "setup --json", json.dumps({"event": "stage", "stage": "packages"}))
-    assert j("svc")["sb"]["canCancel"], "the polkit password wait can be cancelled"
-    j("stream", "setup --json", json.dumps({"event": "heartbeat", "phase": "auth", "elapsed": 20}))
-    assert j("svc")["sb"]["elapsed"] == 20, j("svc")["sb"]
-    j("stream", "setup --json", json.dumps({"event": "stage", "stage": "transaction"}))
-    assert not j("svc")["sb"]["canCancel"], "a running RPM transaction is never interrupted"
-    finish("setup --json", {"ok": True, "path": "/usr/bin/sing-box", "setupComplete": True,
-                           "active": "aaaaaaaa", "items": [SUB_A]})
-    answer_status(dict(status_off, setup={"state": "ready", "binaryReady": True, "yaml": True}),
-                  lambda: setup_button.property("text") == S["setup.connect"], "setup offers explicit connection")
-    assert not running("connect --json")
-    assert str(j("call", "back", "", "")) == "true"
-    until(lambda: not setup_button.property("visible"), "closed setup action is invisible")
-    assert not setup_sheet.property("enabled")
-    for needle in ("singbox-info", "subs --json", "list --json"):
-        if running(needle):
-            finish(needle, {"ok": True, "candidates": [], "items": [SUB_A], "servers": SERVERS})
-    passed.append("one-click setup: missing engine, stdin, retry, progress, explicit connect, closed sheet releases input")
+    until(lambda: sheet_state("singbox") == (True, True), "missing engine opens the repair sheet")
+    finish("singbox-info", {"ok": True, "works": False, "tunUsable": False, "candidates": []})
+    assert engine_state.property("text") == S["sb.not_installed"]
+    assert repair.property("visible")
+    assert do("prepareVpn", link, "") == "false", "missing local engine blocks profile setup"
+    assert not running(" singbox-install ") and not running(" setup ")
 
-    # ---- sing-box download: progress, retry, cancel, success ------------------------------------
-    do("openSheet", "singbox")
-    until(lambda: running("singbox-info"), "singbox-info when the sheet opens")
-    finish("singbox-info", {"ok": True, "path": "", "source": "", "version": "", "works": False, "candidates": [
-        {"path": "/usr/local/bin/sing-box", "system": True}], "tunUsable": False, "installHint": "sudo dnf install sing-box"})
-    do("install")
-    until(lambda: running("singbox-install"), "install started")
-    j("stream", "singbox-install", json.dumps({"event": "stage", "stage": "release"}))
-    j("stream", "singbox-install", json.dumps({"event": "stage", "stage": "download", "version": "1.12.9",
-                                                "total": 14000000, "checksum": True}))
-    j("stream", "singbox-install", json.dumps({"event": "progress", "done": 7000000, "total": 14000000, "speed": 2100000, "attempt": 1}))
-    sb = j("svc")["sb"]
-    assert sb["installing"] and sb["stage"] == "download" and sb["done"] == 7000000 and sb["speed"] == 2100000 and sb["checksum"], sb
-    j("stream", "singbox-install", json.dumps({"event": "retry", "attempt": 2, "of": 4, "wait": 2}))
-    assert j("svc")["sb"]["attempt"] == 2
-    shot("07-singbox-progress")
+    ready_status = dict(status_off, setup={"state": "ready", "binaryReady": True, "yaml": True})
+    answer_status(ready_status, lambda: j("ui")["phaseText"] != S["setup.required"], "working engine status")
+    do("singboxInfo")
+    finish("singbox-info", {"ok": True, "works": True, "path": "/usr/bin/sing-box",
+                           "version": "1.14.4", "tunUsable": False, "candidates": []})
+    until(lambda: engine_state.property("text") == S["sb.ready"], "VPN Engine Ready")
+    assert not repair.property("visible")
+
+    do("openSheet", "subs")
+    until(lambda: sheet_state("subs") == (True, True), "subscription sheet")
+    subs_sheet = studio.findChild(QObject, "vpnSheet_subs")
+    setup_button = subs_sheet.findChild(QObject, "vpnSetupAction")
+    subs_sheet.setProperty("localFile", QUrl("file:///home/u/profile.yaml"))
+    subs_sheet.setProperty("submittedSetup", True)
+    local_setup = " setup --local-engine "
+    assert do("prepareVpn", "", "file:///home/u/profile.yaml") == "true"
+    until(lambda: running(local_setup), "local profile setup")
+    cmd = running(local_setup)[0]["cmd"]
+    assert "--file=file:///home/u/profile.yaml" in cmd and "--yaml" not in cmd and "--system" not in cmd
+    finish(local_setup, {"ok": False, "error": {"code": "check_failed", "message": "Invalid profile",
+                                               "log": "/home/u/.local/state/serpantinum/vpn/install.log"}}, 1)
+    until(lambda: setup_button.property("visible") and setup_button.property("text") == S["sb.retry"],
+          "failed profile can be retried")
+    assert "install.log" in subs_sheet.findChild(QObject, "vpnImportError").property("text")
+    setup_button.clicked.emit()
+    until(lambda: running(local_setup), "retry starts a profile check")
+    j("stream", local_setup, json.dumps({"event": "stage", "stage": "profile"}))
+    assert j("svc")["sb"]["canCancel"] and j("svc")["sb"]["stage"] == "profile"
     do("cancelInstall")
-    until(lambda: not j("svc")["sb"]["installing"], "cancelled")
-    sb = j("svc")["sb"]
-    assert sb["result"] is None and sb["error"] == S["singbox.cancelled"], sb
-    if running("singbox-info"):
-        finish("singbox-info", {"ok": True, "path": "", "source": "", "works": False, "candidates": []})
-    if running("status --json"):
-        finish("status --json", status_off)
-    do("install")
-    until(lambda: running("singbox-install"), "install again")
-    finish("singbox-install", "\n".join(json.dumps(e) for e in (
-        {"event": "stage", "stage": "release"},
-        {"event": "stage", "stage": "download", "version": "1.12.9", "total": 14000000, "checksum": True},
-        {"event": "progress", "done": 14000000, "total": 14000000, "speed": 0, "attempt": 1},
-        {"event": "stage", "stage": "verify"}, {"event": "stage", "stage": "extract"}, {"event": "stage", "stage": "test"},
-        {"ok": True, "path": "/home/u/.local/share/serpantinum/vpn/bin/sing-box", "version": "1.12.9",
-         "verified": True, "source": "api"})))
-    until(lambda: j("svc")["sb"]["result"] is not None and not j("svc")["sb"]["installing"], "installed")
-    assert j("svc")["sb"]["error"] == "" and j("svc")["sb"]["stage"] == "done"
-    until(lambda: running("singbox-info"), "info refreshed after install")
-    finish("singbox-info", {"ok": True, "path": "/home/u/.local/share/serpantinum/vpn/bin/sing-box", "source": "managed",
-                            "version": "1.12.9", "works": True, "candidates": [], "tunUsable": False,
-                            "installHint": "sudo dnf install sing-box"})
-    if running("status --json"):
-        finish("status --json", status_off)
-    shot("08-singbox-done")
-    passed.append("sing-box download: live progress/speed/attempt, Cancel installs nothing, success only with the backend's result")
+    until(lambda: j("svc")["sb"]["error"] == S["setup.profile_cancelled"], "profile import cancelled")
 
-    # a failed install keeps the reason for Retry
-    do("install")
-    until(lambda: running("singbox-install"), "install third time")
-    finish("singbox-install", json.dumps({"ok": False, "error": {"code": "sb_checksum", "message": "Контрольная сумма не совпала"}}), 1)
-    until(lambda: not j("svc")["sb"]["installing"], "failed install finished")
-    assert j("svc")["sb"]["error"] == "Контрольная сумма не совпала" and j("svc")["sb"]["result"] is None
-    for needle in ("singbox-info", "status --json"):
-        if running(needle):
-            finish(needle, status_off if needle == "status --json" else {"ok": True, "works": True, "candidates": []})
-    do("useSingbox", "/usr/local/bin/sing-box")
-    until(lambda: running("singbox-use"), "singbox-use")
-    assert running("singbox-use")[0]["cmd"][2:] == ["singbox-use", "/usr/local/bin/sing-box", "--json"]
-    finish("singbox-use", {"ok": True, "path": "/usr/local/bin/sing-box", "source": "chosen", "works": True})
-    until(lambda: not j("svc")["busy"], "use finished")
-    for needle in ("singbox-info", "status --json", "list --json"):
-        if running(needle):
-            finish(needle, status_off if needle == "status --json" else {"ok": True, "works": True, "candidates": [], "servers": SERVERS})
-    passed.append("failed download keeps the reason (Retry); choosing an installed sing-box runs singbox-use PATH")
-
-    # ---- offline bundle: three states, local install, chosen folder, clear error -----------------
-    sb_sheet = win.findChild(QObject, "mainStudio").findChild(QObject, "vpnSheet_singbox")
-    def child(name):
-        o = sb_sheet.findChild(QObject, name)
-        assert o is not None, name
-        return o
-    do("singboxInfo")
-    until(lambda: running("singbox-info"), "info for bundle state")
-    finish("singbox-info", {"ok": True, "path": "", "source": "", "version": "", "works": False, "candidates": [],
-                            "bundle": {"found": True, "dir": "/home/u/.local/share/serpantinum/vpn-bundle", "version": "1.14.4"}})
-    until(lambda: child("vpnInstallBundle").property("visible"), "Install VPN Components offered for a found bundle")
-    assert child("vpnEngineState").property("text") == S["sb.not_installed"], child("vpnEngineState").property("text")
-    assert child("vpnDownload").property("visible") and child("vpnChooseBundle").property("visible")
-    do("installBundle", "")
-    until(lambda: running("singbox-install"), "bundle install started")
-    cmd = running("singbox-install")[0]["cmd"]
-    assert "--offline" in cmd and not any(a.startswith("--bundle=") for a in cmd), cmd
-    assert j("svc")["sb"]["stage"] == "bundle", j("svc")["sb"]
-    finish("singbox-install", "\n".join(json.dumps(e) for e in (
-        {"event": "stage", "stage": "bundle"}, {"event": "stage", "stage": "verify"},
-        {"event": "stage", "stage": "extract"}, {"event": "stage", "stage": "test"},
-        {"ok": True, "path": "/home/u/.local/share/serpantinum/vpn/bin/sing-box", "version": "1.14.4",
-         "verified": True, "source": "bundle"})))
-    until(lambda: j("svc")["sb"]["result"] is not None and not j("svc")["sb"]["installing"], "bundle installed")
-    until(lambda: running("singbox-info"), "info after bundle install")
-    finish("singbox-info", {"ok": True, "path": "/home/u/.local/share/serpantinum/vpn/bin/sing-box", "source": "managed",
-                            "version": "1.14.4", "works": True, "candidates": [],
-                            "bundle": {"found": True, "dir": "/b", "version": "1.14.4"}})
-    until(lambda: child("vpnEngineState").property("text") == S["sb.ready"], "VPN Engine Ready")
-    assert not child("vpnInstallBundle").property("visible"), "nothing to install when the engine matches the bundle"
-    if running("status --json"):
-        finish("status --json", status_off)
-    # a folder chosen in the dialog (file URL) and a clear error when it is not a bundle
-    do("installBundle", "file:///run/media/u/USB/vpn-bundle")
-    until(lambda: running("singbox-install"), "chosen-folder install started")
-    cmd = running("singbox-install")[0]["cmd"]
-    assert "--offline" in cmd and "--bundle=file:///run/media/u/USB/vpn-bundle" in cmd, cmd
-    finish("singbox-install", json.dumps({"ok": False, "error": {"code": "sb_bundle_missing",
-                                                                 "message": "Офлайн-комплект VPN не найден.",
-                                                                 "log": "/home/u/.local/state/serpantinum/vpn/install.log"}}), 1)
-    until(lambda: not j("svc")["sb"]["installing"], "failed bundle install finished")
-    sbs = j("svc")["sb"]
-    assert sbs["error"] == "Офлайн-комплект VPN не найден." and not sbs["installing"], sbs
-    assert sbs["logPath"].endswith("install.log"), sbs
-    err_text = win.findChild(QObject, "mainStudio").findChild(QObject, "vpnSheet_singbox").findChild(QObject, "vpnInstallError")
-    until(lambda: "install.log" in err_text.property("text"), "the error names the log file")
-    # watchdog: a helper that goes silent is stopped, with a reason, and the animation ends
-    do("installBundle", "")
-    until(lambda: running("singbox-install"), "install that will hang")
-    assert j("svc")["sb"]["canCancel"], "a bundle install can be cancelled"
+    setup_button.clicked.emit()
+    until(lambda: running(local_setup), "retry after cancellation")
     do("stall")
-    until(lambda: not j("svc")["sb"]["installing"], "watchdog stopped the silent helper", 15)
-    sbs = j("svc")["sb"]
-    assert sbs["error"] == S["singbox.stalled"] and sbs["errorCode"] == "stalled" and sbs["stage"] == "", sbs
-    for needle in ("singbox-info", "status --json"):
+    until(lambda: j("svc")["sb"]["error"] == S["setup.profile_timeout"], "watchdog stops silent helper", 12)
+    setup_button.clicked.emit()
+    until(lambda: running(local_setup), "retry after timeout")
+    finish(local_setup, {"ok": True, "path": "/usr/bin/sing-box", "setupComplete": True,
+                         "active": "aaaaaaaa", "items": [SUB_A]})
+    answer_status(ready_status, lambda: setup_button.property("visible") and
+                  setup_button.property("text") == S["setup.connect"], "import offers explicit connection")
+    assert not running("connect --json")
+    assert not subs_sheet.property("localFile").toString()
+    for needle in ("subs --json", "list --json"):
         if running(needle):
-            finish(needle, status_off if needle == "status --json" else {"ok": True, "works": False, "candidates": []})
-    do("installOnline")
-    until(lambda: running("singbox-install"), "online install started")
-    cmd = running("singbox-install")[0]["cmd"]
-    assert "--online" in cmd and j("svc")["sb"]["stage"] == "release", cmd
-    finish("singbox-install", json.dumps({"ok": False, "error": {"code": "sb_offline", "message": "offline"}}), 1)
-    until(lambda: not j("svc")["sb"]["installing"], "online install finished")
-    for needle in ("singbox-info", "status --json", "list --json"):
-        if running(needle):
-            finish(needle, status_off if needle == "status --json" else {"ok": True, "works": True, "candidates": [], "servers": SERVERS})
-    passed.append("offline bundle: Install VPN Components -> --offline, bundle stage, VPN Engine Ready; chosen folder; clear error; Download stays online-only")
+            finish(needle, {"ok": True, "items": [SUB_A], "servers": SERVERS})
+    assert do("back") == "true"
+    until(lambda: sheet_state("subs") == (False, False), "closed sheet releases input")
+    passed.append("local profile: validate, retry, cancel, time out, then offer explicit connection")
 
-    answer_status(dict(status_off, mode="tun"), lambda: not child("vpnDownload").property("visible"), "TUN mode")
+    # The engine status distinguishes a usable Proxy from a missing TUN service.
+    do("openSheet", "singbox")
+    answer_status(dict(ready_status, mode="tun"), lambda: repair.property("visible"), "TUN mode")
+    if running("singbox-info"):
+        finish("singbox-info", {"ok": True, "works": True, "tunUsable": False,
+                                "tunError": "Missing nftables", "candidates": []})
+    until(lambda: repair.property("visible"), "TUN recovery offered")
     do("singboxInfo")
-    until(lambda: running("singbox-info"), "TUN engine info")
-    finish("singbox-info", {"ok": True, "works": True, "tunUsable": False, "candidates": [],
-                            "bundle": {"found": True, "dir": "/b", "version": "1.14.4"}})
-    until(lambda: child("vpnInstallBundle").property("visible"), "TUN still needs a system engine when Proxy is ready")
-    do("installBundle", "file:///run/media/u/USB/vpn-bundle")
-    until(lambda: running("singbox-install"), "local TUN install started")
-    cmd = running("singbox-install")[0]["cmd"]
-    assert {"--offline", "--system", "--bundle=file:///run/media/u/USB/vpn-bundle"}.issubset(cmd), cmd
-    j("stream", "singbox-install", json.dumps({"event": "stage", "stage": "bundle_install"}))
-    assert not j("svc")["sb"]["canCancel"]
-    finish("singbox-install", {"ok": True, "path": "/usr/local/bin/sing-box", "version": "1.14.4", "source": "bundle"})
-    until(lambda: running("singbox-info"), "readiness after local TUN installation")
-    finish("singbox-info", {"ok": True, "works": True, "tunUsable": True, "tunPath": "/usr/local/bin/sing-box",
-                            "tunVersion": "1.14.4", "candidates": [], "bundle": {"found": True, "dir": "/b", "version": "1.14.4"}})
-    until(lambda: child("vpnEngineState").property("text") == S["sb.ready"], "system TUN engine ready")
-    answer_status(status_off, lambda: child("vpnDownload").property("visible"), "return to Proxy")
-    passed.append("TUN: local install targets the root-owned system engine and readiness is independent from Proxy")
+    finish("singbox-info", {"ok": True, "works": True, "tunUsable": True, "tunPath": "/usr/bin/sing-box",
+                           "tunVersion": "1.14.4", "candidates": []})
+    until(lambda: engine_state.property("text") == S["sb.ready"], "system TUN engine ready")
+    assert not repair.property("visible")
+    assert not running(" singbox-install ")
+    passed.append("missing engine offers installer recovery without package processes; Proxy and TUN readiness are independent")
 
     # Escape closes the open sheet first
     assert j("ui")["sheet"] == "singbox"

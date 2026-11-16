@@ -1,0 +1,17 @@
+{
+  "mode": "custom",
+  "pool": [
+    "wipe",
+    "swipe"
+  ],
+  "effects": {
+    "wipe": {
+      "duration": 420,
+      "orientation": "horizontal"
+    },
+    "swipe": {
+      "duration": 480,
+      "direction": "left"
+    }
+  }
+}

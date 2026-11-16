@@ -1,0 +1,19 @@
+{
+  "appearance": {
+    "theme": "neuro",
+    "layout": "classic",
+    "position": "center",
+    "width": 38,
+    "height": 90,
+    "zoom": 1,
+    "opacity": 1,
+    "radius": 2,
+    "fit": "fit",
+    "background": "accent"
+  },
+  "loop": true,
+  "autoplay": true,
+  "pauseWhenHidden": true,
+  "speed": 1,
+  "animationFps": 0
+}

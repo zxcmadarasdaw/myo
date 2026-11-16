@@ -462,18 +462,8 @@ deploy_package() {
     fi
 
     if [ "$do_full_deploy" = true ]; then
-        rm -rf "$TARGET_BASE"
+        # The offline VPN bundle and per-user engine live beside the program.
         mkdir -p "$TARGET_BASE/bin" "$TARGET_BASE/src" "$BIN_DIR"
-
-        if [ -d "$REPO_ROOT/bin" ] && [ "$(ls -A "$REPO_ROOT/bin" 2>/dev/null)" ]; then
-            cp -r "$REPO_ROOT/bin/." "$TARGET_BASE/bin/"
-            chmod +x "$TARGET_BASE/bin/"* 2>/dev/null || true
-        fi
-
-        if [ -d "$REPO_ROOT/src" ] && [ "$(ls -A "$REPO_ROOT/src" 2>/dev/null)" ]; then
-            cp -r "$REPO_ROOT/src/." "$TARGET_BASE/src/"
-            find "$TARGET_BASE/src/scripts" -type f -name "*.sh" -exec chmod +x {} + 2>/dev/null || true
-        fi
 
         if [ "$is_update" != "true" ]; then
             for cfg in "${EXTRA_CONFIGS[@]}"; do
@@ -630,8 +620,8 @@ deploy_package() {
         fi
     fi
 
-    # Apply the window-mode defaults on a local update too, even when the
-    # source tree has the same Git revision as the installed copy.
+    # Apply window defaults and the canvas bridge on a local update too, even
+    # when the source tree has the same Git revision as the installed copy.
     if [ "$is_update" = true ]; then
         local previous="$OLD_COMMIT"
         [ "$do_full_deploy" = false ] || previous=""
@@ -639,6 +629,10 @@ deploy_package() {
             compositors/hyprland/config/settings.lua "${COMPOSITORS[@]}"
         update_untouched_compositor_file "$REPO_ROOT" "$previous" \
             compositors/hyprland/config/keybinds.lua "${COMPOSITORS[@]}"
+        update_untouched_compositor_file "$REPO_ROOT" "$previous" \
+            compositors/hyprland/config/canvas.lua "${COMPOSITORS[@]}"
+        update_untouched_compositor_file "$REPO_ROOT" "$previous" \
+            compositors/hyprland/hyprland.lua "${COMPOSITORS[@]}"
     fi
 
     # Program files are mirrored from the source tree on every run. The

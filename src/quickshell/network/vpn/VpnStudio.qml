@@ -15,6 +15,7 @@ Item {
 
     property bool active: false               // the tab is shown and the window is open
     property string sheet: ""                 // "" | servers | subs | conn | singbox
+    property bool inspectTun: false
     readonly property var st: VpnAppearance.style
     readonly property string phase: VpnService.phase
     readonly property string vpnState: VpnService.vpnState
@@ -23,7 +24,8 @@ Item {
     function s(v) { return Scaler.s(v); }
     function tr(key, en) { return I18n.t("vpn." + key, en); }
 
-    function openSheet(name) {
+    function openSheet(name, inspectTun) {
+        studio.inspectTun = inspectTun === true;
         sheet = name;
         if (name === "servers") VpnService.ping();
         if (name === "subs") VpnService.loadSubs();
@@ -39,7 +41,7 @@ Item {
     }
 
     function primary() {
-        if (missing) { openSheet("subs"); subsSheet.focusAdd(); return; }
+        if (missing) { openSheet("singbox"); return; }
         if (!VpnService.hasSource || VpnService.servers.length === 0) { openSheet("subs"); return; }
         if (phase === "connected") VpnService.disconnect();
         else if (phase === "disconnected" || phase === "error") VpnService.connect();
@@ -95,7 +97,7 @@ Item {
         if (firstWarning) return { text: firstWarning.message, level: "warn" };
         if (phase === "connected" && VpnService.mode === "tun") return { text: tr("tun_on", "All traffic of this computer goes through the VPN"), level: "info" };
         if (phase === "connected") return { text: tr("proxy_at", "HTTP/SOCKS5 proxy") + "  " + VpnService.proxy, level: "info" };
-        if (missing) return { text: tr("setup.hint", "Open setup and enter your VPN link."), level: "info" };
+        if (missing) return { text: tr("sb.repair", "Repair VPN components"), level: "info" };
         if (vpnState === "none") return { text: tr("hint.add", "Add a VPN subscription to start."), level: "info" };
         if (VpnService.warning !== "") return { text: VpnService.warning, level: "warn" };
         return { text: "", level: "info" };
@@ -172,7 +174,7 @@ Item {
     NumberAnimation on intro { id: introAnim; running: false; from: 0; to: 1; duration: 900; easing.type: Easing.OutCubic }
     onActiveChanged: {
         if (active) {
-            if (VpnService.sbSetup && VpnService.sbInstalling) sheet = "subs";
+            if (VpnService.sbInstalling) sheet = "subs";
             if (st.animate !== false) introAnim.restart();
             else intro = 1;
         } else {
@@ -639,15 +641,17 @@ Item {
         onCloseRequested: studio.sheet = ""
         onConnectedRequested: studio.sheet = ""
         onServersRequested: studio.openSheet("servers")
+        onEngineRequested: studio.openSheet("singbox")
     }
     VpnConnectionSheet {
         objectName: "vpnSheet_conn"
         open: studio.sheet === "conn"
         forceOffShown: studio.showForceOff
         onCloseRequested: studio.sheet = ""
-        onSingboxRequested: studio.openSheet("singbox")
+        onSingboxRequested: (tun) => studio.openSheet("singbox", tun)
     }
     VpnSingboxSheet {
+        inspectTun: studio.inspectTun
         objectName: "vpnSheet_singbox"
         open: studio.sheet === "singbox"
         onCloseRequested: studio.sheet = ""

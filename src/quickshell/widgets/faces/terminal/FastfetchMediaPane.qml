@@ -8,7 +8,8 @@ Item {
     required property bool active
     property bool obscured: false
     property bool preview: false
-    readonly property bool ready: mediaWidth >= 40 && mediaHeight >= 40 && decoder.item?.ready === true
+    readonly property bool ready: mediaWidth >= 40 && mediaHeight >= 40
+                                  && (decoder.item?.ready === true || poster.status === Image.Ready)
     readonly property bool failed: decoder.item?.failed === true
     readonly property bool vertical: FastfetchMedia.layout === "vertical" || width < 300
     readonly property real gap: FastfetchMedia.style.gap
@@ -21,6 +22,8 @@ Item {
     readonly property real leadingSpace: ready && !vertical ? mediaWidth + gap : 0
     readonly property real topSpace: ready && vertical ? mediaHeight + gap : 0
     readonly property bool animated: decoder.item?.animated === true
+    // QSG's software scene graph cannot draw Qt Multimedia's video node.
+    readonly property bool videoAvailable: FastfetchMedia.allowMotion && GraphicsInfo.api !== GraphicsInfo.Software
     readonly property bool playing: decoder.item?.playing === true && !hiddenPause
     readonly property bool hiddenPause: (!visible || obscured) && FastfetchMedia.pauseWhenHidden
     property bool requestedPlay: FastfetchMedia.autoplay
@@ -82,11 +85,30 @@ Item {
         clip: true
         opacity: FastfetchMedia.opacityValue
 
+        Rectangle {
+            anchors.fill: parent
+            visible: root.ready && FastfetchMedia.background !== "transparent"
+            color: FastfetchMedia.background === "matte" ? FastfetchMedia.style.bg : Qt.darker(FastfetchMedia.style.accent, 5)
+            radius: FastfetchMedia.radius
+        }
+
+        Image {
+            id: poster
+            anchors.fill: parent
+            source: root.active && FastfetchMedia.kind === "video" && FastfetchMedia.posterPath
+                    ? Caching.fileUrl(FastfetchMedia.posterPath) : ""
+            asynchronous: true
+            sourceSize: Qt.size(640, 640)
+            fillMode: FastfetchMedia.fit === "crop" ? Image.PreserveAspectCrop : Image.PreserveAspectFit
+            scale: FastfetchMedia.zoom
+            visible: status === Image.Ready && decoder.item?.ready !== true
+        }
+
         Loader {
             id: decoder
             anchors.fill: parent
             active: root.active && root.mediaWidth >= 40 && root.mediaHeight >= 40 && FastfetchMedia.kind !== ""
-                    && (FastfetchMedia.kind !== "video" || FastfetchMedia.allowMotion)
+                    && (FastfetchMedia.kind !== "video" || root.videoAvailable)
             sourceComponent: FastfetchMedia.kind === "video" ? video
                              : FastfetchMedia.kind === "animated" ? animation : still
             visible: root.capImageFrames || !rounded.active
@@ -114,7 +136,10 @@ Item {
         Loader {
             id: rounded
             anchors.fill: parent
-            active: root.ready && root.visible && FastfetchMedia.radius > 0 && GpuCompatibility.shadersAllowed
+            // Present decoded video directly. Texture masking stays available for
+            // images, without making the video output depend on an offscreen pass.
+            active: FastfetchMedia.kind !== "video" && decoder.item?.ready === true
+                    && root.visible && FastfetchMedia.radius > 0 && GpuCompatibility.shadersAllowed
             sourceComponent: MultiEffect {
                 source: root.capImageFrames ? sampledAnimation : decoder
                 autoPaddingEnabled: false
@@ -161,7 +186,7 @@ Item {
             asynchronous: true
             cache: false
             sourceSize: Qt.size(960, 960)
-            fillMode: Image.PreserveAspectFit
+            fillMode: FastfetchMedia.fit === "crop" ? Image.PreserveAspectCrop : Image.PreserveAspectFit
             scale: FastfetchMedia.zoom
             readonly property bool ready: status === Image.Ready
             readonly property bool failed: status === Image.Error
@@ -178,7 +203,7 @@ Item {
             sourceSize: Qt.size(960, 960)
             cache: false
             scale: FastfetchMedia.zoom
-            fillMode: Image.PreserveAspectFit
+            fillMode: FastfetchMedia.fit === "crop" ? Image.PreserveAspectCrop : Image.PreserveAspectFit
             playing: root.requestedPlay && FastfetchMedia.allowMotion
             paused: root.hiddenPause
             speed: FastfetchMedia.speed
@@ -216,7 +241,9 @@ Item {
     Component {
         id: video
         Item {
-            readonly property bool ready: player.hasVideo && !failed
+            id: movie
+            property bool receivedFrame: false
+            readonly property bool ready: receivedFrame && !failed
             readonly property bool failed: player.error !== MediaPlayer.NoError || (loaded && !player.hasVideo)
             readonly property bool loaded: player.mediaStatus === MediaPlayer.LoadedMedia
                                         || player.mediaStatus === MediaPlayer.BufferedMedia
@@ -225,12 +252,20 @@ Item {
             readonly property bool playing: player.playing
 
             function resume() { if (root.canPlay) player.play(); }
+            function syncPlayback() {
+                // Obtain a first frame even with autoplay off, then pause on it.
+                if (!failed && (root.canPlay || (!receivedFrame && loaded && !root.hiddenPause)))
+                    player.play();
+                else if (player.playing) player.pause();
+            }
 
             VideoOutput {
                 id: output
                 anchors.fill: parent
                 scale: FastfetchMedia.zoom
-                fillMode: VideoOutput.PreserveAspectFit
+                visible: movie.ready
+                endOfStreamPolicy: VideoOutput.KeepLastFrame
+                fillMode: FastfetchMedia.fit === "crop" ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
             }
             MediaPlayer {
                 id: player
@@ -239,20 +274,23 @@ Item {
                 audioOutput: FastfetchMedia.audioOwner === root ? audio : null
                 loops: FastfetchMedia.loop ? MediaPlayer.Infinite : 1
                 playbackRate: FastfetchMedia.speed
-                onMediaStatusChanged: {
-                    if (mediaStatus === MediaPlayer.LoadedMedia) {
-                        if (root.canPlay) play();
-                        else pause();
-                    }
-                }
+                onSourceChanged: movie.receivedFrame = false
+                onMediaStatusChanged: if (mediaStatus === MediaPlayer.LoadedMedia) Qt.callLater(movie.syncPlayback)
             }
             AudioOutput { id: audio }
             Connections {
-                target: root
-                function onCanPlayChanged() {
-                    if (root.canPlay) player.play();
-                    else if (player.playing) player.pause();
+                target: output.videoSink
+                enabled: !movie.receivedFrame
+                function onVideoFrameChanged() {
+                    if (output.videoSink.videoSize.width <= 0) return;
+                    movie.receivedFrame = true;
+                    if (!root.canPlay) player.pause();
                 }
+            }
+            Connections {
+                target: root
+                function onCanPlayChanged() { movie.syncPlayback(); }
+                function onHiddenPauseChanged() { movie.syncPlayback(); }
             }
         }
     }

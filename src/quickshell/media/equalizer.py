@@ -26,6 +26,13 @@ DEFAULT = dict(zip((f"b{i}" for i in range(1,11)), [0]*10),
                preset="Flat", pending=False, balance=0, mono=False, swap=False,
                dynamics="off", dyneq=False, effects=True)
 
+REMIXES = {
+    "Night Drive": {"settings": dict(DEFAULT, b1=1, b2=3, b3=2, b8=1, dynamics="night"), "rate": 1.0},
+    "Slowed": {"settings": dict(DEFAULT, b2=2, b8=-1, b9=-2, b10=-2), "rate": 0.75},
+    "Nightcore": {"settings": dict(DEFAULT, b7=1, b8=2, b9=2, b10=1), "rate": 1.25},
+    "Deep Bass": {"settings": dict(DEFAULT, b1=3, b2=4, b3=2), "rate": None},
+}
+
 
 def number(value, low, high):
     value = float(value)
@@ -65,6 +72,7 @@ class Equalizer:
         self.saved = self.state_dir / "music/studio.json"
         self.cache = self.run_dir / "eq_state.json"
         self.presets_file = self.state_dir / "music/studio_presets.json"
+        self.remixes_file = self.state_dir / "music/studio_remixes.json"
         self.runner = runner
 
     def read(self):
@@ -92,6 +100,34 @@ class Equalizer:
             return {}
         data = json.loads(self.presets_file.read_text(encoding="utf-8"))
         return {str(k)[:80]: validated(v) for k,v in data.items()}
+
+    def custom_remixes(self):
+        if not self.remixes_file.exists():
+            return {}
+        data = json.loads(self.remixes_file.read_text(encoding="utf-8"))
+        return {name: {"settings": validated(profile["settings"]),
+                       "rate": number(profile["rate"], 0.5, 2) if profile.get("rate") is not None else None}
+                for name, profile in data.items()}
+
+    def edit_remix(self, command, args, state):
+        custom = self.custom_remixes()
+        if command == "delete_remix":
+            del custom[args[0]]
+        else:
+            name = args[0 if command == "save_remix" else 1].strip()
+            if (not 0 < len(name) <= 60 or not name.isprintable() or name in REMIXES
+                    or name in ("__proto__", "constructor", "prototype") or name in custom
+                    or (len(custom) >= 64 and command != "rename_remix")):
+                raise ValueError("Choose an unused remix name of up to 60 characters")
+            if command == "save_remix":
+                rate = number(args[1], 0.5, 2) if len(args) > 1 else None
+                custom[name] = {"settings": state, "rate": rate}
+            elif command == "rename_remix":
+                custom[name] = custom.pop(args[0])
+            else:
+                custom[name] = {**REMIXES, **custom}[args[0]]
+        atomic(self.remixes_file, custom)
+        return state
 
     def status(self):
         if not shutil.which("serpantinum-audio"):
@@ -121,6 +157,8 @@ class Equalizer:
         custom = self.custom_presets()
         if command in ("get", "status"):
             return state
+        if command in ("save_remix", "rename_remix", "duplicate_remix", "delete_remix"):
+            return self.edit_remix(command, args, state)
         if command == "save_preset":
             name = args[0].strip()
             if not name or len(name)>60 or name in PRESETS or len(custom)>=64 and name not in custom:
@@ -129,16 +167,24 @@ class Equalizer:
             atomic(self.presets_file, custom)
             return state
         new = copy.deepcopy(state)
-        if command == "set_band":
+        if command == "load_remix":
+            profile = {**REMIXES, **self.custom_remixes()}[args[0]]
+            new = dict(profile["settings"], preset="Custom", effects=True)
+            if new["dynamics"] == "off" and any(new[f"b{i}"] > 0 for i in range(1, 11)):
+                new["dynamics"] = "balanced"
+        elif command == "set_band":
             band = int(args[0])
             if not 1 <= band <= 10:
                 raise ValueError("Invalid EQ band")
             new[f"b{band}"] = number(args[1], -12, 12)
             new["preset"] = "Custom"
-        elif command == "set_tone":
+        elif command in ("set_tone", "set_remix_tone"):
             bands = {"bass": (1,2,3), "mid": (4,5,6,7), "treble": (8,9,10)}[args[0]]
+            gain = number(args[1], 0, 4) if command == "set_remix_tone" else number(args[1], -12, 12)
             for band in bands:
-                new[f"b{band}"] = number(args[1], -12, 12)
+                new[f"b{band}"] = gain
+            if command == "set_remix_tone" and gain > 0 and new["dynamics"] == "off":
+                new["dynamics"] = "balanced"
             new["preset"] = "Custom"
         elif command == "preset":
             if args[0] in PRESETS:
@@ -181,9 +227,12 @@ def main():
         try:
             command = sys.argv[1] if len(sys.argv)>1 else "status"
             state = eq.execute(command, sys.argv[2:])
-            available, reason = eq.status() if command in ("status", "get", "save_preset") else (True, "")
+            available, reason = eq.status() if command in ("status", "get", "save_preset") or command.endswith("_remix") else (True, "")
+            custom_remixes = eq.custom_remixes()
+            remixes = [{"name": name, "rate": profile["rate"], "editable": name in custom_remixes}
+                       for name, profile in {**REMIXES, **custom_remixes}.items()]
             print(json.dumps(dict(ok=True, state=state, available=available, error=reason,
-                                  presets=list(PRESETS)+list(eq.custom_presets())), ensure_ascii=False))
+                                  presets=list(PRESETS)+list(eq.custom_presets()), remixes=remixes), ensure_ascii=False))
         except (OSError, ValueError, KeyError, IndexError, subprocess.SubprocessError) as exc:
             print(json.dumps(dict(ok=False, available=False, error=f"Audio Studio: {exc}"), ensure_ascii=False))
             return 1

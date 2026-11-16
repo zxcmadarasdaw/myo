@@ -9,6 +9,7 @@ Item {
     property var eqState: ({ b1:0, b2:0, b3:0, b4:0, b5:0, b6:0, b7:0, b8:0, b9:0, b10:0,
         preset:"Flat", pending:false, balance:0, mono:false, swap:false, dyneq:false, dynamics:"off", effects:true })
     property var presets: []
+    property var remixes: []
     property bool available: false
     property string error: "Проверка аудиодвижка…"
     property string notice: ""
@@ -16,6 +17,7 @@ Item {
     property var queue: []
     property var current: []
     signal applied(string command)
+    signal remixLoaded(string name)
     readonly property bool busy: worker.running || queue.length > 0
     function register() { consumers++; refresh(); }
     function unregister() { consumers = Math.max(0, consumers - 1); }
@@ -29,7 +31,7 @@ Item {
         // Coalesce a dragged control, while preserving order between different controls.
         let last = pending.length ? pending[pending.length - 1] : null;
         if (last && args[0].startsWith("set_") && last[0] === args[0]
-            && (args[0] !== "set_band" && args[0] !== "set_tone" || last[1] === args[1])) pending.pop();
+            && (!["set_band", "set_tone", "set_remix_tone"].includes(args[0]) || last[1] === args[1])) pending.pop();
         pending.push(args);
         queue = pending;
         notice = "";
@@ -45,7 +47,9 @@ Item {
             if (response.ok && code === 0) {
                 if (response.state) root.eqState = response.state;
                 if (response.presets) root.presets = response.presets;
+                if (response.remixes) root.remixes = response.remixes;
                 if (root.current[0] === "save_preset") root.notice = "Пресет сохранён";
+                if (root.current[0] === "load_remix") root.remixLoaded(root.current[1]);
                 root.applied(root.current[0]);
             } else { root.queue = []; }
         } catch (e) {

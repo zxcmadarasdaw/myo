@@ -73,16 +73,7 @@ Item {
         return list;
     }
 
-    property var manualPlayer: null
-
-    property var targetPlayer: {
-        if (manualPlayer) {
-            for (let i = 0; i < playerList.length; i++) {
-                if (playerList[i] === manualPlayer) return manualPlayer;
-            }
-        }
-        return MprisController.activePlayer;
-    }
+    property var targetPlayer: MprisController.activePlayer
 
     property bool hasTargetPlayer: targetPlayer !== null
 
@@ -116,7 +107,7 @@ Item {
 
     function selectPlayerByIndex(idx) {
         if (idx >= 0 && idx < playerList.length) {
-            manualPlayer = playerList[idx];
+            MprisController.selectedBus = playerList[idx].dbusName || "";
             triggerLocalArtFetch();
         }
     }

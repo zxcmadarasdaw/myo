@@ -741,11 +741,11 @@ class MissingSingbox(unittest.TestCase):
         with self.assertRaises(vpn.VpnError) as ctx:
             vpn.set_source(LINK_LIST)
         self.assertEqual(ctx.exception.code, "no_singbox")
-        self.assertIn("dnf install sing-box", ctx.exception.as_dict()["message"])
+        self.assertIn("bash install/install.sh --vpn-only", ctx.exception.as_dict()["message"])
         self.assertFalse(os.path.exists(os.path.join(self.env.state, "config.json")))
         st = vpn.status()
         self.assertEqual(st["state"], "missing")
-        self.assertIn("dnf install sing-box", st["error"])
+        self.assertIn("bash install/install.sh --vpn-only", st["error"])
         with self.assertRaises(vpn.VpnError) as ctx:
             vpn.connect()
         self.assertEqual(ctx.exception.code, "no_config")
@@ -755,7 +755,7 @@ class MissingSingbox(unittest.TestCase):
 
     def test_russian_messages(self):
         os.environ["SERP_VPN_LANG"] = "ru_RU.UTF-8"
-        self.assertIn("не установлен", vpn.msg("no_singbox"))
+        self.assertIn("Не найден sing-box", vpn.msg("no_singbox"))
         self.assertIn("Подписка пустая", vpn.msg("empty"))
 
 

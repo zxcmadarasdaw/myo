@@ -21,10 +21,10 @@ Item {
     readonly property bool hovered: hover.hovered
     readonly property real shadow: t.frame === "window" ? Scaler.s(3) : 0
     readonly property real headerHeight: showHeader ? kit.headerHeight : 0
-    readonly property real contentX: margin
+    readonly property real contentX: margin + (t.frame === "rail" ? Scaler.s(8) : 0)
     readonly property real contentY: t.frame === "window" ? (showHeader ? headerHeight + margin * 0.8 : margin)
                                      : (showHeader ? margin + headerHeight + Scaler.s(4) : margin)
-    readonly property real contentWidth: Math.max(0, width - shadow - margin * 2)
+    readonly property real contentWidth: Math.max(0, width - shadow - contentX - margin)
     readonly property real contentHeight: Math.max(0, height - shadow - contentY - margin)
 
     HoverHandler { id: hover; enabled: card.kit.transitions }
@@ -186,10 +186,38 @@ Item {
         color: card.kit.accent
     }
 
+    Rectangle {
+        visible: card.t.frame === "velvet"
+        x: card.margin
+        y: surface.height - card.margin * 0.5
+        width: Math.min(Scaler.s(40), card.contentWidth)
+        height: 1
+        color: Qt.alpha(card.kit.accent2, 0.64)
+    }
+
+    Rectangle {
+        visible: card.t.frame === "rail"
+        x: Scaler.s(4)
+        y: card.margin
+        width: Scaler.s(2)
+        height: Math.max(0, surface.height - card.margin * 2)
+        color: Qt.alpha(card.kit.accent, 0.68)
+    }
+
+    Rectangle {
+        visible: card.t.frame === "cyber"
+        x: surface.width - width
+        y: 0
+        width: Math.min(surface.width, Scaler.s(card.hovered ? 54 : 22))
+        height: Scaler.s(2)
+        color: card.kit.accent3
+        Behavior on width { NumberAnimation { duration: card.kit.duration(120); easing.type: Easing.OutExpo } }
+    }
+
     // Header for every look except the Retro title bar.
     Item {
         visible: card.showHeader && card.t.frame !== "window"
-        x: card.margin
+        x: card.contentX
         y: card.margin
         width: card.contentWidth
         height: card.headerHeight

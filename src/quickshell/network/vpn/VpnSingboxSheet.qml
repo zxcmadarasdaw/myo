@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Dialogs
 import "../../"
 
 VpnSheet {
@@ -10,19 +9,13 @@ VpnSheet {
 
     function tr(key, en) { return I18n.t("vpn." + key, en); }
     readonly property var info: VpnService.sbInfo
-    readonly property bool installing: VpnService.sbInstalling
-    readonly property bool tun: VpnService.mode === "tun"
+    property bool inspectTun: false
+    readonly property bool tun: inspectTun || VpnService.mode === "tun"
+    readonly property bool ready: tun ? info.tunUsable === true : info.works === true
     readonly property string enginePath: (tun ? info.tunPath : info.path) || ""
     readonly property string engineVersion: (tun ? info.tunVersion : info.version) || ""
 
     onOpenChanged: if (open) VpnService.singboxInfo()
-
-    // A vpn-bundle folder from a Serpantinum release (USB stick, Downloads…): installs offline.
-    FolderDialog {
-        id: bundlePicker
-        title: sh.tr("sb.choose_bundle", "Choose the vpn-bundle folder")
-        onAccepted: VpnService.installSingbox("bundle", selectedFolder.toString())
-    }
 
     Flickable {
         anchors.fill: parent
@@ -40,9 +33,9 @@ VpnSheet {
                 Layout.fillWidth: true
                 Layout.preferredHeight: stateCol.implicitHeight + Scaler.s(18)
                 radius: Scaler.s(10)
-                color: VpnService.sbReady ? Qt.alpha(VpnAppearance.style.active || "#7fd4ff", 0.08) : Qt.alpha(ThemeBackend.red, 0.10)
+                color: sh.ready ? Qt.alpha(VpnAppearance.style.active || "#7fd4ff", 0.08) : Qt.alpha(ThemeBackend.red, 0.10)
                 border.width: 1
-                border.color: VpnService.sbReady ? Qt.alpha(VpnAppearance.style.active || "#7fd4ff", 0.3) : Qt.alpha(ThemeBackend.red, 0.35)
+                border.color: sh.ready ? Qt.alpha(VpnAppearance.style.active || "#7fd4ff", 0.3) : Qt.alpha(ThemeBackend.red, 0.35)
                 ColumnLayout {
                     id: stateCol
                     anchors.left: parent.left
@@ -53,7 +46,7 @@ VpnSheet {
                     Text {
                         Layout.fillWidth: true
                         objectName: "vpnEngineState"
-                        text: VpnService.sbReady ? sh.tr("sb.ready", "VPN Engine Ready")
+                        text: sh.ready ? sh.tr("sb.ready", "VPN Engine Ready")
                             : (!sh.tun && sh.enginePath ? sh.tr("sb.broken", "The chosen sing-box does not run: {error}").replace("{error}", sh.info.error || "?")
                                             : sh.tr("sb.not_installed", "VPN components are not installed"))
                         wrapMode: Text.Wrap
@@ -64,7 +57,7 @@ VpnSheet {
                     }
                     Text {
                         Layout.fillWidth: true
-                        visible: VpnService.sbReady
+                        visible: sh.ready
                         text: sh.tr("sb.found", "In use: sing-box {version}").replace("{version}", sh.engineVersion || "?")
                         font.family: ThemeBackend.fontFamily
                         font.pixelSize: Scaler.s(11)
@@ -81,11 +74,8 @@ VpnSheet {
                     }
                     Text {
                         Layout.fillWidth: true
-                        visible: sh.tun && !VpnService.sbReady
-                        text: sh.info.tunError || ((sh.info.tunPackages || []).length
-                            ? sh.tr("sb.tun_missing", "Missing packages: {packages}. Run the offline installer with --system.")
-                                .replace("{packages}", sh.info.tunPackages.join(", "))
-                            : sh.tr("sb.tun_system", "TUN requires a system sing-box and administrator authorization to install it."))
+                        visible: sh.tun && !sh.ready
+                        text: sh.info.tunError || sh.tr("sb.tun_system", "TUN requires system sing-box and the Serpantinum VPN service.")
                         wrapMode: Text.Wrap
                         font.family: ThemeBackend.fontFamily
                         font.pixelSize: Scaler.s(10)
@@ -94,29 +84,33 @@ VpnSheet {
                 }
             }
 
-            VpnSetupProgress { Layout.fillWidth: true; standalone: true; showAnimation: sh.open }
-
-            // offline bundle chosen by hand (no internet needed)
             RowLayout {
                 Layout.fillWidth: true
+                visible: !sh.ready
                 spacing: Scaler.s(8)
                 Text {
                     Layout.fillWidth: true
-                    text: VpnService.sbErrorCode.indexOf("sb_bundle") === 0 && !sh.installing
-                        ? sh.tr("sb.bundle_pick_hint", "Choose the vpn-bundle folder of this Serpantinum release (for example on a USB stick).")
-                        : sh.tr("sb.bundle_pick", "Have the offline VPN bundle? Install from its folder without internet.")
+                    text: sh.tr("sb.repair_hint", "From the Serpantinum folder, run {command}").replace("{command}", VpnService.installHint)
                     wrapMode: Text.Wrap
                     font.family: ThemeBackend.fontFamily
                     font.pixelSize: Scaler.s(10)
                     color: Qt.alpha(VpnAppearance.style.text || "#ffffff", 0.6)
                 }
                 VpnPill {
-                    objectName: "vpnChooseBundle"
-                    text: sh.tr("sb.choose_bundle_short", "Choose folder…")
+                    objectName: "vpnCopyRepair"
+                    text: sh.tr("sb.copy_command", "Copy command")
                     filled: false
-                    enabled: !sh.installing && !VpnService.busy && !VpnService.connected
-                    onClicked: bundlePicker.open()
+                    onClicked: VpnService.copyText(VpnService.installHint)
                 }
+            }
+            Text {
+                Layout.fillWidth: true
+                visible: !sh.ready && !!sh.info.componentsLog
+                text: sh.tr("setup.log", "Details: {path}").replace("{path}", sh.info.componentsLog || "")
+                wrapMode: Text.WrapAnywhere
+                font.family: ThemeBackend.fontFamily
+                font.pixelSize: Scaler.s(10)
+                color: Qt.alpha(VpnAppearance.style.text || "#ffffff", 0.6)
             }
 
             // already on this computer
@@ -214,14 +208,6 @@ VpnSheet {
                 color: ThemeBackend.red
             }
 
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Qt.alpha(VpnAppearance.style.border || "#ffffff", 0.1) }
-
-            VpnPill {
-                visible: VpnService.setup.systemInstall === true && VpnService.setup.binaryReady === false
-                enabled: !VpnService.sbInstalling && !VpnService.busy && !VpnService.connected
-                text: sh.tr("setup.system_package", "Install sing-box RPM via polkit")
-                onClicked: VpnService.prepareVpn("", "", "", true, false)
-            }
         }
     }
 }

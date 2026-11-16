@@ -47,6 +47,21 @@ Singleton {
 
     readonly property string activePlayerId: activePlayer ? (activePlayer.dbusName || activePlayer.identity || "") : ""
     readonly property bool hasActivePlayer: activePlayer !== null
+    readonly property real minimumRate: activePlayer && finiteRate(activePlayer.minRate) ? Math.max(0.5, activePlayer.minRate) : 1
+    readonly property real maximumRate: activePlayer && finiteRate(activePlayer.maxRate) ? Math.min(2, activePlayer.maxRate) : 1
+    readonly property bool rateSupported: !!activePlayer && activePlayer.canControl && minimumRate < maximumRate && finiteRate(activePlayer.rate)
+    property string rateError: ""
+    property real requestedRate: 1
+    property real dispatchedRate: 1
+
+    function finiteRate(value) { return typeof value === "number" && isFinite(value); }
+
+    function setRate(rate) {
+        if (!rateSupported || !finiteRate(rate) || rate < minimumRate || rate > maximumRate) return false;
+        requestedRate = rate;
+        if (!dispatchRate.running) dispatchRate.start();
+        return true;
+    }
     readonly property bool isPlaying: {
         try {
             return activePlayer ? activePlayer.isPlaying === true : false;
@@ -94,11 +109,35 @@ Singleton {
     property bool fetchPending: false
 
     onActivePlayerChanged: {
+        dispatchRate.stop();
+        verifyRate.stop();
+        rateError = "";
         if (root.activePlayer && root.activePlayer.isPlaying) {
             root.lastPlayingBus = root.activePlayer.dbusName || "";
         }
         root.livePosition = root.activePlayer && root.activePlayer.positionSupported ? root.activePlayer.position : 0;
         root.queueFetch();
+    }
+
+    Timer {
+        id: dispatchRate
+        interval: 110
+        onTriggered: {
+            if (!root.rateSupported || root.requestedRate < root.minimumRate || root.requestedRate > root.maximumRate) return;
+            root.rateError = "";
+            root.dispatchedRate = root.requestedRate;
+            root.activePlayer.rate = root.dispatchedRate;
+            verifyRate.restart();
+        }
+    }
+
+    Timer {
+        id: verifyRate
+        interval: 900
+        onTriggered: {
+            if (root.activePlayer && Math.abs(root.activePlayer.rate - root.dispatchedRate) > 0.015)
+                root.rateError = qsTr("Player did not confirm this speed.");
+        }
     }
 
     Timer {

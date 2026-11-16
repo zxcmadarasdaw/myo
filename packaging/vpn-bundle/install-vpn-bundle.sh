@@ -93,7 +93,9 @@ if [ "$CHECK" = true ]; then
     exit 0
 fi
 
-timeout 120s python3 "$SYSTEM_DIR/serp_vpn.py" singbox-install --offline --ensure --bundle="$BUNDLE"
+if [ "$NEED_SYSTEM" = false ]; then
+    timeout 120s python3 "$SYSTEM_DIR/serp_vpn.py" singbox-install --offline --ensure --bundle="$BUNDLE"
+fi
 if [ "$BUNDLE" != "$(realpath -m "$KEEP")" ]; then
     mkdir -p "$KEEP"
     cp -f "$BUNDLE/proxy.check.json" "$BUNDLE/tun.check.json" "$BUNDLE/README.txt" \
@@ -107,17 +109,8 @@ fi
 install_dependencies
 if [ "$NEED_SYSTEM" = true ]; then
     [ -x "$SYSTEM_HELPER" ] || { echo 'Update Serpantinum to install its system VPN helper.' >&2; exit 1; }
-    if ! python3 - "$SYSTEM_DIR" <<'PY'
-import re, sys
-sys.path.insert(0, sys.argv[1])
-from serp_vpn import system_singbox
-from serp_vpn_singbox import probe
-version = probe(system_singbox(), timeout=2).get('version', '')
-match = re.match(r'^(\d+)\.(\d+)\.', version)
-sys.exit(0 if match and tuple(map(int, match.groups())) >= (1, 12) else 1)
-PY
-    then
+    if ! timeout 5s python3 "$SYSTEM_DIR/serp_vpn.py" system-engine-check; then
         sudo "$SYSTEM_HELPER" offline-engine < "$archive"
     fi
 fi
-echo 'VPN engine ready. Open Super+N → VPN.'
+echo 'Offline VPN component files installed.'

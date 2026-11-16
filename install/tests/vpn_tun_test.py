@@ -313,7 +313,7 @@ class HelperApply(unittest.TestCase):
 class TunLifecycle(unittest.TestCase):
     def setUp(self):
         self.root = RootEnv()
-        hardware = patch.multiple(vpn, SYSTEM_SINGBOX=(self.root.singbox,), TUN_TOOLS={}, TUN_DEVICE=self.root.etc)
+        hardware = patch.multiple(vpn, SYSTEM_SINGBOX=(self.root.singbox,), TUN_TOOLS={}, tun_device_ready=lambda: True)
         hardware.start()
         self.addCleanup(hardware.stop)
         self.sub = base.SubServer()
@@ -540,7 +540,8 @@ class SystemFiles(unittest.TestCase):
         mod = (ROOT / "install/modules/vpn.sh").read_text(encoding="utf-8")
         inst = (ROOT / "install/install.sh").read_text(encoding="utf-8")
         self.assertIn('source "$MODULES_DIR/vpn.sh"', inst)
-        self.assertIn("\ninstall_vpn_service\n", inst)
+        self.assertIn('if ! install_vpn_components; then', inst)
+        self.assertIn('= "--vpn-only"', inst)
         self.assertIn("-Dm755 -o root -g root", mod)
         self.assertIn("install -dm700 -o root -g root /etc/serpantinum-vpn", mod)
         self.assertNotIn("systemctl enable", mod)            # the service is not enabled at boot

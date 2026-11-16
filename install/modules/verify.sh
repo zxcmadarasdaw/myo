@@ -64,6 +64,9 @@ verify_installation() {
     VERIFY_ERRORS=()
     VERIFY_WARNINGS=()
     INSTALL_INCOMPLETE=false
+    if [ "${VPN_INSTALL_FAILED:-false}" = true ]; then
+        verify_error "VPN components are incomplete. Run bash install/install.sh --vpn-only to retry."
+    fi
 
     echo -e "\n\e[36m[ INFO ]\e[0m Verifying the installed environment..."
 

@@ -7,8 +7,7 @@
 #   /usr/share/polkit-1/actions/org.serpantinum.vpn.policy
 #   /etc/polkit-1/rules.d/49-serpantinum-vpn.rules       (only for the user running the installer)
 #   /etc/serpantinum-vpn/                                (700; config.json is written later by the helper, 600)
-# sing-box itself comes from dnf (panel) or, offline, from vpn-bundle/ via install_vpn_bundle
-# below (see docs/configure/vpn.md).
+# Fedora gets sing-box and its dependencies here, using DNF5 or the offline bundle.
 
 VPN_HELPER_DST="/usr/libexec/serpantinum/serp-vpn-root"
 VPN_PACKAGES_DST="/usr/libexec/serpantinum/serp-vpn-packages"
@@ -18,7 +17,8 @@ VPN_RULES_DST="/etc/polkit-1/rules.d/49-serpantinum-vpn.rules"
 
 vpn_source_bundle() {
     local dir
-    for dir in "$PROJECT_ROOT/vpn-bundle" "$PROJECT_ROOT/dist/vpn-bundle"; do
+    for dir in "$PROJECT_ROOT/vpn-bundle" "$PROJECT_ROOT/dist/vpn-bundle" \
+        "${XDG_DATA_HOME:-$HOME/.local/share}/serpantinum/vpn-bundle"; do
         if [ -f "$dir/manifest.json" ]; then
             printf '%s\n' "$dir"
             return 0
@@ -28,19 +28,10 @@ vpn_source_bundle() {
 }
 
 install_vpn_bundle() {
-    local root="${PROJECT_ROOT:?}"
-    local bundle args=()
-    bundle="$(vpn_source_bundle)" || return 0
-    if [ -x "$VPN_PACKAGES_DST" ] && [ -f "$VPN_UNIT_DST" ]; then
-        args+=(--system)
-    fi
-
-    echo -e "\n\e[36m[ INFO ]\e[0m Installing the VPN engine from the offline bundle (no download)"
-    if ! SERPANTINUM_DIR="$HOME/.local/share/serpantinum/src" \
-        bash "$root/packaging/vpn-bundle/install-vpn-bundle.sh" --bundle="$bundle" "${args[@]}"; then
-        echo -e "\e[33m[ WARN ]\e[0m The offline VPN installation did not finish; see the error above"
-        FAILED_PKGS+=("sing-box (offline bundle)")
-    fi
+    local bundle="$1"
+    shift
+    echo "Installing VPN components from $bundle (offline)"
+    bash "$PROJECT_ROOT/packaging/vpn-bundle/install-vpn-bundle.sh" --bundle="$bundle" "$@"
 }
 
 # Prints the polkit rules for one user; refuses anything that is not a plain user name.
@@ -55,25 +46,18 @@ vpn_render_polkit_rules() {
 install_vpn_service() {
     local root="${PROJECT_ROOT:?}"
     local sys_dir="$root/install/system/vpn"
-    local user="${SUDO_USER:-${USER:-$(id -un)}}"
+    local user
     local rendered
+    user="$(id -un)" || return 1
 
     echo -e "\n\e[36m[ INFO ]\e[0m $(t "installer.vpn.installing")"
     if [ "$(detect_init_system)" != "systemd" ] || [ ! -d /usr/share/polkit-1 ]; then
         echo -e "\e[33m[ WARN ]\e[0m $(t "installer.vpn.skipped")"
-        return 0
+        return 1
     fi
     if ! rendered="$(vpn_render_polkit_rules "$user" "$sys_dir/49-serpantinum-vpn.rules.in")"; then
         echo -e "\e[33m[ WARN ]\e[0m $(t "installer.vpn.bad_user" "user=$user")"
-        return 0
-    fi
-
-    # A minimal Fedora Hyprland session needs a GUI polkit agent for pkexec.
-    if ! vpn_source_bundle >/dev/null && command -v dnf5 >/dev/null && command -v Hyprland >/dev/null \
-        && ! rpm -q --whatprovides PolicyKit-authentication-agent >/dev/null 2>&1; then
-        if ! sudo dnf5 install -y lxqt-policykit; then
-            FAILED_PKGS+=("lxqt-policykit")
-        fi
+        return 1
     fi
 
     if sudo install -Dm755 -o root -g root "$root/src/scripts/system/serp_vpn_root.py" "$VPN_HELPER_DST" \
@@ -86,12 +70,115 @@ install_vpn_service() {
         && printf '%s\n' "$rendered" | sudo tee "$VPN_RULES_DST" >/dev/null \
         && sudo chown root:root "$VPN_RULES_DST" && sudo chmod 644 "$VPN_RULES_DST" \
         && sudo install -dm700 -o root -g root /etc/serpantinum-vpn; then
-        sudo systemctl daemon-reload 2>/dev/null || true
-        # an update while TUN is on: pick up the new helper/unit
-        sudo systemctl try-restart serpantinum-vpn.service 2>/dev/null || true
+        sudo timeout 20s systemctl daemon-reload || return 1
         echo -e "\e[32m[ OK ] $(t "installer.vpn.installed" "user=$user")\e[0m"
     else
         echo -e "\e[31m[ FAILED ] $(t "installer.vpn.failed")\e[0m"
-        FAILED_PKGS+=("serpantinum-vpn")
+        return 1
     fi
 }
+
+vpn_install_online() {
+    local backend="$PROJECT_ROOT/src/scripts/system/serp_vpn.py"
+    local package action=install missing=()
+    for package in iproute nftables python3-pyyaml polkit ca-certificates; do
+        if ! rpm -q --quiet "$package"; then missing+=("$package"); fi
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        echo "Installing Fedora VPN dependencies: ${missing[*]}"
+        vpn_dnf_dependencies "${missing[@]}" || return 1
+    fi
+    install_vpn_service || return 1
+    if timeout 5s python3 "$backend" system-engine-check; then return 0; fi
+    if rpm -q --quiet sing-box; then
+        action=upgrade
+        if [ ! -x /usr/bin/sing-box ] || ! timeout 5s /usr/bin/sing-box version; then
+            action=repair
+        fi
+    fi
+    echo "Installing or repairing signed sing-box RPM from SagerNet ($action)"
+    sudo "$VPN_PACKAGES_DST" --terminal "$action" sing-box || return 1
+    timeout 5s python3 "$backend" system-engine-check
+}
+
+vpn_dnf_dependencies() {
+    local PM_DNF_OPTS=()
+    pm_dnf_repo_opts
+    sudo /usr/bin/timeout --foreground -k 15s 6m /usr/bin/dnf5 --assumeyes --no-plugins "${PM_DNF_OPTS[@]}" \
+        --setopt=install_weak_deps=False --setopt='*.pkg_gpgcheck=True' \
+        --setopt=timeout=25 --setopt=retries=2 install "$@"
+}
+
+vpn_verify_unit_permission() {
+    local pid="$BASHPID" info
+    local fields=()
+    IFS= read -r info < "/proc/$pid/stat" || return 1
+    read -r -a fields <<< "${info##*) }"
+    # Action details require a trusted caller. The subject of the check is
+    # still the installer user's live process, identified by PID, start time and uid.
+    sudo -n /usr/bin/timeout 8s /usr/bin/pkcheck \
+        --process "$pid,${fields[19]},$UID" --action-id org.freedesktop.systemd1.manage-units \
+        --detail unit serpantinum-vpn.service --detail verb restart || {
+        echo "Polkit did not authorize this session to control the VPN unit. Retry from an active local session." >&2
+        return 1
+    }
+}
+
+vpn_prepare_fedora() {
+    local bundle machine
+    machine="$(uname -m)" || return 1
+    case "$machine" in
+        x86_64|aarch64) ;;
+        *) echo "VPN installation on Fedora does not support architecture $machine" >&2; return 1 ;;
+    esac
+    echo "Preparing VPN for Fedora ${VERSION_ID:-unknown} / $machine"
+    if grep -Eq '(^| )(rd\.live\.image|root=live:)' /proc/cmdline || [ -d /run/initramfs/live ]; then
+        echo "Fedora Live detected. With a nonpersistent overlay, repeat setup after reboot."
+    fi
+    if timeout 6s systemctl is-active --quiet serpantinum-vpn.service; then
+        echo "Serpantinum TUN is active. Checking the current installation without restarting it."
+    else
+        if bundle="$(vpn_source_bundle)"; then
+            install_vpn_service || return 1
+            install_vpn_bundle "$bundle" --system --yaml || return 1
+        else
+            vpn_install_online || return 1
+        fi
+        if [ ! -c /dev/net/tun ] && command -v modprobe >/dev/null; then
+            sudo timeout 10s modprobe tun || return 1
+        fi
+    fi
+    sudo -v && vpn_verify_unit_permission
+}
+
+install_vpn_components() (
+    set -o pipefail
+    local ID= VERSION_ID= bundle prep_status=0 check_status=0
+    . /etc/os-release
+    if [ "$ID" != "fedora" ]; then
+        # Keep the pre-existing service and optional local bundle on other distros.
+        install_vpn_service || true
+        if bundle="$(vpn_source_bundle)"; then
+            if [ -x "$VPN_PACKAGES_DST" ] && [ -f "$VPN_UNIT_DST" ]; then
+                install_vpn_bundle "$bundle" --system || return 1
+            else
+                install_vpn_bundle "$bundle" || return 1
+            fi
+        fi
+        return 0
+    fi
+
+    local state="${SERP_VPN_STATE_DIR:-${QS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/serpantinum}/vpn}"
+    umask 077
+    mkdir -p "$state" || return 1
+    echo "VPN setup log: $state/components-install.log"
+    trap 'echo "VPN setup cancelled. Retry with bash install/install.sh --vpn-only." | tee -a "$state/components-install.log" >&2; exit 130' INT TERM
+    vpn_prepare_fedora 2>&1 | tee -a "$state/components-install.log" || prep_status=$?
+    timeout 65s python3 "$PROJECT_ROOT/src/scripts/system/serp_vpn.py" verify-install \
+        "--prepare-status=$prep_status" 2>&1 | tee -a "$state/components-install.log" || check_status=$?
+    if [ "$prep_status" -ne 0 ] || [ "$check_status" -ne 0 ]; then
+        echo "VPN components: FAILED. See $state/components-install.log. Retry with bash install/install.sh --vpn-only." >&2
+        return 1
+    fi
+    echo "VPN components: READY"
+)

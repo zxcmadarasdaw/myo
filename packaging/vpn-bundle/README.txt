@@ -16,8 +16,9 @@ Install
   * Together with Serpantinum: the full release includes this folder. Its VPN
     installation uses the kit. The main installer may use repositories for
     the desktop, wallpaper pack and other components.
-  * In the panel: select Proxy or TUN, then choose the local bundle in the
-    sing-box sheet. TUN requires system components and an administrator.
+  * To restore the VPN without reinstalling the desktop, place the bundle
+    in the Serpantinum checkout as vpn-bundle/ and run from that checkout:
+        bash install/install.sh --vpn-only
   * Already installed Serpantinum:
         bash install-vpn-bundle.sh                  # Proxy
         bash install-vpn-bundle.sh --system         # Proxy and TUN
@@ -34,4 +35,4 @@ Fedora Live
 -----------
 A Live session without persistent storage forgets everything at reboot, including
 the installed sing-box. Keep this folder on a USB stick or another drive and run
-bash install-vpn-bundle.sh again after each boot (or choose the folder in the panel).
+bash install/install.sh --vpn-only from the matching Serpantinum checkout.

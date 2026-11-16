@@ -45,6 +45,7 @@ Item {
     property bool recentlyMoved: false
 
     property bool loaded: false
+    property bool reloading: false
     // canvas.json was written by a newer build: use it, never overwrite it.
     property bool readOnly: false
 
@@ -280,6 +281,7 @@ Item {
 
     function applyStateText(text) {
         let st = CM.parseState(text);
+        cam.readOnly = st === null;
         if (st === null) {
             cam.readOnly = true;
             try {
@@ -295,13 +297,31 @@ Item {
         cam.knownW = st.screen.w;
         cam.knownH = st.screen.h;
         cam.loaded = true;
+        cam.reloading = false;
         cam.syncViewport();
     }
 
     function saveNow() {
         saveTimer.stop();
         if (!cam.loaded || cam.readOnly || cam.safeName === "") return;
+        if (cam.reloading || (typeof Themess !== "undefined" && Themess.writingStores)) {
+            saveTimer.restart();
+            return;
+        }
         stateFile.setText(CM.serializeState(cam.current(), cam.screenW, cam.screenH));
+    }
+
+    Connections {
+        target: typeof Themess !== "undefined" ? Themess : null
+        function onCanvasStoresChanged(paths) {
+            const path = stateFile.path.replace(/^\/(?=[A-Za-z]:\/)/, "");
+            if (!paths.includes(path)) return;
+            cam.stop();
+            cam.dragging = false;
+            saveTimer.stop();
+            cam.reloading = true;
+            stateFile.reload();
+        }
     }
 
     FileView {
@@ -309,13 +329,10 @@ Item {
         printErrors: false
         path: cam.safeName !== "" ? (Caching.getStateDir("widgets/" + cam.safeName) + "/canvas.json") : ""
         onLoaded: {
-            if (!cam.loaded) cam.applyStateText(text());
+            if (!cam.loaded || cam.reloading) cam.applyStateText(text());
         }
         onLoadFailed: {
-            if (!cam.loaded) {
-                cam.loaded = true;
-                cam.syncViewport();
-            }
+            if (!cam.loaded || cam.reloading) cam.applyStateText("");
         }
     }
 

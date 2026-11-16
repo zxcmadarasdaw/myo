@@ -15,6 +15,28 @@ Configuration is stored in `~/.config/hypr`. The main file is `hyprland.lua`, wh
 - `monitors.lua` - display and resolution setup
 - `settings.lua` - window decorations, blur, animations, and input
 - `keybinds.lua` - keybindings for compositor actions and shell controls
+- `canvas.lua` - projects real floating windows onto the Infinite Canvas
+
+## Floating windows on the Infinite Canvas
+
+With Hyprland 0.57.1 and the Lua configuration, use **Super+Z** to float an
+app and move or resize it using Hyprland's regular controls. When you pan,
+the window moves with the widgets and returns to the same world position
+when the camera returns. A manual move is picked up before the next pan.
+The compositor keeps each window on its own workspace.
+
+Zoom changes the position of the top-left anchor. Hyprland and the client
+continue to determine the surface size and handle input. The shell batches
+camera updates at intervals of at least 45 ms. Fully offscreen windows are
+placed beyond every output until their anchor and surface intersect their
+own output again. Hyprland can draw a partially overlapping surface on an
+adjacent monitor while it crosses the edge. Display and movement also use
+Hyprland's configured animations. Keep `misc.float_force_onscreen` at its
+default `0` for offscreen movement.
+
+On config reload, parked windows return to their last visible positions.
+If keeping a customized `hyprland.lua`, add `require("config/canvas")` after
+the existing modules. Run `hyprctl reload` and check `hyprctl configerrors`.
 
 ## Autostart
 

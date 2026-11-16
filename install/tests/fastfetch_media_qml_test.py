@@ -11,7 +11,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 from PySide6.QtCore import QMetaObject, QUrl, Q_ARG, qInstallMessageHandler
 from PySide6.QtGui import QGuiApplication
+from PySide6.QtMultimedia import QVideoSink
 from PySide6.QtQml import QQmlComponent, QQmlEngine
+from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
 
 
 SOURCE = Path(__file__).resolve().parents[2] / "src/quickshell"
@@ -22,7 +24,7 @@ appearance = {"theme": "glass_noir", "layout": "floating", "width": 48, "opacity
 assert configuration("fastfetch", {"appearance": appearance}, {}, "Test") == (
     "fastfetchMedia", {"appearance": appearance}
 )
-for local_setting in ("path", "enabled", "playAudio"):
+for local_setting in ("path", "posterPath", "enabled", "playAudio"):
     try:
         configuration("fastfetch", {"appearance": appearance, local_setting: True}, {}, "Test")
     except ValueError:
@@ -174,6 +176,7 @@ Item {
     property bool present: true
     property bool showing: true
     property bool showTerminal: false
+    property bool showcase: false
     readonly property bool ready: pane.item?.ready === true
     readonly property bool failed: pane.item?.failed === true
     readonly property bool playing: pane.item?.playing === true
@@ -189,10 +192,12 @@ Item {
     function load(value) { Config.settings = JSON.parse(value); }
     function toggle() { pane.item.togglePlayback(); }
     function wallpaper(value) { Wallpaper.audioEngine = {audioPlaying: value}; }
+    function capture(value) { Wallpaper.captureLite = value; }
+    function shaders(value) { GpuCompatibility.shadersAllowed = value; }
     Item {
         id: surface
         anchors.fill: parent
-        visible: host.showing
+        visible: host.showing && !host.showcase
         Loader {
             id: pane
             anchors.fill: parent
@@ -205,8 +210,8 @@ Item {
         property bool liveDesktopWidget: true
         anchors.fill: parent
         visible: host.showTerminal
-        TerminalFace { id: standard; mode: host.showTerminal ? "fastfetch" : "interactive"; appearAnimation: "none" }
-        TerminalStyledFace { id: styled; mode: standard.mode }
+        TerminalFace { id: standard; visible: !host.showcase; mode: host.showTerminal ? "fastfetch" : "interactive"; appearAnimation: "none" }
+        TerminalStyledFace { id: styled; mode: host.showcase ? "fetchShell" : standard.mode; look: "atelier" }
     }
     FastfetchMediaSection { visible: false }
 }
@@ -289,5 +294,62 @@ Item {
     host.setProperty("present", False)
     host.setProperty("showTerminal", True)
     wait_for(lambda: host.property("bothTerminalFacesReady"), "both desktop terminal implementations load Fastfetch Media")
+
+    # Verify actual pixels through the regular Atelier terminal face. Readiness
+    # flags by themselves used to accept a video before it rendered anything.
+    clip = SOURCE.parents[1] / "themess/.shared/noir-chaos/anime-fastfetch.webm"
+    poster = root / "portrait #100%.png"
+    subprocess.run(["ffmpeg", "-v", "error", "-i", str(clip), "-frames:v", "1", str(poster)], check=True)
+    host.setProperty("showcase", True)
+    host.setProperty("present", True)
+    invoke("shaders", True)
+    invoke("set", "autoplay", True)
+    invoke("set", "loop", True)
+    invoke("set", "posterPath", "/" + poster.as_posix().lstrip("/"))
+    set_path(clip)
+
+    def decoded_pixels():
+        for sink in host.findChildren(QVideoSink):
+            frame = sink.videoFrame()
+            if frame.isValid() and frame.width() == 360 and frame.height() == 426:
+                picture = frame.toImage()
+                if not picture.isNull():
+                    return [picture.pixelColor(x, y).rgb() for x in range(40, 310, 39) for y in range(44, 390, 43)]
+        return []
+
+    for theme in ("velvet", "neuro"):
+        invoke("set", "appearance", {"theme": theme})
+        wait_for(lambda: len(set(decoded_pixels())) > 22, theme + " decodes the actual bundled portrait into VideoOutput")
+        first = decoded_pixels()
+        wait_for(lambda: len(set(decoded_pixels())) > 22 and decoded_pixels() != first, theme + " decodes moving frames")
+
+    window = QQuickWindow()
+    window.resize(520, 300)
+    host.setParentItem(window.contentItem())
+    window.show()
+
+    def portrait_pixels():
+        frame = window.grabWindow()
+        if frame.isNull():
+            return []
+        return [frame.pixelColor(x, y).rgb() for x in range(42, 149, 14) for y in range(76, 238, 13)]
+
+    if window.rendererInterface().graphicsApi() != QSGRendererInterface.GraphicsApi.Software:
+        wait_for(lambda: len(set(portrait_pixels())) > 22, "video renders in the terminal window")
+        first = portrait_pixels()
+        wait_for(lambda: len(set(portrait_pixels())) > 22 and portrait_pixels() != first, "terminal window renders moving video pixels")
+    invoke("capture", True)
+    wait_for(lambda: len(set(portrait_pixels())) > 22, "capture mode renders the still portrait")
+    first = portrait_pixels()
+    for _ in range(6):
+        app.processEvents()
+        time.sleep(0.05)
+    assert first == portrait_pixels(), "capture mode should keep the frame still"
+    invoke("capture", False)
+    if window.rendererInterface().graphicsApi() == QSGRendererInterface.GraphicsApi.Software:
+        assert len(set(portrait_pixels())) > 22, "the software scene graph should keep the portrait"
+    else:
+        wait_for(lambda: len(set(portrait_pixels())) > 22 and portrait_pixels() != first, "video resumes after capture mode")
+    window.close()
     errors = [m for m in messages if "TypeError:" in m or "ReferenceError:" in m or "Binding loop" in m]
     assert not errors, "\n".join(errors)
