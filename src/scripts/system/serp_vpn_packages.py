@@ -45,6 +45,13 @@ def offline_engine():
 def main(args):
     if os.geteuid() != 0 or not args:
         return 64
+    terminal = args[0] == "--terminal"
+    if terminal:
+        # Progress and cancellation belong to the terminal installer. The
+        # privileged helper owns the maximum duration even if its caller exits.
+        if os.getuid() != 0 or os.environ.get("PKEXEC_UID") is not None:
+            return 64
+        args = args[1:]
     if args == ["offline-engine"]:
         return offline_engine()
     if args[0] != "install":
@@ -54,6 +61,9 @@ def main(args):
         return 64
     env = {"PATH": "/usr/sbin:/usr/bin", "HOME": "/root", "LANG": "C.UTF-8"}
     os.chdir("/")
+    if terminal:
+        argv = ["/usr/bin/timeout", "--foreground", "-k", "15s", "6m", *command(packages, action)]
+        return subprocess.run(argv, stdin=subprocess.DEVNULL, env=env, check=False).returncode
     # Authorization is over once this line is out: the caller switches from the polkit
     # timeout to the transaction timeout (serp_vpn.py install_fedora_packages).
     print(json.dumps({"event": "started"}), flush=True)
