@@ -164,6 +164,7 @@ Item {
     property bool gifActive: gifLayer.active
     property int gifStatus: gifLayer.item ? gifLayer.item.status : -1
     property int gifFrames: gifLayer.item ? gifLayer.item.frameCount : 0
+    property int gifFrame: gifLayer.item ? gifLayer.item.currentFrame : -1
     property bool gifPlaying: gifLayer.item ? gifLayer.item.playing : false
     WallpaperGif {
         id: gifLayer
@@ -183,9 +184,24 @@ Item {
             check(host.property("gifFrames") >= 2, "GIF has several frames (%s)" % host.property("gifFrames"))
             check(host.property("gifPlaying") is True, "GIF is playing")
             host.setProperty("gifUrl", QUrl(file_url(png)))
-            check(wait_for(lambda: host.property("gifActive") is False), "GIF layer inactive for non-GIF files")
+            check(wait_for(lambda: host.property("gifActive") is False), "animation layer inactive for PNG")
             host.setProperty("gifUrl", QUrl(file_url(broken)))
             check(wait_for(lambda: host.property("failure") != ""), "damaged GIF reports failure: " + str(host.property("failure")) + " status=%s frames=%s" % (host.property("gifStatus"), host.property("gifFrames")))
+            if shutil.which("ffmpeg"):
+                import subprocess
+                animated_webp = media / "motion #4.animated.webp"
+                subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x48:rate=5",
+                                "-t", "1", "-c:v", "libwebp_anim", "-loop", "0", str(animated_webp)], check=True)
+                host.setProperty("gifUrl", QUrl(file_url(animated_webp)))
+                check(wait_for(lambda: host.property("gifFrames") >= 2) and host.property("gifPlaying"),
+                      "existing animation layer plays verified WebP: status=%s frames=%s active=%s playing=%s"
+                      % (host.property("gifStatus"), host.property("gifFrames"), host.property("gifActive"), host.property("gifPlaying")))
+                frame = host.property("gifFrame")
+                check(wait_for(lambda: host.property("gifFrame") != frame), "animated WebP advances to another frame")
+                plain_webp = media / "still.webp"
+                if image.save(str(plain_webp)):
+                    host.setProperty("gifUrl", QUrl(file_url(plain_webp)))
+                    check(wait_for(lambda: host.property("gifActive") is False), "static WebP stays out of the animated layer")
 
 if failures:
     print("\n".join(messages[-10:]))

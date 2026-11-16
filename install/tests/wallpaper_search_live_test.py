@@ -1,6 +1,6 @@
 """Search Wallpapers end-to-end test with REAL internet sources.
 
-    .tools/qtvenv/Scripts/python install/tests/wallpaper_search_live_test.py [--shots DIR]
+    .tools/qtvenv/Scripts/python install/tests/wallpaper_search_live_test.py [--shots DIR] [--fixtures | --live-images | --live-video]
 
 Loads the real QML of Settings -> Search Wallpapers (WallpaperSearchTab, SearchCard,
 SearchSettings, SearchPreview, WallpaperStudio and the WallpaperSearch singleton) with
@@ -21,6 +21,7 @@ Python trust store is outdated; Fedora's ca-certificates is fine).
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import subprocess
 import sys
@@ -46,6 +47,9 @@ except ImportError:
     sys.exit(0)
 
 shots = None
+fixtures = "--fixtures" in sys.argv
+live_images = "--live-images" in sys.argv
+live_video = "--live-video" in sys.argv
 if "--shots" in sys.argv:
     shots = Path(sys.argv[sys.argv.index("--shots") + 1])
     shots.mkdir(parents=True, exist_ok=True)
@@ -243,6 +247,7 @@ Window {
             dlItem: ws.dlItem, toast: ws.toast, keys: ws.keys, caps: Object.keys(ws.caps), effectiveMinRes: ws.effectiveMinRes,
             pendingEdit: ws.pendingEdit, calls: Wallpaper.calls, settings: Config.rawSettings, page: ws.page,
             view: tabLoader.item ? tabLoader.item.view : "", preview: tabLoader.item ? tabLoader.item.previewEntry !== null : false,
+            previewId: tabLoader.item?.previewEntry?.id || "",
             studio: tabLoader.item ? tabLoader.item.studioPath : "", showSettings: tabLoader.item ? tabLoader.item.showSettings : false });
     }
     function call(fn, a, b) {
@@ -262,6 +267,11 @@ Window {
         case "saveKey": ws.saveKey(a, b); break;
         case "applyLocal": t.applyPath(a); break;
         case "view": t.view = a; break;
+        case "gallery": ws.setPref("gallery", a === "on"); break;
+        case "import": ws.importFiles([a]); break;
+        case "customSource": ws.editCustomSources("add", "folders", a); break;
+        case "customUrl": ws.editCustomSources("add", "urls", a); break;
+        case "favorite": ws.saveFavorite(ws.byId[a], b, false); break;
         }
         return "ok";
     }
@@ -297,15 +307,22 @@ def main():
     for k in ("https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"):
         env.pop(k, None)
     state = {"env": env, "offline": False}
+    clip = None
+    if fixtures:
+        clip = tmp / "preview.mp4"
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=128x72:rate=20",
+                        "-t", "2", "-c:v", "mpeg4", str(clip)], check=True)
 
     # Reachability: skip (not fail) without internet.
-    probe = subprocess.run([sys.executable, "-I", str(ROOT / "src/scripts/wallpaper/wallhub.py"), "status"],
-                           capture_output=True, text=True, env=env, timeout=30)
-    if not json.loads(probe.stdout.strip().splitlines()[-1]).get("online"):
-        print("SKIP: the wallpaper sources are not reachable from this machine")
-        return 0
+    if not fixtures:
+        probe = subprocess.run([sys.executable, "-I", str(ROOT / "src/scripts/wallpaper/wallhub.py"), "status"],
+                               capture_output=True, text=True, env=env, timeout=30)
+        if not json.loads(probe.stdout.strip().splitlines()[-1]).get("online"):
+            print("SKIP: the wallpaper sources are not reachable from this machine")
+            return 0
+    fixture_caps = runpy.run_path(str(ROOT / "src/scripts/wallpaper/wallhub.py"))["CAPS"] if fixtures else {}
 
-    build(tmp / "qml", home, wpdir, "({})")
+    build(tmp / "qml", home, wpdir, '({ wallpaperSearch: { includeUnknown: false } })')
     ctx = {}
     ctx["engine"], ctx["win"] = load(tmp / "qml")
 
@@ -329,6 +346,31 @@ def main():
         cmd = list(p["cmd"])
         if cmd and cmd[0] == "python3":
             cmd = [sys.executable, "-I"] + cmd[1:]
+        if fixtures and len(cmd) > 3 and cmd[3] == "status":
+            call("finish", p["i"], json.dumps({"ok": True, "caps": fixture_caps, "online": True, "ffmpeg": True, "ffprobe": True}), 0)
+            return
+        if fixtures and len(cmd) > 3 and cmd[3] == "search" and cmd[cmd.index("--sources") + 1] != "local":
+            q = cmd[cmd.index("--query") + 1]
+            page = int(cmd[cmd.index("--page") + 1])
+            rows = [{"id": "fixture:%d" % i, "source": "pexels", "sourceName": "Fixture", "title": "Clip %d" % i,
+                     "kind": "video", "format": "mp4", "width": 3840, "height": 2160, "size": 1000, "duration": 2,
+                     "url": "https://example.test/clip-%d.mp4" % i, "previewVideo": clip.as_uri(), "originalAvailable": True}
+                    for i in range(4)]
+            rows[-1].update(url="", previewVideo="", pageUrl="https://example.test/watch", external=True, originalAvailable=False)
+            events = [
+                {"event": "start", "page": page, "sources": [{"source": "pexels", "query": q}]},
+                {"event": "source", "source": "pexels", "page": page,
+                 "status": {"source": "pexels", "page": page, "count": len(rows), "ms": 1}, "results": rows},
+                {"event": "done", "ok": True, "page": page, "hasMore": False}]
+            if state["offline"]:
+                events[1]["results"] = []
+                events[1]["status"].update(count=0, offline=True, error="no network")
+                events[-1]["offline"] = True
+            for event in events:
+                call("line", p["i"], json.dumps(event))
+            call("finish", p["i"], "", 0)
+            pump(0.02)
+            return
         e = dict(state["env"])
         if state["offline"]:
             e["https_proxy"] = e["HTTPS_PROXY"] = "http://127.0.0.1:9"  # refused: behaves like no network
@@ -412,6 +454,13 @@ def main():
     def item(name):
         return ctx["win"].findChild(QQuickItem, name)
 
+    def visual_items(name, node=None):
+        node = ctx["win"].contentItem() if node is None else node
+        found = [node] if node.objectName() == name else []
+        for child in node.childItems():
+            found.extend(visual_items(name, child))
+        return found
+
     def center(it):
         p = it.mapToScene(QPointF(it.width() / 2, it.height() / 2))
         return QPoint(int(p.x()), int(p.y()))
@@ -423,7 +472,7 @@ def main():
         return 1 if o.property("progress") == 1.0 and o.property("implicitWidth") > 0 else 0
 
     def min_ok(results, w, h):
-        return all(r["width"] >= w and r["height"] >= h for r in results)
+        return all(max(r["width"], r["height"]) >= w and min(r["width"], r["height"]) >= h for r in results)
 
     serve(lambda: idle() and st()["caps"], "status at activation")
     s0 = st()
@@ -431,6 +480,132 @@ def main():
     check(not [m for m in messages if "Error" in m or "TypeError" in m or "ReferenceError" in m], "QML loads without errors",
           "; ".join(messages[:5]))
     shot("01-empty")
+
+    if fixtures:
+        call("call", "kind", "video")
+        s = search("anime girl black")
+        check(s["count"] == 4, "fixture search publishes all four video results")
+        call("call", "gallery", "on")
+        pump(0.5)
+        clips = visual_items("galleryVideo")
+        check(0 < len(clips) <= 3, "live gallery instantiates up to three video decoders", str(len(clips)))
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline and not any(c.property("position") > 0 for c in clips):
+            pump(0.1)
+        check(bool(clips) and all(c.property("muted") for c in clips) and any(c.property("position") > 0 for c in clips),
+              "gallery actually plays the small clip on mute")
+        QTest.mouseClick(ctx["win"], Qt.LeftButton, Qt.NoModifier, center(item("galleryNext")))
+        pump(0.3)
+        check(not visual_items("galleryVideo"), "leaving a gallery page frees its video players")
+        call("call", "preview", "fixture:3")
+        pump(0.3)
+        check(item("searchPreview") is not None and not item("previewDownload").isVisible(), "external video page offers no Download")
+        QTest.keyClick(ctx["win"], Qt.Key_Left)
+        pump(0.5)
+        check(st()["previewId"] == "fixture:2" and item("previewApply").isVisible(), "Cinema Left switches to the preceding downloadable clip")
+        QTest.keyClick(ctx["win"], Qt.Key_Escape)
+        pump(0.5)
+        check(not st()["preview"] and item("searchPreview") is None, "Escape destroys Cinema and releases playback")
+        call("call", "gallery", "off")
+        call("call", "settings", "on")
+        pump(0.2)
+        call("call", "settings", "off")
+        pump(0.4)
+        QTest.mouseClick(ctx["win"], Qt.LeftButton, Qt.NoModifier, center(item("searchField")))
+        check(item("searchField").property("activeFocus"), "mouse reaches the search field after closing overlays")
+
+        call("call", "import", clip.as_uri())
+        serve(lambda: idle() and st()["library"], "import clip into My Wallpapers")
+        imported = next((entry for entry in st()["library"] if entry["kind"] == "video"), {})
+        check(bool(imported) and Path(imported["path"]).read_bytes() == clip.read_bytes(), "real MP4 import adds the validated original to My Wallpapers")
+        if imported:
+            call("call", "applyLocal", imported["path"])
+            serve(lambda: idle() and st()["calls"], "apply verified local video")
+            check(st()["calls"][-1] == ["all", imported["path"], ""], "Apply passes the verified file to the existing Wallpaper singleton")
+        call("call", "customSource", tmp.as_uri())
+        sources_path = Path(env["QS_STATE_DIR"]) / "wallpaper_hub/sources.json"
+        serve(lambda: idle() and sources_path.exists(), "save folder source")
+        check(bool(json.loads(sources_path.read_text(encoding="utf-8"))["folders"]), "custom folder persisted outside settings")
+        call("call", "filter", "sourceMode", "local")
+        serve(lambda: idle(), "choose local source")
+        call("call", "filter", "minRes", "any")
+        serve(lambda: idle(), "local resolution filter")
+        local = search("preview")
+        check(local["count"] > 0 and all(r["local"] and r["source"] == "local" for r in local["results"]),
+              "local source selection sends the query to local media only")
+        if local["ids"]:
+            call("call", "favorite", local["ids"][0], "Loops")
+            fav_path = Path(env["QS_STATE_DIR"]) / "wallpaper_hub/favorites.json"
+            serve(lambda: idle() and fav_path.exists(), "save favorite and collection")
+            check(json.loads(fav_path.read_text(encoding="utf-8"))[local["ids"][0]]["collection"] == "Loops",
+                  "favorite is persisted with its collection")
+
+        before = len(st()["calls"])
+        state["offline"] = True
+        call("call", "filter", "sourceMode", "all")
+        serve(lambda: idle() and st()["view"] == "library", "offline mode returns to the library")
+        check(st()["offline"] and bool(st()["library"]) and len(st()["calls"]) == before,
+              "offline error keeps the library and preserves the applied wallpaper")
+        bad = [m for m in messages if any(s in m for s in ("ReferenceError", "TypeError", "Binding loop", "is not a type", "Cannot assign"))]
+        check(not bad, "no QML binding errors", "; ".join(bad[:10]))
+        return 1 if failures else 0
+
+    if live_images:
+        call("call", "kind", "image")
+        s = search("anime girl white")
+        check(s["count"] > 0 and all(r["kind"] == "image" for r in s["results"]), "real image search finds still images", str(s["count"]))
+        row = next((r for r in s["results"] if r["source"] == "wallhaven" and 0 < r["size"] < 8 * 1024 * 1024), None)
+        check(row is not None, "image search has a Wallhaven original under 8 MB")
+        if row:
+            call("call", "preview", row["id"])
+            serve(lambda: item("searchPreview") is not None, "open a real image preview")
+            end = time.monotonic() + 12
+            while time.monotonic() < end and json.loads(call("imgInfo", "previewImage"))["status"] != 1:
+                pump(0.1)
+            check(json.loads(call("imgInfo", "previewImage"))["status"] == 1, "Qt displays the real preview")
+            QTest.keyClick(ctx["win"], Qt.Key_Right)
+            pump(0.3)
+            ids = s["ids"]
+            if ids.index(row["id"]) + 1 < len(ids):
+                check(st()["previewId"] != row["id"], "Cinema navigates between real image results")
+            call("call", "closePreview")
+            call("call", "download", row["id"], "")
+            serve(lambda: idle() and row["id"] in st()["downloaded"], "download real original", 60)
+            image_info = st()["probed"].get(row["id"], {})
+            check(image_info.get("width") == row["width"] and image_info.get("kind") == "image",
+                  "real original is saved and measured")
+        return 1 if failures else 0
+
+    if live_video:
+        url = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+        call("call", "customUrl", url)
+        serve(lambda: idle() and st()["prefs"]["sources"]["links"], "connect public MP4 source")
+        call("call", "filter", "sourceMode", "links")
+        call("call", "filter", "safe", False)
+        call("call", "filter", "minRes", "any")
+        call("call", "kind", "video")
+        s = search("flower")
+        check(s["count"] == 1 and s["results"][0]["url"] == url, "real direct-link source returns the requested MP4")
+        if s["count"]:
+            rid = s["ids"][0]
+            call("call", "preview", rid)
+            serve(lambda: item("streamOriginal") is not None, "open video preview")
+            QTest.mouseClick(ctx["win"], Qt.LeftButton, Qt.NoModifier, center(item("streamOriginal")))
+            serve(lambda: item("previewVideo") is not None and item("previewVideo").property("position") > 0,
+                  "remote MP4 actually plays", 30)
+            check(item("previewVideo").property("muted"), "remote preview starts muted")
+            call("call", "closePreview")
+            call("call", "download", rid, "apply")
+            serve(lambda: idle() and rid in st()["downloaded"] and bool(st()["calls"]), "download, verify and apply", 60)
+            resolved = st()
+            measured = resolved["probed"].get(rid, {})
+            check(measured.get("codec") == "h264" and measured.get("kind") == "video",
+                  "saved MP4 has a measured H.264 video stream")
+            check(any(x["path"] == resolved["downloaded"].get(rid) for x in resolved["library"]),
+                  "download appears in My Wallpapers")
+            check(bool(resolved["calls"]) and resolved["calls"][-1][1] == resolved["downloaded"].get(rid),
+                  "Apply hands the actual downloaded file to Wallpaper.setWallpaper")
+        return 1 if failures else 0
 
     # 1-4: real queries
     for q in ("anime girl white", "аниме девушка в белом", "Mr Robot", "cyberpunk night"):
