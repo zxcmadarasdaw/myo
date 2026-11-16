@@ -115,9 +115,11 @@ def singbox_location():
     if override is not None:                  # tests / custom location; "" means "not installed"
         return (override, "env") if override and os.path.isfile(override) else ("", "")
     chosen = _merge_settings(read_json(os.path.join(config_dir(), "settings.json"), {})).get("singboxPath", "")
-    if _executable(chosen):                   # picked in the panel, or installed by singbox-install
-        return chosen, ("managed" if chosen == managed_singbox() else "chosen")
-    found = shutil.which("sing-box") or system_singbox()
+    bundled = SYSTEM_SINGBOX[0]
+    if _executable(chosen) and chosen != managed_singbox():
+        if not _executable(bundled) or _singbox_module().probe(chosen, timeout=2)["ok"]:
+            return chosen, "chosen"
+    found = system_singbox() or shutil.which("sing-box")
     if found:
         return found, "system"
     if _executable(managed_singbox()):
@@ -302,6 +304,8 @@ MESSAGES = {
     "sub_bad_name": ("A subscription name must be 1-60 printable characters.",
                      "Название подписки: от 1 до 60 печатных символов."),
     # exit IP check
+    "outbound_unreachable": ("The selected VPN server could not reach the connection test URL.",
+                             "Через выбранный VPN-сервер не удалось открыть адрес проверки подключения."),
     "not_connected": ("The VPN is not connected.", "VPN не подключён."),
     "ip_failed": ("Could not check the external IP through the VPN: {detail}",
                   "Не удалось проверить внешний IP через VPN: {detail}"),
@@ -1404,6 +1408,17 @@ def _popen(args, probe=False, **kw):
     return subprocess.Popen(args, stdin=subprocess.DEVNULL, close_fds=True, **kw)
 
 
+def confirm_outbound(settings):
+    query = urllib.parse.urlencode({"url": settings["testUrl"], "timeout": 8000})
+    try:
+        result = api(settings, "GET", f"/proxies/proxy/delay?{query}", timeout=10)
+        delay = result.get("delay")
+    except (OSError, ValueError, AttributeError):
+        delay = None
+    if type(delay) is not int or delay <= 0:
+        raise VpnError("outbound_unreachable")
+
+
 def connect():
     settings = load_settings()
     if settings["mode"] == "tun":
@@ -1423,8 +1438,11 @@ def connect():
             raise VpnError("port_busy", port)
     log_path = os.path.join(state_dir(), "sing-box.log")
     write_private(log_path, "")
-    with open(log_path, "a", encoding="utf-8") as log:
-        proc = _popen([binary, "run", "-c", cfg_path], stdout=log, stderr=log)
+    try:
+        with open(log_path, "a", encoding="utf-8") as log:
+            proc = _popen([binary, "run", "-c", cfg_path], stdout=log, stderr=log)
+    except OSError as e:
+        raise VpnError("start_failed", e.strerror or type(e).__name__) from None
     write_private(pid_path(), str(proc.pid))
     ok, why = _wait_api(settings, settings["apiPort"], proc)
     if not ok:
@@ -1438,6 +1456,11 @@ def connect():
         except OSError:
             pass
         raise VpnError("start_failed", _log_tail(log_path) or why)
+    try:
+        confirm_outbound(settings)
+    except VpnError:
+        _proxy_disconnect()
+        raise
     return status()
 
 
@@ -1605,7 +1628,13 @@ def tun_connect():
                 raise VpnError("service_failed", journal_tail() or "-")
             time.sleep(0.25)
     else:
+        tun_disconnect()
         raise VpnError("service_failed", journal_tail() or "Clash API")
+    try:
+        confirm_outbound(settings)
+    except VpnError:
+        tun_disconnect()
+        raise
     out = status()
     if data.get("skipped"):
         out["tunSkipped"] = len(data["skipped"])
@@ -2465,7 +2494,17 @@ def verify_installed_components(prepare_status):
                 ok, detail = singbox_check(checked, tun["path"], timeout=8) if checked else (False, "no config")
                 if not ok:
                     errors.append(f"TUN configuration check failed: {detail}")
+    ip = next((path for path in TUN_TOOLS["iproute"] if _executable(path)), "")
+    routing = {}
+    if ip:
+        for family in ("-4", "-6"):
+            rc, output, _ = _run([ip, family, "rule", "show"], timeout=3)
+            routing[family] = {"readable": rc == 0, "rules": output.splitlines() if rc == 0 else []}
+            if rc != 0:
+                errors.append(f"Could not read kernel policy routing rules ({family})")
     report = {"ok": not errors, "timestamp": int(time.time()),
+              "routing": routing,
+              "networkNotes": [item for item in collect_checks() if item["code"].startswith("dns_")],
               "proxy": {key: proxy[key] for key in ("path", "version")},
               "tun": {key: tun[key] for key in ("path", "version")}, "errors": errors}
     path = os.path.join(state_dir(), "components.json")
@@ -2551,12 +2590,12 @@ def helper_result(out):
     return {}
 
 
-def install_fedora_packages(packages, emit, action="install"):
+def install_fedora_packages(packages, emit):
     pkexec = _tool("SERP_VPN_PKEXEC", "pkexec")
     if not pkexec or not _executable(PACKAGE_HELPER) or not _executable("/usr/bin/dnf5"):
         raise VpnError("setup_admin")
     emit({"event": "stage", "stage": "packages", "packages": packages})
-    rc, out = _run_packages([pkexec, "--disable-internal-agent", PACKAGE_HELPER, action, *packages], emit)
+    rc, out = _run_packages([pkexec, "--disable-internal-agent", PACKAGE_HELPER, "install", *packages], emit)
     result = helper_result(out)
     if rc in (126, 127) and not result:
         raise VpnError("setup_auth")
@@ -2689,13 +2728,10 @@ def vpn_setup(source, name, emit, *, file_path="", system=False, allow_yaml=Fals
 
     archive = False
     if not binary:
-        if tun and offline:
+        if tun or system:
+            if tun:
+                require_offline_tun(health)
             binary = install_offline_system_engine(None, emit)["path"]
-        elif tun or system:
-            rpm_installed = _run(["/usr/bin/rpm", "-q", "sing-box"], timeout=5)[0] == 0
-            action = "upgrade" if rpm_installed and health["version"] else "repair" if rpm_installed else "install"
-            install_fedora_packages(["sing-box"], emit, action=action)
-            binary = system_singbox()
         else:
             archive = True
             # A local bundle first: no network for the program itself.
@@ -2916,9 +2952,17 @@ def main(argv):
             data = singbox_info()
         elif cmd == "system-engine-check":
             path = system_singbox()
-            checked = _singbox_module().probe(path, timeout=2)
+            sb = _singbox_module()
+            checked = sb.probe(path, timeout=2)
             if not checked["ok"] or not version_supports_tun(checked["version"]):
                 raise VpnError("setup_components", path or "system sing-box (>= 1.12)")
+            if "--bundled" in rest:
+                lock = sb.load_lock()
+                asset = lock["assets"].get(sb.arch_name(), {})
+                digest = asset.get("binarySha256")
+                if (not asset or path != sb.SYSTEM_TARGET or checked["version"] != lock["version"]
+                        or (digest and sb.sha256_file(path) != digest)):
+                    raise VpnError("setup_components", "installed sing-box does not match the local bundle")
             data = {"path": path, "version": checked["version"]}
         elif cmd == "verify-install":
             try:

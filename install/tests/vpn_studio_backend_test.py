@@ -451,6 +451,9 @@ class OneClickSetup(unittest.TestCase):
         self.addCleanup(env.stop)
         os.environ.pop("SERP_VPN_SINGBOX", None)
         self.events = []
+        bundle = patch.object(sb, "find_bundle", return_value=(None, []))
+        bundle.start()
+        self.addCleanup(bundle.stop)
 
     def install(self, emit, validate=None):
         self.sb_path.parent.mkdir(exist_ok=True)
@@ -531,11 +534,11 @@ class OneClickSetup(unittest.TestCase):
             self.assertEqual(self.events[-1]["stage"], "packages")
             run.return_value = 126, ""
             with self.assertRaises(vpn.VpnError) as ctx:
-                vpn.install_fedora_packages(["sing-box"], self.events.append)
+                vpn.install_fedora_packages(["python3-pyyaml"], self.events.append)
             self.assertEqual(ctx.exception.code, "setup_auth")
             run.return_value = 1, '{"event": "started"}\n{"ok": false, "detail": "DNF5 did not finish in 20 min and was stopped"}\n'
             with self.assertRaises(vpn.VpnError) as ctx:
-                vpn.install_fedora_packages(["sing-box"], self.events.append)
+                vpn.install_fedora_packages(["python3-pyyaml"], self.events.append)
             self.assertEqual(ctx.exception.code, "setup_packages")
             self.assertIn("20 min", ctx.exception.detail)
 

@@ -13,3 +13,5 @@
 *.otf binary
 *.qsb binary
 *.wav binary
+*.tar.gz binary
+*.rpm binary

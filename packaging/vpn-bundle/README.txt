@@ -13,9 +13,9 @@ link or configuration file, imported in Super+N -> VPN.
 
 Install
 -------
-  * Together with Serpantinum: the full release includes this folder. Its VPN
-    installation uses the kit. The main installer may use repositories for
-    the desktop, wallpaper pack and other components.
+  * From the matching Fedora 45 x86_64 checkout or full release, run
+        bash install/install.sh --vpn-only
+    The main installer may use repositories for other desktop components.
   * To restore the VPN without reinstalling the desktop, place the bundle
     in the Serpantinum checkout as vpn-bundle/ and run from that checkout:
         bash install/install.sh --vpn-only
@@ -27,6 +27,9 @@ Install
     sha256sum -c SHA256SUMS
     bash install-vpn-bundle.sh --check
     bash install-vpn-bundle.sh --system --check
+
+From the checkout, use bash install/install.sh --vpn-check for the combined
+local bundle and installed-component report. See SOURCES.md for provenance.
 
 The check configurations use a local placeholder and are for sing-box check.
 They never connect to a public VPN server. To connect, import your own profile.

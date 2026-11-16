@@ -36,5 +36,5 @@ dist/
 Thumbs.db
 .tools/qtvenv/
 
-# Offline VPN bundle (built by packaging/vpn-bundle/build_vpn_bundle.py, shipped in release tarballs)
-/vpn-bundle/
+# Original local downloads. The verified root vpn-bundle is shipped with Git.
+/voninsll/

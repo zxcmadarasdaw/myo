@@ -1,0 +1,44 @@
+{
+  "log": {
+    "level": "warn",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 2080
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "proxy",
+      "outbounds": [
+        "local-test"
+      ],
+      "default": "local-test",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "socks",
+      "tag": "local-test",
+      "server": "127.0.0.1",
+      "server_port": 1
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "final": "proxy"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:9097",
+      "secret": "local-check-only"
+    }
+  }
+}

@@ -14,8 +14,8 @@ What it does, and nothing else:
   4. writes vpn-bundle/: the archive unchanged, manifest.json, SHA256SUMS, README.txt and
      install-vpn-bundle.sh.
 
-The archive is never unpacked here and never committed to Git: dist/ is ignored. Release
-artifacts (the offline tarball) are uploaded to the GitHub release page instead.
+Build the tracked Fedora kit with --out vpn-bundle --offline-build. The original
+archive stays intact. The default dist/ output remains local.
 To move to a new sing-box version, update the lock file (version, size, sha256 from the
 release page / API) in a reviewed commit, then rebuild.
 """
@@ -114,7 +114,14 @@ def write_bundle(lock, arches, out, cache, verify_api, fedora, offline):
     for arch in arches:
         source, asset = get_asset(lock, arch, cache, verify_api, offline)
         shutil.copyfile(source, out / asset["name"])
-        files.append({"arch": arch, "file": asset["name"], "size": asset["size"], "sha256": asset["sha256"]})
+        files.append({"arch": arch, "file": asset["name"], "size": asset["size"], "sha256": asset["sha256"],
+                      "purpose": "Proxy and TUN engine",
+                      "url": DOWNLOAD.format(version=lock["version"], name=asset["name"])})
+        with tarfile.open(source, "r:gz") as release:
+            license_file = next((member for member in release if member.isfile()
+                                 and Path(member.name).name == "LICENSE"), None)
+            if license_file:
+                (out / "LICENSE.sing-box").write_bytes(release.extractfile(license_file).read())
     manifest = {"format": 1, "component": "sing-box", "version": lock["version"], "source": lock["source"],
                 "builtAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "files": files}
@@ -128,7 +135,9 @@ def write_bundle(lock, arches, out, cache, verify_api, fedora, offline):
             shutil.copyfile(path, rpm_dir / name)
         (rpm_dir / "packages.tsv").write_text("".join(f"{a['package']}\t{a['name']}\n" for a in fedora["rpms"]),
                                              encoding="utf-8", newline="\n")
-        manifest["fedora"] = {"release": 45, "arch": "x86_64", **fedora}
+        manifest["fedora"] = {"release": 45, "arch": "x86_64", **fedora,
+                              "purpose": "Offline installation of iproute, nftables, PyYAML and dependencies"}
+    shutil.copyfile(HERE / "SOURCES.md", out / "SOURCES.md")
     write_templates(out)
     shutil.copyfile(HERE / "README.txt", out / "README.txt")
     shutil.copyfile(HERE / "install-vpn-bundle.sh", out / "install-vpn-bundle.sh")
@@ -169,7 +178,8 @@ def build_release(out_bundle, dist, revision="HEAD"):
                            stdout=stream, check=True)
         with tarfile.open(output, "w:gz") as release, tarfile.open(archive) as source:
             for member in source:
-                release.addfile(member, source.extractfile(member) if member.isfile() else None)
+                if member.name.removeprefix("serpantinum/").split("/", 1)[0] != "vpn-bundle":
+                    release.addfile(member, source.extractfile(member) if member.isfile() else None)
             release.add(out_bundle, arcname="serpantinum/vpn-bundle")
         output.replace(target)
     (dist / (target.name + ".sha256")).write_text(f"{sha256(target)}  {target.name}\n", encoding="utf-8", newline="\n")

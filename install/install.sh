@@ -66,6 +66,11 @@ source "$MODULES_DIR/vpn.sh"
 source "$MODULES_DIR/ui.sh"
 source "$MODULES_DIR/verify.sh"
 
+if [ "${1:-}" = "--vpn-check" ]; then
+    check_vpn_components
+    exit
+fi
+
 if [ "${1:-}" = "--vpn-only" ]; then
     check_supported_os
     install_vpn_components

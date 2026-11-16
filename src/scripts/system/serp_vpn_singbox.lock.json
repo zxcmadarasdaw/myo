@@ -6,7 +6,8 @@
     "amd64": {
       "name": "sing-box-1.14.4-linux-amd64.tar.gz",
       "size": 31710753,
-      "sha256": "699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968"
+      "sha256": "699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968",
+      "binarySha256": "1264361b5f8868c8768f7555d3e77e20118bf503c41ac08bb290a0d99056aa3a"
     },
     "arm64": {
       "name": "sing-box-1.14.4-linux-arm64.tar.gz",

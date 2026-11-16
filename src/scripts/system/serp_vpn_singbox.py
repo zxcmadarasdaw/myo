@@ -580,7 +580,10 @@ if __name__ == "__main__":
     if sys.argv[1:2] == ["bundle-archive"]:
         folder = next((a[len("--bundle="):] for a in sys.argv[2:] if a.startswith("--bundle=")), "")
         try:
-            print(require_bundle(folder or None)["archive"])
+            bundle = require_bundle(folder or None)
+            if "--verify" in sys.argv[2:] and sha256_file(bundle["archive"]) != bundle["sha256"]:
+                raise SingboxError("sb_checksum", os.path.basename(bundle["archive"]))
+            print(bundle["archive"])
         except (SingboxError, OSError) as e:
             print(getattr(e, "code", "sb_bundle_bad") + ": " + str(getattr(e, "detail", e)), file=sys.stderr)
             sys.exit(1)

@@ -7,7 +7,7 @@
 #   /usr/share/polkit-1/actions/org.serpantinum.vpn.policy
 #   /etc/polkit-1/rules.d/49-serpantinum-vpn.rules       (only for the user running the installer)
 #   /etc/serpantinum-vpn/                                (700; config.json is written later by the helper, 600)
-# Fedora gets sing-box and its dependencies here, using DNF5 or the offline bundle.
+# Fedora gets sing-box and missing VPN dependencies from the local bundle.
 
 VPN_HELPER_DST="/usr/libexec/serpantinum/serp-vpn-root"
 VPN_PACKAGES_DST="/usr/libexec/serpantinum/serp-vpn-packages"
@@ -19,6 +19,9 @@ vpn_source_bundle() {
     local dir
     for dir in "$PROJECT_ROOT/vpn-bundle" "$PROJECT_ROOT/dist/vpn-bundle" \
         "${XDG_DATA_HOME:-$HOME/.local/share}/serpantinum/vpn-bundle"; do
+        if [ "${1:-}" = "--skip-shipped" ] && [ "$dir" = "$PROJECT_ROOT/vpn-bundle" ]; then
+            continue
+        fi
         if [ -f "$dir/manifest.json" ]; then
             printf '%s\n' "$dir"
             return 0
@@ -31,7 +34,7 @@ install_vpn_bundle() {
     local bundle="$1"
     shift
     echo "Installing VPN components from $bundle (offline)"
-    bash "$PROJECT_ROOT/packaging/vpn-bundle/install-vpn-bundle.sh" --bundle="$bundle" "$@"
+    SERPANTINUM_DIR="$PROJECT_ROOT/src" bash "$PROJECT_ROOT/packaging/vpn-bundle/install-vpn-bundle.sh" --bundle="$bundle" "$@"
 }
 
 # Prints the polkit rules for one user; refuses anything that is not a plain user name.
@@ -78,37 +81,6 @@ install_vpn_service() {
     fi
 }
 
-vpn_install_online() {
-    local backend="$PROJECT_ROOT/src/scripts/system/serp_vpn.py"
-    local package action=install missing=()
-    for package in iproute nftables python3-pyyaml polkit ca-certificates; do
-        if ! rpm -q --quiet "$package"; then missing+=("$package"); fi
-    done
-    if [ "${#missing[@]}" -gt 0 ]; then
-        echo "Installing Fedora VPN dependencies: ${missing[*]}"
-        vpn_dnf_dependencies "${missing[@]}" || return 1
-    fi
-    install_vpn_service || return 1
-    if timeout 5s python3 "$backend" system-engine-check; then return 0; fi
-    if rpm -q --quiet sing-box; then
-        action=upgrade
-        if [ ! -x /usr/bin/sing-box ] || ! timeout 5s /usr/bin/sing-box version; then
-            action=repair
-        fi
-    fi
-    echo "Installing or repairing signed sing-box RPM from SagerNet ($action)"
-    sudo "$VPN_PACKAGES_DST" --terminal "$action" sing-box || return 1
-    timeout 5s python3 "$backend" system-engine-check
-}
-
-vpn_dnf_dependencies() {
-    local PM_DNF_OPTS=()
-    pm_dnf_repo_opts
-    sudo /usr/bin/timeout --foreground -k 15s 6m /usr/bin/dnf5 --assumeyes --no-plugins "${PM_DNF_OPTS[@]}" \
-        --setopt=install_weak_deps=False --setopt='*.pkg_gpgcheck=True' \
-        --setopt=timeout=25 --setopt=retries=2 install "$@"
-}
-
 vpn_verify_unit_permission() {
     local pid="$BASHPID" info
     local fields=()
@@ -125,7 +97,7 @@ vpn_verify_unit_permission() {
 }
 
 vpn_prepare_fedora() {
-    local bundle machine
+    local bundle machine unit_state
     machine="$(uname -m)" || return 1
     case "$machine" in
         x86_64|aarch64) ;;
@@ -135,20 +107,51 @@ vpn_prepare_fedora() {
     if grep -Eq '(^| )(rd\.live\.image|root=live:)' /proc/cmdline || [ -d /run/initramfs/live ]; then
         echo "Fedora Live detected. With a nonpersistent overlay, repeat setup after reboot."
     fi
-    if timeout 6s systemctl is-active --quiet serpantinum-vpn.service; then
-        echo "Serpantinum TUN is active. Checking the current installation without restarting it."
-    else
-        if bundle="$(vpn_source_bundle)"; then
+    if ! bundle="$(vpn_source_bundle)"; then
+        echo "Offline VPN bundle missing. Restore vpn-bundle/ from the matching Serpantinum checkout."
+        return 1
+    fi
+    install_vpn_bundle "$bundle" --verify-bundle || return 1
+    unit_state="$(timeout 6s systemctl show serpantinum-vpn.service -p ActiveState --value 2>/dev/null)" || true
+    case "$unit_state" in
+        active)
+            echo "Serpantinum TUN is active. Checking the current system engine without restarting it."
+            timeout 5s python3 "$PROJECT_ROOT/src/scripts/system/serp_vpn.py" system-engine-check --bundled || {
+                echo "Disconnect TUN before repairing the system engine."
+                return 1
+            }
+            ;;
+        activating|deactivating|reloading)
+            echo "Serpantinum TUN is changing state. Wait for it to finish before repairing the components."
+            return 1
+            ;;
+        *)
+            if [ ! -c /dev/net/tun ] && command -v modprobe >/dev/null; then
+                sudo timeout 10s modprobe tun || echo "Could not load the TUN kernel module."
+            fi
+            if [ ! -c /dev/net/tun ]; then
+                echo "TUN is unavailable: Fedora needs the /dev/net/tun character device."
+            fi
             install_vpn_service || return 1
             install_vpn_bundle "$bundle" --system --yaml || return 1
-        else
-            vpn_install_online || return 1
-        fi
-        if [ ! -c /dev/net/tun ] && command -v modprobe >/dev/null; then
-            sudo timeout 10s modprobe tun || return 1
-        fi
-    fi
+            ;;
+    esac
     sudo -v && vpn_verify_unit_permission
+}
+
+check_vpn_components() {
+    local bundle status=0
+    if bundle="$(vpn_source_bundle)"; then
+        install_vpn_bundle "$bundle" --verify-bundle || status=$?
+    else
+        echo "Offline VPN bundle missing. Restore vpn-bundle/ from the matching checkout."
+        status=1
+    fi
+    if [ "$status" -eq 0 ]; then
+        timeout 5s python3 "$PROJECT_ROOT/src/scripts/system/serp_vpn.py" system-engine-check --bundled || status=$?
+    fi
+    timeout 65s python3 "$PROJECT_ROOT/src/scripts/system/serp_vpn.py" verify-install \
+        "--prepare-status=$status"
 }
 
 install_vpn_components() (
@@ -157,8 +160,9 @@ install_vpn_components() (
     . /etc/os-release
     if [ "$ID" != "fedora" ]; then
         # Keep the pre-existing service and optional local bundle on other distros.
+        # The payload shipped in a Git checkout is for Fedora.
         install_vpn_service || true
-        if bundle="$(vpn_source_bundle)"; then
+        if bundle="$(vpn_source_bundle --skip-shipped)"; then
             if [ -x "$VPN_PACKAGES_DST" ] && [ -f "$VPN_UNIT_DST" ]; then
                 install_vpn_bundle "$bundle" --system || return 1
             else

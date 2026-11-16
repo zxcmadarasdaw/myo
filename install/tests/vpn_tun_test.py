@@ -344,6 +344,15 @@ class TunLifecycle(unittest.TestCase):
         for line in self.root.calls("pkexec") + self.root.calls("systemctl"):
             self.assertNotIn("tok-tun", line)
 
+    def test_failed_outbound_stops_tun(self):
+        vpn.set_mode("tun")
+        with patch.dict(os.environ, {"FAKE_OUTBOUND_FAIL": "1"}):
+            with self.assertRaises(vpn.VpnError) as ctx:
+                vpn.connect()
+        self.assertEqual(ctx.exception.code, "outbound_unreachable")
+        self.assertEqual(vpn.tun_state(), "inactive")
+        self.assertIn("stop serpantinum-vpn.service", self.root.calls("systemctl"))
+
     def test_switch_modes_while_connected(self):
         if not POSIX:
             self.skipTest("the stage 1 user proxy lifecycle runs on Linux only")

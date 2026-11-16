@@ -200,6 +200,8 @@ class H(http.server.BaseHTTPRequestHandler):
             return self.reply(200, {"version": "fake"})
         if self.path == "/proxies/proxy":
             return self.reply(200, {"now": state["now"], "all": selector["outbounds"]})
+        if self.path.startswith("/proxies/proxy/delay?"):
+            return self.reply(503, {}) if os.environ.get("FAKE_OUTBOUND_FAIL") else self.reply(200, {"delay": 100})
         if self.path.startswith("/group/proxy/delay"):
             return self.reply(200, {t: 100 + i * 10 for i, t in enumerate(selector["outbounds"]) if i != 1})
         self.reply(404, {})

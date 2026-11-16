@@ -8,13 +8,15 @@ SYSTEM_HELPER=/usr/libexec/serpantinum/serp-vpn-packages
 NEED_SYSTEM=false
 NEED_YAML=false
 CHECK=false
+VERIFY_BUNDLE=false
 for arg in "$@"; do
     case "$arg" in
         --system) NEED_SYSTEM=true ;;
         --yaml) NEED_YAML=true ;;
         --check) CHECK=true ;;
+        --verify-bundle) VERIFY_BUNDLE=true ;;
         --bundle=*) BUNDLE="$(realpath "${arg#--bundle=}")" ;;
-        *) echo "Usage: $0 [--system] [--yaml] [--check]" >&2; exit 2 ;;
+        *) echo "Usage: $0 [--system] [--yaml] [--check|--verify-bundle]" >&2; exit 2 ;;
     esac
 done
 
@@ -23,8 +25,12 @@ if [ ! -f "$SYSTEM_DIR/serp_vpn_singbox.py" ]; then
     exit 1
 fi
 
-archive="$(timeout 15s python3 "$SYSTEM_DIR/serp_vpn_singbox.py" bundle-archive --bundle="$BUNDLE")"
+archive="$(timeout 15s python3 "$SYSTEM_DIR/serp_vpn_singbox.py" bundle-archive --verify --bundle="$BUNDLE")"
 (cd "$BUNDLE" && timeout 120s sha256sum --strict --check --quiet SHA256SUMS)
+if [ "$VERIFY_BUNDLE" = true ]; then
+    echo "Offline VPN bundle verified."
+    exit 0
+fi
 
 install_dependencies() {
     local needed=() package filename distro release machine
@@ -53,6 +59,7 @@ install_dependencies() {
         fi
     done < "$BUNDLE/rpms/packages.tsv"
     [ "${#rpms[@]}" -gt 0 ] || return 1
+    printf 'Installing Fedora VPN dependencies from local signed RPMs: %s\n' "${needed[*]}"
     sudo /usr/bin/timeout -k 15s 6m /usr/bin/dnf5 --assumeyes --no-plugins --disable-repo='*' \
         --setopt=localpkg_gpgcheck=True --setopt=install_weak_deps=False --setopt=allow_downgrade=False \
         install "${rpms[@]}"
@@ -103,13 +110,16 @@ if [ "$BUNDLE" != "$(realpath -m "$KEEP")" ]; then
     # A multi-architecture bundle must remain complete so SHA256SUMS still works.
     cp -f "$BUNDLE"/*.tar.gz "$KEEP/"
     if [ -d "$BUNDLE/rpms" ]; then cp -r "$BUNDLE/rpms" "$KEEP/"; fi
+    for name in SOURCES.md LICENSE.sing-box; do
+        if [ -f "$BUNDLE/$name" ]; then cp -f "$BUNDLE/$name" "$KEEP/"; fi
+    done
     cp -f "$BUNDLE/SHA256SUMS" "$BUNDLE/manifest.json" "$KEEP/"
 fi
 
 install_dependencies
 if [ "$NEED_SYSTEM" = true ]; then
     [ -x "$SYSTEM_HELPER" ] || { echo 'Update Serpantinum to install its system VPN helper.' >&2; exit 1; }
-    if ! timeout 5s python3 "$SYSTEM_DIR/serp_vpn.py" system-engine-check; then
+    if ! timeout 5s python3 "$SYSTEM_DIR/serp_vpn.py" system-engine-check --bundled; then
         sudo "$SYSTEM_HELPER" offline-engine < "$archive"
     fi
 fi
