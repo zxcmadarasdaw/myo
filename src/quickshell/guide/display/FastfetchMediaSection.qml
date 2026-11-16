@@ -51,7 +51,7 @@ SettingsGroup {
         rootObj: studio.effectiveRootObj
         nameFilters: FastfetchMedia.filters.concat(FastfetchMedia.filters.map(pattern => pattern.toUpperCase()))
         titleText: studio.tr("choose", "Choose a local media file")
-        onFileSelected: (filePath, _) => FastfetchMedia.set("path", filePath)
+        onFileSelected: (filePath, _) => FastfetchMedia.selectFile(filePath)
     }
 
     subSettings: [
@@ -75,7 +75,7 @@ SettingsGroup {
                     textFontSize: studio.s(11)
                     buttonText: studio.tr("clear", "Clear")
                     enabled: FastfetchMedia.path !== ""
-                    onClicked: FastfetchMedia.set("path", "")
+                    onClicked: FastfetchMedia.selectFile("")
                 }
             }
         },
@@ -137,7 +137,7 @@ SettingsGroup {
                     horizontalAlignment: Text.AlignHCenter
                     color: ThemeBackend.text
                     text: preview.failed ? studio.tr("invalid", "This file could not be opened. The widget uses standard Fastfetch.")
-                          : (FastfetchMedia.kind === "video" && !FastfetchMedia.allowMotion)
+                          : (FastfetchMedia.kind === "video" && !preview.videoAvailable)
                             ? studio.tr("limited", "Video is paused by the current performance or recording profile.")
                             : studio.tr("loading", "Loading media…")
                 }
@@ -181,6 +181,23 @@ SettingsGroup {
                 options: [studio.tr("start", "Start"), studio.tr("center", "Center"), studio.tr("end", "End")]
                 currentIndex: FastfetchMedia.positions.indexOf(FastfetchMedia.position)
                 onSelected: (index, _) => FastfetchMedia.setStyle("position", FastfetchMedia.positions[index])
+            }
+        },
+        SettingsRow {
+            title: studio.tr("fit", "Media framing")
+            StudioChoice {
+                options: [studio.tr("fit_inside", "Fit inside"), studio.tr("fill_crop", "Fill and crop")]
+                currentIndex: FastfetchMedia.fits.indexOf(FastfetchMedia.fit)
+                onSelected: (index, _) => FastfetchMedia.setStyle("fit", FastfetchMedia.fits[index])
+            }
+        },
+        SettingsRow {
+            title: studio.tr("background", "Media background")
+            StudioChoice {
+                options: [studio.tr("transparent", "Transparent"), studio.tr("matte", "Matte"),
+                          studio.tr("accent", "Accent tint")]
+                currentIndex: FastfetchMedia.backgrounds.indexOf(FastfetchMedia.background)
+                onSelected: (index, _) => FastfetchMedia.setStyle("background", FastfetchMedia.backgrounds[index])
             }
         },
         Repeater {

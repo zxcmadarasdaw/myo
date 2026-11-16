@@ -10,7 +10,7 @@ VpnSheet {
     icon: "󰒓"
     property bool forceOffShown: false
     property bool confirmForget: false
-    signal singboxRequested()
+    signal singboxRequested(bool tun)
 
     function tr(key, en) { return I18n.t("vpn." + key, en); }
     readonly property bool tun: VpnService.mode === "tun"
@@ -77,8 +77,7 @@ VpnSheet {
                                     enabled: !VpnService.busy && !VpnService.sbInstalling && !VpnService.forcing && !parent.isOn
                                     onClicked: {
                                         if (!parent.usable) {
-                                            VpnService.error = sh.tr("mode.tun_missing",
-                                                "TUN mode needs the serpantinum-vpn service: run the Serpantinum installer again.");
+                                            sh.singboxRequested(true);
                                             return;
                                         }
                                         VpnService.setMode(parent.modelData.key);
@@ -190,7 +189,7 @@ VpnSheet {
                 VpnPill {
                     text: sh.tr("sb.manage", "Manage")
                     filled: false
-                    onClicked: sh.singboxRequested()
+                    onClicked: sh.singboxRequested(false)
                 }
             }
 

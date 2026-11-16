@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import "../../"
 import "../../widgets"
 import "../../widgets/canvas"
@@ -125,6 +126,61 @@ Item {
             cfg: CM.resolveSettings(root.settings, monitorName)
             Component.onCompleted: root.registerCamera(screenCamera)
             Component.onDestruction: root.unregisterCamera(screenCamera)
+        }
+    }
+
+    // One IPC operation for all screens, with at most one request in flight.
+    // Only a camera or compositor configuration change schedules work.
+    readonly property string hyprlandViews: {
+        if (!Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") || Hyprland.usingLua === false) return "";
+        let views = [];
+        for (let key of root.monitorNames()) {
+            let c = root.cameras[key];
+            if (!c || !c.loaded || !/^[a-zA-Z0-9_.:-]+$/.test(c.monitorName)) continue;
+            views.push("[" + JSON.stringify(c.monitorName) + "]={x=" + c.viewX + ",y=" + c.viewY
+                       + ",zoom=" + c.viewZoom + ",active=" + c.active + "}");
+        }
+        return views.length ? "{" + views.join(",") + "}" : "";
+    }
+    property bool hyprlandUpdatePending: false
+    property bool hyprlandWarned: false
+
+    function scheduleHyprlandUpdate() {
+        if (hyprlandViews === "") return;
+        hyprlandUpdatePending = true;
+        if (!hyprlandSync.running) hyprlandTick.start();
+    }
+
+    onHyprlandViewsChanged: scheduleHyprlandUpdate()
+    Connections {
+        target: root.hyprlandViews !== "" ? Hyprland : null
+        function onRawEvent(event) {
+            if (event && ["configreloaded", "monitoraddedv2", "monitorremovedv2"].includes(event.name))
+                root.scheduleHyprlandUpdate();
+        }
+    }
+    Timer {
+        id: hyprlandTick
+        interval: 45
+        onTriggered: {
+            if (!root.hyprlandUpdatePending || root.hyprlandViews === "" || hyprlandSync.running) return;
+            root.hyprlandUpdatePending = false;
+            hyprlandSync.reply = "";
+            hyprlandSync.command = ["timeout", "2s", "hyprctl", "repl",
+                                    "serpantinumCanvasUpdate and serpantinumCanvasUpdate(" + root.hyprlandViews + ")"];
+            hyprlandSync.running = true;
+        }
+    }
+    Process {
+        id: hyprlandSync
+        property string reply: ""
+        stdout: StdioCollector { onStreamFinished: hyprlandSync.reply = text.trim() }
+        onExited: code => {
+            let ok = code === 0 && reply === "canvas-ok";
+            if (!ok && !root.hyprlandWarned)
+                console.warn("Infinite Canvas: Hyprland window sync unavailable", reply || code);
+            root.hyprlandWarned = !ok;
+            if (root.hyprlandUpdatePending) hyprlandTick.start();
         }
     }
 

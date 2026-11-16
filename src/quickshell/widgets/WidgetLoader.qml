@@ -4,6 +4,7 @@ import Quickshell.Io
 import "faces"
 import "../"
 import "../singletons/widgetcontrols"
+import "canvas/WidgetFusion.js" as Fusion
 
 Item {
     id: loaderRoot
@@ -154,7 +155,7 @@ Item {
             if (item.isRemoving) continue;
             data.push(toJson(item));
         }
-        lastLayoutText = JSON.stringify(data);
+        lastLayoutText = JSON.stringify(Fusion.forStorage(data));
         layoutWriter.setText(lastLayoutText);
     }
 
@@ -221,7 +222,7 @@ Item {
                 let sh = loaderRoot.getScreenHeight();
 
                 for (let i = 0; i < data.length; i++) {
-                    let item = data[i];
+                    let item = Fusion.restorePosition(data[i]);
                     let itemId = item.wId || item.id;
                     if (!itemId) {
                         itemId = "w_" + Date.now() + "_" + i + "_" + Math.floor(Math.random() * 1000);

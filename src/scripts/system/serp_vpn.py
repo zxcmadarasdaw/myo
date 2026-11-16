@@ -70,6 +70,7 @@ import re
 import secrets
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -116,7 +117,7 @@ def singbox_location():
     chosen = _merge_settings(read_json(os.path.join(config_dir(), "settings.json"), {})).get("singboxPath", "")
     if _executable(chosen):                   # picked in the panel, or installed by singbox-install
         return chosen, ("managed" if chosen == managed_singbox() else "chosen")
-    found = shutil.which("sing-box")
+    found = shutil.which("sing-box") or system_singbox()
     if found:
         return found, "system"
     if _executable(managed_singbox()):
@@ -137,7 +138,7 @@ def _singbox_module():
     return serp_vpn_singbox
 
 
-INSTALL_HINT = "sudo dnf config-manager addrepo --from-repofile=https://sing-box.app/sing-box.repo && sudo dnf install sing-box"
+INSTALL_HINT = "bash install/install.sh --vpn-only"
 
 DEFAULT_SETTINGS = {
     "updateHours": 12,
@@ -245,16 +246,16 @@ MESSAGES = {
                  "JSON в подписке повреждён: {detail}"),
     "bad_yaml": ("The Clash YAML in the subscription is damaged: {detail}",
                  "Clash YAML в подписке повреждён: {detail}"),
-    "need_yaml": ("This is a Clash subscription; reading it needs PyYAML: sudo dnf install python3-pyyaml",
-                  "Это подписка Clash; для чтения нужен PyYAML: sudo dnf install python3-pyyaml"),
+    "need_yaml": ("This Clash subscription needs python3-pyyaml. Run " + INSTALL_HINT,
+                  "Для этой подписки Clash нужен python3-pyyaml. Запустите " + INSTALL_HINT),
     "happ_encrypted": ("happ:// links are encrypted by the Happ app. Paste the original https:// subscription link instead.",
                        "Ссылки happ:// зашифрованы приложением Happ. Вставьте исходную https://-ссылку подписки."),
     "no_source": ("No subscription yet. Paste a link.", "Нет подписки. Вставьте ссылку."),
     "fetch_http": ("The subscription server answered HTTP {detail}.", "Сервер подписки ответил HTTP {detail}."),
     "fetch_failed": ("Could not download the subscription: {detail}", "Не удалось скачать подписку: {detail}"),
     "too_large": ("The subscription is larger than 5 MB.", "Подписка больше 5 МБ."),
-    "no_singbox": ("sing-box is not installed. Download it in the VPN panel, or install it: " + INSTALL_HINT,
-                   "sing-box не установлен. Скачайте его в панели VPN или установите: " + INSTALL_HINT),
+    "no_singbox": ("sing-box is missing. Run " + INSTALL_HINT,
+                   "Не найден sing-box. Запустите " + INSTALL_HINT),
     "check_failed": ("sing-box rejected the generated config: {detail}",
                      "sing-box отклонил созданный конфиг: {detail}"),
     "no_config": ("There is no checked config yet. Update the subscription first.",
@@ -369,6 +370,9 @@ MESSAGES = {
     "sb_slow": ("The download is too slow ({detail} in 15 min) and was stopped. Use the offline VPN bundle, or try again later.",
                 "Загрузка слишком медленная ({detail} за 15 мин) и остановлена. Используйте офлайн-комплект VPN или повторите позже."),
     "setup_tun": ("The TUN device (/dev/net/tun) is unavailable.", "Устройство TUN (/dev/net/tun) недоступно."),
+    "setup_components": ("VPN components require repair: {detail}. Run " + INSTALL_HINT,
+                         "Требуется восстановить компоненты VPN: {detail}. Запустите " + INSTALL_HINT),
+    "setup_pkexec": ("TUN requires pkexec (polkit).", "Для TUN требуется pkexec (polkit)."),
     "setup_storage": ("Could not write the VPN files: {detail}.", "Не удалось записать файлы VPN: {detail}."),
     "setup_connected": ("Disconnect the current VPN before preparing a replacement.",
                         "Перед настройкой другого VPN отключите текущее подключение."),
@@ -1144,7 +1148,7 @@ def _strip_ansi(s):
     return re.sub(r"\x1b\[[0-9;]*m", "", s)
 
 
-def singbox_check(cfg, binary=None):
+def singbox_check(cfg, binary=None, timeout=30):
     """(ok, detail). Raises VpnError("no_singbox") when sing-box is missing."""
     binary = binary or singbox_bin()
     if not binary:
@@ -1153,7 +1157,7 @@ def singbox_check(cfg, binary=None):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(cfg, f)
-        p = subprocess.run([binary, "check", "-c", path], capture_output=True, text=True, timeout=30)
+        p = subprocess.run([binary, "check", "-c", path], capture_output=True, text=True, timeout=timeout)
         detail = _strip_ansi((p.stderr or p.stdout or "").strip().replace(path, "config.json"))
         return p.returncode == 0, detail[-600:]
     except (OSError, subprocess.SubprocessError) as e:
@@ -1202,9 +1206,18 @@ def fetch(url, settings):
     """(text, info). info: title / traffic / expiry from the provider's headers. Never echoes the URL."""
     req = urllib.request.Request(url, headers={"User-Agent": settings.get("userAgent") or DEFAULT_SETTINGS["userAgent"],
                                                "Accept": "*/*"})
+    deadline = time.monotonic() + 45
+    limit = 5 * 1024 * 1024
+    data = bytearray()
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            data = r.read(5 * 1024 * 1024 + 1)
+        with urllib.request.urlopen(req, timeout=15) as r:
+            while len(data) <= limit:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError()
+                chunk = r.read1(min(65536, limit + 1 - len(data)))
+                if not chunk:
+                    break
+                data.extend(chunk)
             headers = {k.lower(): v for k, v in r.headers.items()}
     except urllib.error.HTTPError as e:
         raise VpnError("fetch_http", e.code)
@@ -1214,7 +1227,7 @@ def fetch(url, settings):
         raise VpnError("fetch_failed", detail)
     except (OSError, ValueError) as e:
         raise VpnError("fetch_failed", type(e).__name__)
-    if len(data) > 5 * 1024 * 1024:
+    if len(data) > limit:
         raise VpnError("too_large")
     info = {}
     for part in headers.get("subscription-userinfo", "").split(";"):
@@ -1500,7 +1513,7 @@ def _run(args, input_text=None, timeout=30):
 
 
 def tun_installed():
-    return os.path.isfile(helper_path()) and os.path.isfile(unit_path()) and bool(_tool("SERP_VPN_SYSTEMCTL", "systemctl"))
+    return _executable(helper_path()) and os.path.isfile(unit_path()) and bool(_tool("SERP_VPN_SYSTEMCTL", "systemctl"))
 
 
 def tun_state():
@@ -2264,10 +2277,12 @@ def singbox_info():
         found.append({"path": p, "system": sb.system_path(p)})
     bundle, skipped = sb.find_bundle()
     tun = setup_status({**load_settings_readonly(), "mode": "tun"}, "")
+    log_path = os.path.join(state_dir(), "components-install.log")
     return {"ok": True, "path": path, "source": source, "version": checked["version"], "works": checked["ok"],
             "error": checked["error"] if path else "", "managedPath": sb.managed_path(), "arch": sb.arch_name(),
-            "tunUsable": tun["state"] == "ready", "tunError": tun["error"], "tunPackages": tun["packages"],
+            "tunUsable": tun["state"] == "ready", "tunError": component_problem(tun, "tun"), "tunPackages": tun["packages"],
             "tunPath": tun["path"], "tunVersion": tun["version"],
+            "componentsLog": log_path if os.path.isfile(log_path) else "",
             "candidates": found, "installHint": INSTALL_HINT,
             "bundle": {"found": bundle is not None, "dir": bundle["dir"] if bundle else "",
                        "version": bundle["version"] if bundle else "",
@@ -2359,14 +2374,25 @@ def system_singbox():
     return next((p for p in SYSTEM_SINGBOX if _executable(p)), "")
 
 
+def version_supports_tun(version):
+    match = re.match(r"^(\d+)\.(\d+)\.", version)
+    return match is not None and tuple(map(int, match.groups())) >= (1, 12)
+
+
+def tun_device_ready():
+    try:
+        return stat.S_ISCHR(os.stat(TUN_DEVICE).st_mode)
+    except OSError:
+        return False
+
+
 def setup_status(settings, binary, running=False):
     sb = _singbox_module()
     tun = settings["mode"] == "tun"
     path = system_singbox() if tun else binary
     checked = sb.probe(path, timeout=2) if path and not running else {}
-    version = re.match(r"^(\d+)\.(\d+)\.", checked.get("version", ""))
     binary_ready = running or (checked.get("ok", False) and
-                               (not tun or (version is not None and tuple(map(int, version.groups())) >= (1, 12))))
+                               (not tun or version_supports_tun(checked["version"])))
     exists = bool(path) or any(os.path.lexists(p) for p in (SYSTEM_SINGBOX if tun else
                                                            (managed_singbox(), settings["singboxPath"])))
     can_install = (_executable(PACKAGE_HELPER) and _executable("/usr/bin/dnf5") and
@@ -2374,9 +2400,11 @@ def setup_status(settings, binary, running=False):
     deps = []
     error = ""
     if tun and not running:
-        if not tun_installed() or not _tool("SERP_VPN_PKEXEC", "pkexec"):
+        if not tun_installed():
             error = msg("tun_not_installed")
-        elif not os.path.exists(TUN_DEVICE):
+        elif not _tool("SERP_VPN_PKEXEC", "pkexec"):
+            error = msg("setup_pkexec")
+        elif not tun_device_ready():
             error = msg("setup_tun")
         deps = [pkg for pkg, paths in TUN_TOOLS.items() if not any(_executable(p) for p in paths)]
     return {"state": "blocked" if error else "ready" if binary_ready and not deps else
@@ -2385,6 +2413,64 @@ def setup_status(settings, binary, running=False):
             "packages": deps, "version": checked.get("version", ""), "arch": sb.arch_name(),
             "pipewire": bool(shutil.which("pipewire")),
             "yaml": importlib.util.find_spec("yaml") is not None}
+
+
+def component_problem(health, mode):
+    problems = [health["error"]] if health["error"] else []
+    problems.extend(health["packages"])
+    if not health["binaryReady"]:
+        binary = health["path"] or ("system sing-box (>= 1.12)" if mode == "tun" else "sing-box")
+        problems.append(binary + (f" ({health['version']})" if health["version"] else ""))
+    return ", ".join(problems)
+
+
+def verify_installed_components(prepare_status):
+    """Local, non-routing check using a synthetic profile and the installed policy."""
+    settings = load_settings_readonly()
+    proxy = setup_status({**settings, "mode": "proxy"}, singbox_bin())
+    tun = setup_status({**settings, "mode": "tun"}, "")
+    errors = []
+    if prepare_status:
+        errors.append(f"Component preparation exited with status {prepare_status}")
+    for mode, health in (("proxy", proxy), ("tun", tun)):
+        if health["state"] != "ready":
+            errors.append(f"{mode.upper()}: {component_problem(health, mode)}")
+    if not proxy["yaml"]:
+        errors.append("Missing python3-pyyaml for Clash profiles")
+
+    fake_server = {"tag": "local-check", "protocol": "socks", "address": "127.0.0.1", "port": 1080}
+    cfg = build_config([fake_server], settings)
+    if proxy["binaryReady"]:
+        ok, detail = singbox_check(cfg, proxy["path"], timeout=8)
+        if not ok:
+            errors.append(f"Proxy configuration check failed: {detail}")
+    if tun_installed():
+        systemctl = _tool("SERP_VPN_SYSTEMCTL", "systemctl")
+        rc, out, err = _run([systemctl, "show", UNIT, "-p", "LoadState", "-p", "CapabilityBoundingSet"], timeout=6)
+        if rc != 0 or "LoadState=loaded" not in out.splitlines():
+            errors.append(f"systemd could not load {UNIT}: {err.strip() or rc}")
+        if "cap_net_admin" not in out.lower().replace("=", " ").split():
+            errors.append(f"{UNIT} lacks CAP_NET_ADMIN")
+        pkexec = _tool("SERP_VPN_PKEXEC", "pkexec")
+        if pkexec:
+            payload = json.dumps(tun_payload(cfg, settings))
+            rc, out, err = _run([pkexec, "--disable-internal-agent", helper_path(), "check-input"], payload, timeout=8)
+            if rc != 0:
+                errors.append(f"Local polkit authorization for the TUN helper failed: {err.strip() or rc}")
+            elif tun["binaryReady"]:
+                try:
+                    checked = json.loads(out).get("config")
+                except (ValueError, AttributeError):
+                    checked = None
+                ok, detail = singbox_check(checked, tun["path"], timeout=8) if checked else (False, "no config")
+                if not ok:
+                    errors.append(f"TUN configuration check failed: {detail}")
+    report = {"ok": not errors, "timestamp": int(time.time()),
+              "proxy": {key: proxy[key] for key in ("path", "version")},
+              "tun": {key: tun[key] for key in ("path", "version")}, "errors": errors}
+    path = os.path.join(state_dir(), "components.json")
+    write_private(path, json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+    return {**report, "report": path}
 
 
 AUTH_TIMEOUT = 180            # s to answer the polkit password window
@@ -2541,7 +2627,8 @@ def check_setup_config(cfg, settings, binary):
         raise VpnError("check_failed", "sing-box check")
 
 
-def vpn_setup(source, name, emit, *, file_path="", system=False, allow_yaml=False, offline_only=False):
+def vpn_setup(source, name, emit, *, file_path="", system=False, allow_yaml=False, offline_only=False,
+              local_engine=False):
     emit({"event": "stage", "stage": "system"})
     if vpn_running() or tun_state() in ("activating", "deactivating"):
         raise VpnError("setup_connected")
@@ -2550,13 +2637,15 @@ def vpn_setup(source, name, emit, *, file_path="", system=False, allow_yaml=Fals
         raise VpnError("sb_system_offline")
     tun = settings["mode"] == "tun"
     health = setup_status(settings, singbox_bin())
+    if local_engine and health["state"] != "ready":
+        raise VpnError("setup_components", component_problem(health, settings["mode"]))
     if health["error"]:
         raise VpnError("tun_not_installed" if not tun_installed() or
                        not _tool("SERP_VPN_PKEXEC", "pkexec") else "setup_tun")
     emit({"event": "stage", "stage": "binary"})
     binary = health["path"] if health["binaryReady"] else ""
     sb = _singbox_module()
-    local_bundle, bundle_errors = sb.find_bundle() if not system else (None, [])
+    local_bundle, bundle_errors = sb.find_bundle() if not system and not local_engine else (None, [])
     offline = offline_only or bool(local_bundle or bundle_errors)
     if tun and offline:
         require_offline_tun(health)
@@ -2584,7 +2673,7 @@ def vpn_setup(source, name, emit, *, file_path="", system=False, allow_yaml=Fals
                 raise VpnError(e.code, "") from None
             if e.code == "need_yaml" and offline:
                 raise VpnError("sb_bundle_yaml") from None
-            if e.code != "need_yaml" or not allow_yaml:
+            if e.code != "need_yaml" or not allow_yaml or local_engine:
                 raise
             install_fedora_packages(["python3-pyyaml"], emit)
             importlib.invalidate_caches()
@@ -2825,6 +2914,18 @@ def main(argv):
             data = sub_remove(rest[0] if rest else "")
         elif cmd == "singbox-info":
             data = singbox_info()
+        elif cmd == "system-engine-check":
+            path = system_singbox()
+            checked = _singbox_module().probe(path, timeout=2)
+            if not checked["ok"] or not version_supports_tun(checked["version"]):
+                raise VpnError("setup_components", path or "system sing-box (>= 1.12)")
+            data = {"path": path, "version": checked["version"]}
+        elif cmd == "verify-install":
+            try:
+                prepare_status = int(next((a.split("=", 1)[1] for a in rest if a.startswith("--prepare-status=")), "0"))
+                data = verify_installed_components(prepare_status)
+            except (OSError, ValueError) as e:
+                raise VpnError("setup_storage", str(e)) from None
         elif cmd == "singbox-install":
             source = "bundle" if "--offline" in rest else "online" if "--online" in rest else "auto"
             bundle_dir = next((a[len("--bundle="):] for a in rest if a.startswith("--bundle=")), "")
@@ -2840,7 +2941,7 @@ def main(argv):
             try:
                 data = vpn_setup(sys.stdin.read(), name, _emit if as_json else (lambda _: None),
                                  file_path=file_path, system="--system" in rest, allow_yaml="--yaml" in rest,
-                                 offline_only="--offline" in rest)
+                                 offline_only="--offline" in rest, local_engine="--local-engine" in rest)
             except _singbox_module().SingboxError as e:
                 raise VpnError(e.code, e.detail) from None
             except OSError as e:
@@ -2872,8 +2973,19 @@ def main(argv):
         if "ok" not in data:
             data = dict(data, ok=True)
         print(json.dumps(data, ensure_ascii=False))
+    elif cmd == "verify-install":
+        for mode in ("proxy", "tun"):
+            result = data[mode]
+            print(f"{mode.upper()} sing-box: {result['version'] or 'unavailable'} {result['path']}")
+        for error in data["errors"]:
+            print(error, file=sys.stderr)
+        print(f"VPN diagnostics: {data['report']}")
+    elif cmd == "system-engine-check":
+        print(f"System sing-box {data['version']} at {data['path']}")
     else:
         _print_human(cmd, data)
+    if cmd == "verify-install" and not data["ok"]:
+        return 1
     if cmd == "test" and data.get("check") == "failed":
         return 1
     if cmd == "test" and data.get("check") == "no_singbox":

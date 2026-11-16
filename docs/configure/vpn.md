@@ -12,53 +12,45 @@ A subscription client in the network panel (**Super+N**), in the spirit of Hiddi
 - **Proxy** (default): a **local proxy on 127.0.0.1**, with no root and no system-wide routing. An application uses the VPN when it is told to use the proxy.
 - **TUN · whole system**: all traffic of the computer goes through the VPN, through the `serpantinum-vpn` system service (see [TUN mode](#tun-mode-whole-system)).
 
-## Install sing-box
+## Install on Fedora
 
-Open **Super+N → VPN**, enter a link or choose a local profile, then click **Install and configure VPN**. Serpantinum checks the current mode and sing-box, shows progress and validates the profile before saving it. A working installation is reused. After setup, choose a server and press **Connect** to start the VPN.
-
-- **Proxy** uses the architecture-specific SagerNet GitHub archive and requires the published SHA-256. During the download you can see bytes, speed and retries, or cancel. The verified binary is placed in `~/.local/share/serpantinum/vpn/bin/sing-box` after the version and configuration checks succeed.
-- **TUN** uses a system installation of sing-box. The Fedora panel can install it from the bundled archive via polkit. The official SagerNet RPM remains available as an explicit online action. A working system installation is reused.
-- **Connection → sing-box** still lists installed binaries and accepts a path for Proxy. A working binary has to answer `sing-box version`.
-
-### Offline VPN bundle (no internet)
-
-The Fedora 45 x86_64 package includes the official sing-box archive, the Fedora-signed RPMs for `iproute`, `nftables`, optional `python3-pyyaml` and their supporting libraries, Proxy/TUN check templates, `manifest.json` and `SHA256SUMS`. RPM dependencies assume a working Fedora 45 system with Python, DNF5, systemd and the distribution's trusted signing keys. The kit includes only a loopback test profile. [SagerNet release](https://github.com/SagerNet/sing-box/releases/tag/v1.14.4) · [Fedora signing keys](https://fedoraproject.org/security/)
-
-- **Installer:** the bundled VPN files are used locally and retained under `~/.local/share/serpantinum/vpn-bundle` or the equivalent `XDG_DATA_HOME` path. The main installer can still use the network for the desktop and other components.
-- **Panel:** select **Proxy** or **TUN** in **Super+N → VPN → Connection**, then open **sing-box**. **Install VPN Components** or **Choose folder…** uses a local bundle. TUN authenticates via the system helper. If Fedora tools are missing, the panel names the packages and points to the local installer below. Online GitHub and RPM installation have separate actions.
-- **By hand:** from a bundled release or the retained bundle, run the following commands on the matching Serpantinum installation.
+From the Serpantinum checkout or extracted release, run the desktop installer as the user who will run the shell.
 
 ```bash
-cd vpn-bundle
-sha256sum -c SHA256SUMS
-bash install-vpn-bundle.sh                     # Proxy
-bash install-vpn-bundle.sh --system            # Proxy and TUN, with sudo
-bash install-vpn-bundle.sh --system --yaml     # also support Clash YAML
-bash install-vpn-bundle.sh --system --check    # config and system checks
+bash install/install.sh
 ```
 
-The TUN helper verifies a private copy of the archive against its root-owned lock before replacing the binary at `/usr/local/bin/sing-box`. Local RPM installation disables repositories and checks RPM signatures. A missing graphical polkit agent can be bypassed by using the terminal installer with `sudo`. A remote subscription or a connection to a VPN server still needs that service to be reachable.
-- **Fedora Live:** without persistent storage everything is gone after a reboot, including sing-box. Keep the bundle on a USB stick and install it again after each boot. This needs no internet.
+The installer prepares Proxy and TUN on Fedora x86_64 or aarch64. It reuses a compatible system sing-box or installs the signed RPM from [SagerNet](https://sing-box.sagernet.org/installation/package-manager/), installs Fedora dependencies for routing and Clash YAML, and registers the systemd service and polkit rules. It loads the kernel TUN module if the device is missing. It prints **VPN components: READY** after checking the binary, synthetic Proxy and TUN configurations, and local authorization. The checks leave the VPN stopped if it was stopped and do not set routes, DNS or the desktop proxy.
 
-Building a bundle (developer, needs internet; the archives never go into Git, `dist/` and `/vpn-bundle/` are ignored):
+For repair, run the same installer in an active local session:
 
 ```bash
-python3 packaging/vpn-bundle/build_vpn_bundle.py --verify-api            # dist/vpn-bundle (x86_64)
-python3 packaging/vpn-bundle/build_vpn_bundle.py --arch all --release    # + dist/serpantinum-<version>-offline.tar.gz
-python3 packaging/vpn-bundle/build_vpn_bundle.py --offline-build        # from verified local cache only
+bash install/install.sh --vpn-only
 ```
 
-The script downloads only from the GitHub release URL and refuses a file whose size or SHA-256 differs from the lock file. `--verify-api` also compares the hash with the digest GitHub publishes. Upload the tarball and its `.sha256` to the GitHub release page. To move to a newer sing-box, change the lock file in a reviewed commit, then rebuild.
+The terminal shows DNF progress and errors. DNF downloads have network timeouts and retries, and each online transaction has a six-minute limit. To interrupt the terminal installer, press Ctrl+C. After repairing the cause, run the same command again. The text log and JSON diagnostic are under `~/.local/state/serpantinum/vpn/` or the corresponding `XDG_STATE_HOME` directory:
 
-### Time limits, cancel and the install log
+- `components-install.log` records component installation.
+- `components.json` records the last completed readiness check.
+- `install.log` records local profile import and CLI setup operations.
 
-- Downloading has a 30 s stall timeout, four resuming attempts, and a 15 min limit for the whole download.
-- The administrator password (polkit) must be answered within 3 minutes. DNF5 is stopped by the root helper after 20 minutes.
-- The panel stops a helper that sends nothing for 90 s, so no progress animation runs forever.
-- Cancellation is available during download and authorization. Once authorized, the root helper owns the transaction and its timeout. The local sing-box install has a 90 s limit.
-- Every install appends to `~/.local/state/serpantinum/vpn/install.log` (stages, retries, the error code). It never contains links, servers or configs. The error in the panel names this file.
+Open **Super+N → VPN → Connection → sing-box** to see **VPN Engine Ready** or the missing component and repair command. Add your profile, select a server and press **Connect**. The panel reads subscription URLs when requested and uses the installed engine. You can still select an existing executable for Proxy.
 
-When updating an existing Fedora installation of Serpantinum, run the updated Serpantinum installer to register the package helper and policy. The installer supplies `lxqt-policykit` on minimal Fedora Hyprland systems that lack a packaged authentication agent. Hyprland starts the agent at sign-in. If a Live session loses the binary at reboot, reopening the VPN tab offers setup again.
+### Offline VPN bundle
+
+Put a verified release bundle in `vpn-bundle/` or `dist/vpn-bundle/` next to the project tree and run the same installer. It also recognizes a retained bundle under `~/.local/share/serpantinum/vpn-bundle/` or the corresponding `XDG_DATA_HOME` directory. The packaged dependency kit targets **Fedora 45 x86_64** and expects a working base system with systemd, polkit, Python, DNF5 and Fedora signing keys. Other architectures need matching sing-box assets and must already have the system dependencies.
+
+sing-box is checked against the project's pinned SHA-256. Local RPM installation disables repositories and verifies Fedora signatures. `--vpn-only` with the complete kit needs no network for component installation. Git checkouts need a separately built or downloaded kit, and desktop installation can still need the network for other software.
+
+On Fedora Live without a persistent overlay, retain the kit and the matching Serpantinum tree on another drive. Repeat the appropriate installer command after reboot when the checks report missing components. Remote subscriptions and VPN connections require network access.
+
+Building the bundle from official assets:
+
+```bash
+python3 packaging/vpn-bundle/build_vpn_bundle.py --verify-api
+python3 packaging/vpn-bundle/build_vpn_bundle.py --arch all --release
+python3 packaging/vpn-bundle/build_vpn_bundle.py --offline-build
+```
 
 ## Use
 

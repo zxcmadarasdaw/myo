@@ -10,8 +10,8 @@ Rectangle {
     readonly property var colors: theme.colors || {}
     readonly property var bar: appearance.bar || null
     readonly property var dock: appearance.dock || null
-    readonly property real screenWidth: 1600
-    readonly property real screenHeight: 900
+    readonly property real screenWidth: packageData.referenceSize?.w || 1600
+    readonly property real screenHeight: packageData.referenceSize?.h || 900
     readonly property real factor: width / screenWidth
     readonly property bool verticalBar: !!bar && (bar.position === "left" || bar.position === "right")
     readonly property real barSize: bar && !bar.autohide ? (bar.height || 40) + (bar.style === "fill" ? 0 : 4) : 0
@@ -69,6 +69,7 @@ Rectangle {
             readonly property real widgetHeight: modelData.stretchHeight ? preview.screenHeight : modelData.wHeight
             width: widgetWidth * preview.factor
             height: widgetHeight * preview.factor
+            readonly property bool showPortrait: modelData.wType === "terminal" && !!preview.packageData.fastfetchImage
             x: {
                 if (modelData.stretchWidth) return 0;
                 if (!alignment) return modelData.wX * preview.factor;
@@ -93,9 +94,20 @@ Rectangle {
             border.color: Qt.alpha(preview.colors.mauve || ThemeBackend.mauve, 0.5)
             clip: true
 
+            Image {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.margins: 4
+                width: parent.width * 0.36
+                height: parent.height - 8
+                source: parent.showPortrait ? preview.packageData.fastfetchImage : ""
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+            }
             Text {
-                anchors.centerIn: parent
-                width: parent.width - 4
+                x: parent.showPortrait ? parent.width * 0.38 : 0
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width - x - 4
                 text: WidgetRegistry.types[parent.modelData.wType]?.name || parent.modelData.wType
                 textFormat: Text.PlainText
                 horizontalAlignment: Text.AlignHCenter

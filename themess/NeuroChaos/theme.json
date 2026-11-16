@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "name": "NEURO//CHAOS",
+  "author": "Serpantinum",
+  "description": "Cold blue and ultraviolet over charcoal. Retro title bars, live meters and graphs, an interactive notes panel and a looping portrait beside a real terminal. The center stays open for the original anime scene.",
+  "referenceSize": {
+    "w": 2560,
+    "h": 1440
+  },
+  "components": {
+    "palette": "palette.json",
+    "materials": "materials.json",
+    "panels": "panels.json",
+    "animations": "animations.json",
+    "canvas": "canvas.json",
+    "dock": "dock.json",
+    "launcher": "launcher.json",
+    "notifications": "notifications.json",
+    "studio": "studio.json",
+    "fastfetch": "fastfetch.json",
+    "widgets": "widgets.json",
+    "wallpaper": "@shared/noir-chaos/anime-desktop.webm",
+    "fastfetchMedia": "@shared/noir-chaos/anime-fastfetch.webm"
+  }
+}

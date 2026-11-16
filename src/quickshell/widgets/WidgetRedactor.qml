@@ -10,6 +10,7 @@ import "../reusables"
 import "faces"
 import "canvas"
 import "canvas/CanvasMath.js" as CM
+import "canvas/WidgetFusion.js" as Fusion
 
 Scope {
     id: root
@@ -369,6 +370,18 @@ Scope {
                     property var marquee: null
                     // Plain copy of the model for the minimap, search and group logic.
                     property var canvasWidgets: []
+                    property bool editFusionMember: false
+                    readonly property var selectedFusion: {
+                        const id = String(selectedId);
+                        return Fusion.groups(canvasWidgets).find(group => group.members.some(w => w.wId === id)) || null;
+                    }
+                    onSelectedFusionChanged: {
+                        if (!selectedFusion || selectedFusion.options.mode !== "freeform") editFusionMember = false;
+                    }
+                    onEditFusionMemberChanged: {
+                        if (!editFusionMember && selectedFusion && multiIds.length === 0)
+                            setSelection(selectedId, groupMates(selectedId));
+                    }
                     readonly property bool selectionGrouped: {
                         let ids = selectionIdList;
                         for (let i = 0; i < canvasWidgets.length; i++) {
@@ -1181,7 +1194,7 @@ Scope {
 
                     Connections {
                         target: activeWidgetsModel
-                        function onDataChanged() { canvasListTimer.restart(); }
+                        function onDataChanged() { if (!canvasListTimer.running) canvasListTimer.start(); }
                         function onCountChanged() { canvasListTimer.restart(); }
                     }
 
@@ -1218,6 +1231,14 @@ Scope {
                     // dragged by any of its members.
                     function pressSelect(widgetId) {
                         let id = String(widgetId);
+                        if (editFusionMember) {
+                            const sameGroup = selectedFusion?.members.some(widget => widget.wId === id);
+                            if (!sameGroup) editFusionMember = false;
+                        }
+                        if (editFusionMember) {
+                            setSelection(id, []);
+                            return;
+                        }
                         if (id === String(selectedId)) return;
                         if (multiIds.indexOf(id) >= 0) {
                             let rest = multiIds.filter(x => x !== id);
@@ -1313,6 +1334,7 @@ Scope {
                             if (p) p.finalizeSync();
                         }
                         dragExcluded = ({});
+                        if (selectedFusion) refreshCanvasWidgets();
                     }
 
                     function shiftCompanions(dx, dy) {
@@ -1333,18 +1355,92 @@ Scope {
                     function groupSelection() {
                         let ids = selectionIdList.slice();
                         if (ids.length < 2) return;
+                        ids = CM.expandSelection(canvasWidgets, ids);
                         let group = CM.newId("g", null);
-                        for (let i = 0; i < ids.length; i++) setWidgetProperty("wGroup", group, ids[i]);
+                        for (const id of ids) {
+                            setWidgetProperty("wGroup", group, id);
+                            const record = canvasWidgets.find(widget => widget.wId === id);
+                            if (record?.wFusion) setWidgetProperty("wFusion", "", id);
+                        }
                         refreshCanvasWidgets();
                     }
 
-                    function ungroupSelection() {
-                        let ids = selectionIdList.slice();
-                        for (let i = 0; i < ids.length; i++) {
-                            let idx = rowIndex(ids[i]);
-                            if (idx >= 0 && activeWidgetsModel.get(idx).wGroup) setWidgetProperty("wGroup", "", ids[i]);
+                    function combineWidgets() {
+                        const members = selectionRecords();
+                        if (members.length < 2 || members.some(w => w.stretchWidth || w.stretchHeight)) return false;
+                        const options = Fusion.settings({});
+                        return applyFusion(members, CM.newId("g", null), options, CM.boundsOf(members));
+                    }
+
+                    function updateFusion(patch, width, height, direction) {
+                        const group = selectedFusion;
+                        if (!group) return false;
+                        const members = group.members.slice();
+                        if (direction) {
+                            const i = members.findIndex(w => w.wId === selectedId);
+                            const j = i + direction;
+                            if (j < 0 || j >= members.length) return false;
+                            [members[i], members[j]] = [members[j], members[i]];
+                        }
+                        const changes = Object.assign({}, group.options, patch);
+                        const options = Fusion.settings(changes);
+                        return applyFusion(members, group.id, options, group.box, width, height,
+                                           !!direction || patch.mode !== undefined || patch.gap !== undefined
+                                           || patch.columns !== undefined || width > 0 || height > 0);
+                    }
+
+                    function applyFusion(members, id, options, box, width, height, layout = true) {
+                        const minimum = { w: 40, h: 32 };
+                        const constraints = members.map(widget => {
+                            const proxy = proxyFor(widget.wId);
+                            const c = getConstraints(proxy?.preview?.item);
+                            if (layout && c) {
+                                const w = Math.max(c.minW, c.minH * c.minA);
+                                const h = Math.max(c.minH, c.maxA > 0 ? c.minW / c.maxA : 0);
+                                const rotated = widget.wRotation % 180;
+                                minimum.w = Math.max(minimum.w, rotated ? h : w);
+                                minimum.h = Math.max(minimum.h, rotated ? w : h);
+                            }
+                            return c;
+                        });
+                        const rects = layout ? Fusion.arrange(members, options, box, width || box.w, height || box.h, minimum) : [];
+                        commitHistory();
+                        const serialized = JSON.stringify(options);
+                        for (let i = 0; i < members.length; i++) {
+                            const widget = members[i];
+                            setWidgetProperty("wGroup", id, widget.wId);
+                            setWidgetProperty("wFusion", serialized, widget.wId);
+                            setWidgetProperty("wFusionIndex", i, widget.wId);
+                            if (widget.anchor) setWidgetProperty("anchor", "", widget.wId);
+                            if (!layout) continue;
+                            const rect = rects[i];
+                            const size = Fusion.fit(rect, constraints[i]);
+                            const index = rowIndex(widget.wId);
+                            if (index < 0) continue;
+                            activeWidgetsModel.setProperty(index, "wX", rect.x);
+                            activeWidgetsModel.setProperty(index, "wY", rect.y);
+                            activeWidgetsModel.setProperty(index, "wWidth", size.w);
+                            activeWidgetsModel.setProperty(index, "wHeight", size.h);
+                            WidgetSync.setGeometry(redactorWindow.safeMonitorName, widget.wId,
+                                                   rect.x, rect.y, size.w, size.h, widget.wOpacity, widget.wRotation);
                         }
                         refreshCanvasWidgets();
+                        commitHistory();
+                        return true;
+                    }
+
+                    function ungroupSelection() {
+                        let ids = CM.expandSelection(canvasWidgets, selectionIdList);
+                        commitHistory();
+                        for (let i = 0; i < ids.length; i++) {
+                            let idx = rowIndex(ids[i]);
+                            if (idx < 0 || !activeWidgetsModel.get(idx).wGroup) continue;
+                            setWidgetProperty("wGroup", "", ids[i]);
+                            setWidgetProperty("wFusion", "", ids[i]);
+                        }
+                        editFusionMember = false;
+                        refreshCanvasWidgets();
+                        commitHistory();
                     }
 
                     function removeSelection() {
@@ -1356,9 +1452,9 @@ Scope {
 
                     // Saves the selection, or the whole layout when nothing is selected.
                     function saveSelectionAsComposition(name) {
-                        let records = selectionRecords();
-                        if (records.length === 0) records = modelRows();
-                        return CanvasState.saveComposition(name, records);
+                        const records = modelRows();
+                        const ids = CM.expandSelection(records, selectionIdList);
+                        return CanvasState.saveComposition(name, ids.length ? records.filter(w => ids.includes(w.wId)) : records);
                     }
 
                     function insertComposition(compositionId) {
@@ -1482,6 +1578,8 @@ Scope {
                             if (old.wVariant !== e.wVariant) WidgetSync.setVariant(mon, id, e.wVariant);
                             if ((old.wImagePath || "") !== (e.wImagePath || "")) WidgetSync.setImagePath(mon, id, e.wImagePath || "");
                             let keys = redactorMode.customKeys(e);
+                            for (const key of ["wGroup", "wFusion"])
+                                if (old[key] && !e[key]) WidgetSync.setProperty(mon, id, key, "");
                             for (let j = 0; j < keys.length; j++) {
                                 if (JSON.stringify(old[keys[j]]) !== JSON.stringify(e[keys[j]])) WidgetSync.setProperty(mon, id, keys[j], e[keys[j]]);
                             }
@@ -1749,6 +1847,8 @@ Scope {
                                 fragmentShader: GpuCompatibility.shadersAllowed ? ("file://" + Caching.serpantinumDir + "/assets/shaders/ui/grid_pattern.frag.qsb") : ""
                             }
                         }
+
+                        FusionFrames { records: redactorMode.canvasWidgets }
 
                         Repeater {
                             id: widgetRepeater
@@ -3153,7 +3253,7 @@ Scope {
                                 let data = JSON.parse(trimmed);
                                 redactorMode.topZ = data.length + 10;
                                 for (let i = 0; i < data.length; i++) {
-                                    let item = data[i];
+                                    let item = Fusion.restorePosition(data[i]);
                                     let type = item.wType || item.type || "time";
                                     let variant = item.wVariant || item.variant || WidgetRegistry.defaultVariant(type);
                                     let sVal = item.wScale !== undefined ? parseFloat(item.wScale) : 1.0;
@@ -3189,7 +3289,9 @@ Scope {
                                         wOpacity: op,
                                         wRotation: rot,
                                         wImagePath: imgPath,
-                                        wId: String(item.wId || item.id || ("w_" + Date.now() + "_" + i))
+                                        wId: String(item.wId || item.id || ("w_" + Date.now() + "_" + i)),
+                                        stretchWidth: !!item.stretchWidth,
+                                        stretchHeight: !!item.stretchHeight
                                     };
 
                                     for (let key in item) {

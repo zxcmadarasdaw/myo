@@ -34,7 +34,7 @@ Item {
     readonly property bool hasSource: status.hasSource === true
     readonly property var currentServer: status.currentServer || null
     readonly property string proxy: status.proxy || "127.0.0.1:2080"
-    readonly property string installHint: status.installHint || "sudo dnf install sing-box"
+    readonly property string installHint: status.installHint || "bash install/install.sh --vpn-only"
     readonly property int currentDelay: (current !== "" && delays[current] !== undefined) ? delays[current] : -1
     readonly property string warning: status.warning || ""
     readonly property var countries: groupCountries(servers, delays)
@@ -84,22 +84,10 @@ Item {
     property var sbInfo: ({})                 // singbox-info: path, source, version, works, candidates
     property bool sbInstalling: false
     property bool sbCancelled: false
-    property string sbStage: ""               // release | download | verify | extract | test | done
-    property real sbDone: 0
-    property real sbTotal: 0
-    property real sbSpeed: 0
-    property int sbAttempt: 0
-    property string sbVersion: ""
-    property bool sbChecksum: false
+    property string sbStage: ""               // system | binary | profile | test | config | done
     property string sbError: ""
-    property string sbErrorCode: ""
-    property string sbRetryDetail: ""
-    property int sbRetryWait: 0
-    property bool sbSetup: false
-    // The privileged helper owns the deadline after authorization.
-    readonly property bool sbCanCancel: sbInstalling && ["transaction", "bundle_install", "done"].indexOf(sbStage) < 0
-    property real sbElapsed: 0                // s, from heartbeat events (polkit wait / RPM transaction)
-    property string sbLogPath: ""             // <state>/vpn/install.log of the last failed install
+    readonly property bool sbCanCancel: sbInstalling && sbStage !== "done"
+    property string sbLogPath: ""
     property bool sbTimedOut: false
     property double sbLastEvent: 0            // ms; the watchdog stops a helper that went silent
     readonly property int sbWatchdogMs: 90000
@@ -210,44 +198,23 @@ Item {
     function singboxInfo() {
         if (!sbInfoProc.running) sbInfoProc.running = true;
     }
-    // source: "" = a found offline bundle first, else download; "online" = GitHub only;
-    // "bundle" = offline only, never the network (folder: a bundle chosen by the user).
-    function installSingbox(source, folder) {
-        let args = source === "online" ? ["--online"] : source === "bundle" ? ["--offline"] : [];
-        if (folder) args.push("--bundle=" + folder);
-        if (source === "bundle" && mode === "tun") args.push("--system");
-        return startInstall(false, args, "", source === "bundle" || !!folder || (source !== "online" && sbBundleFound));
-    }
-    readonly property bool sbReady: mode === "tun" ? sbInfo.tunUsable === true : sbInfo.works === true
-    readonly property bool sbBundleFound: !!(sbInfo.bundle && sbInfo.bundle.found)
-    function prepareVpn(link, name, path, system, yaml) {
-        let args = [];
+    function prepareVpn(link, name, path) {
+        if (setupNeeded || sbProc.running || busy || forcing) return false;
+        let args = ["--local-engine"];
         if ((name || "").trim() !== "") args.push("--name=" + name.trim());
         if (path) args.push("--file=" + path);
-        if (system) args.push("--system");
-        if (yaml) args.push("--yaml");
-        return startInstall(true, args, link || "");
-    }
-    function startInstall(setup, args, input, offline) {
-        if (sbProc.running || busy || forcing) return false;
         stopPing();
         error = "";
-        sbSetup = setup;
         sbCancelled = false;
         sbError = "";
-        sbErrorCode = "";
-        sbRetryDetail = "";
-        sbRetryWait = 0;
         sbResult = null;
         sbLogPath = "";
         sbTimedOut = false;
-        sbElapsed = 0;
         sbLastEvent = Date.now();
-        sbStage = setup ? "system" : offline ? "bundle" : "release";
-        sbDone = 0; sbTotal = 0; sbSpeed = 0; sbAttempt = 1;
+        sbStage = "system";
         sbInstalling = true;
-        sbProc.input = input;
-        sbProc.command = ["python3", script, setup ? "setup" : "singbox-install"].concat(args).concat(["--json"]);
+        sbProc.input = link || "";
+        sbProc.command = ["python3", script, "setup"].concat(args).concat(["--json"]);
         sbProc.stdinEnabled = true;
         sbProc.running = true;
         return true;
@@ -255,7 +222,7 @@ Item {
     function cancelInstall() {
         if (!sbCanCancel || !sbProc.running) return;
         sbCancelled = true;
-        sbProc.running = false;        // SIGTERM: the script removes its partial download / stops pkexec
+        sbProc.running = false;
     }
     function useSingbox(path) { run("singbox-use", [path || ""], ""); }
 
@@ -418,8 +385,7 @@ Item {
         }
     }
 
-    // Watchdog: the helper writes a line at least every 10-30 s (progress, retry, heartbeat).
-    // Silence for sbWatchdogMs means it hangs: stop it so no animation runs forever.
+    // Stop a stalled profile reader even if the network keeps its socket open.
     Timer {
         interval: 5000
         repeat: true
@@ -438,7 +404,7 @@ Item {
         }
     }
 
-    // Live progress: one JSON object per line (stage / progress / retry / heartbeat), the result last.
+    // Profile validation emits one JSON object per line, with the result last.
     Process {
         id: sbProc
         property string input: ""
@@ -453,31 +419,13 @@ Item {
                 let e;
                 try { e = JSON.parse(line); } catch (err) { return; }
                 root.sbLastEvent = Date.now();
-                if (e.event === "heartbeat") {
-                    root.sbElapsed = e.elapsed || 0;
-                } else if (e.event === "stage") {
+                if (e.event === "stage") {
                     root.sbStage = e.stage || "";
-                    root.sbRetryWait = 0;
-                    if (e.version) root.sbVersion = e.version;
-                    if (e.total) root.sbTotal = e.total;
-                    if (e.checksum !== undefined) root.sbChecksum = e.checksum === true;
-                } else if (e.event === "progress") {
-                    root.sbDone = e.done || 0;
-                    if (e.total) root.sbTotal = e.total;
-                    root.sbSpeed = e.speed || 0;
-                    root.sbAttempt = e.attempt || root.sbAttempt;
-                    root.sbRetryWait = 0;
-                } else if (e.event === "retry") {
-                    root.sbAttempt = e.attempt || root.sbAttempt;
-                    root.sbSpeed = 0;
-                    root.sbRetryWait = e.wait || 0;
-                    root.sbRetryDetail = e.detail || e.code || "";
                 } else if (e.ok === true && e.path) {
                     root.sbResult = e;
                     root.sbStage = "done";
                 } else if (e.ok === false && e.error) {
                     root.sbError = e.error.message || e.error.code || "";
-                    root.sbErrorCode = e.error.code || "";
                     root.sbLogPath = e.error.log || "";
                 }
             }
@@ -485,19 +433,16 @@ Item {
         onExited: (code) => {
             input = "";
             if (root.sbTimedOut) {
-                root.sbError = I18n.t("vpn.singbox.stalled", "The installer stopped responding (no progress for 90 s) and was stopped. Nothing new was installed.");
-                root.sbErrorCode = "stalled";
+                root.sbError = I18n.t("vpn.setup.profile_timeout", "VPN profile import timed out after 90 s.");
                 root.sbStage = "";
             } else if (root.sbCancelled) {
-                root.sbError = ["release", "download"].indexOf(root.sbStage) >= 0
-                    ? I18n.t("vpn.singbox.cancelled", "Download cancelled. Nothing was installed.")
-                    : I18n.t("vpn.singbox.cancelled_setup", "Installation cancelled.");
+                root.sbError = I18n.t("vpn.setup.profile_cancelled", "VPN profile import cancelled.");
                 root.sbStage = "";
             } else if (!root.sbResult && root.sbError === "") {
                 root.sbError = I18n.t("vpn.errors.backend", "The VPN helper failed (is python3 installed?).");
             }
             root.actionSeq++;
-            if (root.sbResult && root.sbSetup) {
+            if (root.sbResult) {
                 if (root.sbResult.items !== undefined) {
                     root.subs = root.sbResult.items;
                     root.activeSub = root.sbResult.active || "";

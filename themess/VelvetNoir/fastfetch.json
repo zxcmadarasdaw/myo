@@ -1,0 +1,19 @@
+{
+  "appearance": {
+    "theme": "velvet",
+    "layout": "classic",
+    "position": "center",
+    "width": 37,
+    "height": 86,
+    "zoom": 1,
+    "opacity": 1,
+    "radius": 10,
+    "fit": "fit",
+    "background": "matte"
+  },
+  "loop": true,
+  "autoplay": true,
+  "pauseWhenHidden": true,
+  "speed": 1,
+  "animationFps": 0
+}

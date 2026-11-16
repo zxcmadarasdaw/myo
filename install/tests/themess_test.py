@@ -81,6 +81,34 @@ class ThemessTest(unittest.TestCase):
         self.assertFalse(self.stores.settings.exists())
         self.assertFalse(self.stores.directory.exists())
 
+    def test_fusion_components_apply_and_restore_previous_widget_layout(self):
+        path = self.stores.widget_path("DP-1")
+        before = self.set_store(path, [{"wId": "mine", "wType": "notes", "wGroup": "mine_group"}])
+        widgets = [{"id": "cpu", "type": "cpu", "x": -240, "y": 50, "w": 240, "h": 180},
+                   {"id": "ram", "type": "ram", "x": 10, "y": 50, "w": 240, "h": 180}]
+        appearance = {"mode": "horizontal", "style": "technical", "animation": "fade", "gap": 10}
+        group = {"id": "dashboard", "members": ["cpu", "ram"], "appearance": appearance}
+        self.package_file("widgets.json", {"widgets": widgets, "groups": [group]})
+        preview = self.report(preview=True)
+        self.assertEqual(preview["widgetsBefore"], 1)
+        self.assertEqual(path.read_bytes(), before)
+        self.apply(preview["token"])
+        layout = json.loads(path.read_bytes())
+        for index, widget in enumerate(layout):
+            self.assertEqual(widget["wGroup"], "dashboard")
+            self.assertEqual(widget["wFusionIndex"], index)
+            self.assertEqual(widget["wX"], widgets[index]["x"])
+            self.assertEqual(json.loads(widget["wFusion"]), appearance)
+        response = subprocess.run([sys.executable, str(ENGINE / "themess.py"), "export-fusion",
+                                   "--caps", json.dumps(CAPS)], check=True, capture_output=True, text=True)
+        exported = json.loads(response.stdout)["widgetPackage"]
+        self.assertEqual(exported, {"widgets": widgets, "groups": [group]})
+        self.restore()
+        self.assertEqual(path.read_bytes(), before)
+        for members in (["cpu", "cpu"], ["cpu", "missing"]):
+            self.package_file("widgets.json", {"widgets": widgets, "groups": [dict(group, members=members)]})
+            self.assertIn("unknown, anchored, stretched or already grouped widget", self.report()["errors"][0])
+
     def test_manifest_takes_precedence_and_unknown_component_is_ignored(self):
         self.package_file("dock.json", {"floating": True})
         self.package_file("deep/dock.json", {"enabled": False})
@@ -332,6 +360,62 @@ class ThemessTest(unittest.TestCase):
                                     "stream=codec_name", "-of", "csv=p=0", str(path)],
                                    capture_output=True, text=True, check=True)
             self.assertIn(probe.stdout.strip(), {"vp8", "vp9", "av1"}, path.name)
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg required")
+    def test_velvet_and_neuro_apply_from_installed_library_and_restore_camera(self):
+        library = self.home / ".local/share/serpantinum/themess"
+        source = ROOT / "themess"
+        for folder in ("VelvetNoir", "NeuroChaos", ".shared/noir-chaos"):
+            shutil.copytree(source / folder, library / folder)
+        caps = dict(CAPS, widgetTypes={kind: ["atelier"] for kind in (
+            "time", "calendar", "weather", "terminal", "music", "visualizer", "cpu", "gpu", "ram", "disk",
+            "network", "battery", "temp", "notes")}, barModules=CAPS["barModules"] + ["focus", "media", "bt"],
+            workspacesStyles=["pills", "numbers"], timeStyles=["classic", "badge"],
+            widgetSize={"w": 1920, "h": 1080})
+        self.stores = themess.Stores(caps)
+        layout = self.stores.widget_path("DP-1")
+        camera = layout.with_name("canvas.json")
+        previous = self.set_store(camera, {"schema_version": 1, "camera": {"x": 1500, "y": -900, "zoom": 2},
+                                           "screen": {"w": 1920, "h": 1080}})
+        asset_paths = []
+        for folder, count in (("VelvetNoir", 11), ("NeuroChaos", 14)):
+            path = library / folder
+            plan = themess.scan(path, caps)
+            result, _ = themess.report(plan, self.stores, preview=True)
+            self.assertEqual(result["errors"], [])
+            self.assertEqual(result["warnings"], [])
+            self.assertEqual(result["referenceSize"], {"w": 2560, "h": 1440})
+            self.assertTrue(result["image"].startswith("data:image/png;base64,"))
+            self.assertEqual(self.apply(result["token"], path)["active"]["name"], plan.name)
+            self.assertEqual(json.loads(camera.read_bytes())["camera"], {"x": 0, "y": 0, "zoom": 1})
+            widgets = json.loads(layout.read_bytes())
+            self.assertEqual(len(widgets), count)
+            terminal = next(widget for widget in widgets if widget["wType"] == "terminal")
+            original = next(widget for widget in plan.widgets if widget["wType"] == "terminal")
+            self.assertEqual(terminal["wWidth"], original["wWidth"] * 0.75)
+            self.assertEqual(terminal["mode"], "fetchShell")
+            boxes = []
+            for widget in plan.widgets:
+                x, y, w, h = (widget[key] for key in ("wX", "wY", "wWidth", "wHeight"))
+                vertical, horizontal = widget["anchor"].split()
+                top = 42 if folder == "NeuroChaos" else 34
+                x = 2560 - x - w if horizontal == "right" else x
+                y = 1440 - y - h if vertical == "bottom" else top + y
+                self.assertTrue(0 <= y < y + h <= 1440 and (x + w <= 800 or x >= 1800))
+                self.assertFalse(any(x < r and other_x < x + w and y < b and other_y < y + h
+                                     for other_x, other_y, r, b in boxes))
+                boxes.append((x, y, x + w, y + h))
+            settings = json.loads(self.stores.settings.read_bytes())["fastfetchMedia"]
+            clip, poster = (Path(settings[key]) for key in ("path", "posterPath"))
+            self.assertEqual(clip.read_bytes(), (library / ".shared/noir-chaos/anime-fastfetch.webm").read_bytes())
+            self.assertTrue(poster.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
+            asset_paths.append((clip, poster))
+        self.assertEqual(*asset_paths)
+        self.assertEqual(self.restore()["active"]["name"], "VELVET//NOIR")
+        restored = themess.mutate(argparse.Namespace(action="restore-original"), self.stores)
+        self.assertEqual(restored["canvasFiles"], [camera.as_posix()])
+        self.assertEqual(camera.read_bytes(), previous)
+        self.assertFalse(layout.exists())
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg required")
     def test_mr_robot_applies_all_real_components_and_restores_exact_files(self):

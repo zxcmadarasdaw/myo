@@ -22,6 +22,7 @@ Item {
     property bool widgetEditorOpen: false
     readonly property bool writingStores: busy && changesDesktop(task.action)
     signal storesChanged()
+    signal canvasStoresChanged(var paths)
 
     function selectFolder(path) {
         if (busy || folder === path) return;
@@ -52,6 +53,7 @@ Item {
         const outputs = Array.from(Quickshell.screens, item => item.name);
         const wallpaperOutputs = outputs.filter(name => !!Wallpaper.engines[name]);
         const widgetScreen = outputs.includes(screen) ? screen : (outputs[0] || "");
+        const output = Array.from(Quickshell.screens).find(item => item.name === widgetScreen);
         const widgets = {};
         if (!Config.getSetting("general.performance", false) && widgetScreen) {
             modules.push("widgets");
@@ -65,6 +67,7 @@ Item {
         return {
             modules: modules,
             widgetScreen: widgetScreen,
+            widgetSize: output ? { w: output.width, h: output.height } : null,
             wallpaperScreens: wallpaperOutputs,
             widgetTypes: widgets,
             barModules: BarModuleRegistry.moduleIds(),
@@ -78,7 +81,7 @@ Item {
         if (busy) return false;
         errors = [];
         if (!keepMessage) message = "";
-        if ((changesDesktop(action) || expectedPackage) &&
+        if ((changesDesktop(action) || expectedPackage || action === "export-fusion") &&
                 (!Config.dataReady || Config.isWriting || widgetEditorOpen)) {
             errors = [I18n.t("guide.themess.pending", "Close the widget editor and wait for settings to finish saving.")];
             return false;
@@ -141,6 +144,8 @@ Item {
         if (response.canRestore !== undefined) canRestore = response.canRestore;
         if (response.canRestoreOriginal !== undefined) canRestoreOriginal = response.canRestoreOriginal;
         if (response.components !== undefined) result = response;
+        if (changesDesktop(action) && Array.isArray(response.canvasFiles) && response.canvasFiles.length)
+            root.canvasStoresChanged(response.canvasFiles);
         if (response.message) message = response.message;
         errors = response.errors || [];
         busy = false;
@@ -162,6 +167,9 @@ Item {
             folder = response.selection || "";
             result = {};
             run("catalog", screen, "", "", "", true);
+        } else if (action === "export-fusion" && response.widgetPackage) {
+            Quickshell.execDetached(["wl-copy", "--", JSON.stringify(response.widgetPackage, null, 2)]);
+            message = qsTr("Paste the exported Fusion groups into widgets.json in your theme folder.");
         } else if (changesDesktop(action)) {
             result = {};
         }

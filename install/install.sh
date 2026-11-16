@@ -66,6 +66,12 @@ source "$MODULES_DIR/vpn.sh"
 source "$MODULES_DIR/ui.sh"
 source "$MODULES_DIR/verify.sh"
 
+if [ "${1:-}" = "--vpn-only" ]; then
+    check_supported_os
+    install_vpn_components
+    exit
+fi
+
 TELEMETRY_ID=$(get_telemetry_id)
 ENABLE_TELEMETRY=$(get_telemetry_enabled)
 OPT_SDDM=$(get_saved_preference OPT_SDDM "$OPT_SDDM")
@@ -115,8 +121,11 @@ init_serpantinum_config "$PROJECT_ROOT" "$WALLPAPER_DIR" "$INSTALL_STATE" "$IS_R
 configure_ski_defaults
 
 setup_services
-install_vpn_service
-install_vpn_bundle
+VPN_INSTALL_FAILED=false
+if ! install_vpn_components; then
+    FAILED_PKGS+=("VPN components")
+    VPN_INSTALL_FAILED=true
+fi
 hand_over_from_easyeffects
 write_version_state "$TARGET_VERSION" "$TARGET_COMMIT" "$TELEMETRY_ID" "$ENABLE_TELEMETRY" "${SELECTED_COMPOSITORS[*]}" "$OPT_SDDM" "$SDDM_WAYLAND" "$INSTALL_FULL_WALLPAPERS"
 

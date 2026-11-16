@@ -144,6 +144,11 @@ GuideTab {
                 onClicked: tab.refresh()
             }
             ActionButton {
+                text: qsTr("Copy Fusion as widgets.json")
+                enabled: !Themess.busy && tab.outputName !== ""
+                onClicked: Themess.run("export-fusion", tab.outputName)
+            }
+            ActionButton {
                 text: tab.tr("restore", "Restore Previous")
                 enabled: !Themess.busy && Themess.canRestore
                 onClicked: Themess.run("restore", tab.outputName)

@@ -101,13 +101,16 @@ test_window_config_update() {
     mkdir -p "$repo/compositors/hyprland/config" "$config"
     printf '%s\n' '-- shipped settings' > "$repo/compositors/hyprland/config/settings.lua"
     printf '%s\n' '-- shipped keys' > "$repo/compositors/hyprland/config/keybinds.lua"
+    printf '%s\n' '-- shipped entry point' > "$repo/compositors/hyprland/hyprland.lua"
     cp "$repo/compositors/hyprland/config/settings.lua" "$config/settings.lua"
+    cp "$repo/compositors/hyprland/hyprland.lua" "$config/../hyprland.lua"
     printf '%s\n' '-- customized keys' > "$config/keybinds.lua"
     git -C "$repo" init -q
     git -C "$repo" add compositors
     git -C "$repo" -c user.name=Test -c user.email=test@example.invalid commit -qm baseline
     revision="$(git -C "$repo" rev-parse HEAD)"
-    cp "$ROOT/compositors/hyprland/config/"{settings,keybinds}.lua "$repo/compositors/hyprland/config/"
+    cp "$ROOT/compositors/hyprland/config/"{settings,keybinds,canvas}.lua "$repo/compositors/hyprland/config/"
+    cp "$ROOT/compositors/hyprland/hyprland.lua" "$repo/compositors/hyprland/"
 
     (
         export HOME="$home"
@@ -124,6 +127,26 @@ test_window_config_update() {
     fi
     grep -qx -- '-- customized keys' "$config/keybinds.lua" \
         && ok "local update preserves customized Hyprland shortcuts" || bad "custom Hyprland shortcuts were changed"
+    if cmp -s "$ROOT/compositors/hyprland/config/canvas.lua" "$config/canvas.lua" \
+        && grep -qx 'require("config/canvas")' "$config/../hyprland.lua"; then
+        ok "local update installs and enables the Hyprland canvas module"
+    else
+        bad "Hyprland canvas module was not deployed"
+    fi
+    local base="$home/.local/share/serpantinum"
+    mkdir -p "$base/vpn-bundle" "$base/vpn/bin"
+    touch "$base/vpn-bundle/manifest.json" "$base/vpn/bin/sing-box"
+    (
+        export HOME="$home"
+        source "$ROOT/install/modules/deploy.sh"
+        setup_pam_service() { :; }
+        deploy_package "$repo" unknown unknown false current hyprland
+    ) >/dev/null
+    if [ -f "$base/vpn-bundle/manifest.json" ] && [ -f "$base/vpn/bin/sing-box" ]; then
+        ok "full program deployment preserves the cached VPN bundle and user engine"
+    else
+        bad "program deployment removed VPN files"
+    fi
     rm -rf "$home"
 }
 

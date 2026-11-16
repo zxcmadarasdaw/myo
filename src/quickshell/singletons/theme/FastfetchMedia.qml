@@ -15,13 +15,17 @@ QtObject {
         floating_media: {name: "Floating Media", layout: "wide", width: 58, height: 93, radius: 16, gap: 10, bg: "#102020", fg: "#dcf0e9", accent: "#8dd4bc", alpha: 0.76, border: 0.32, font: "Space Mono", material: "glass"},
         // Matte, never glass: the presets of the Mochi Night and ERROR//OVERDRIVE themes.
         mochi: {name: "Mochi", layout: "classic", width: 40, height: 86, radius: 14, gap: 12, bg: "#141219", fg: "#ece6f0", accent: "#e7a4c6", alpha: 0.94, border: 0.3, font: "JetBrains Mono", material: "solid"},
-        overdrive: {name: "Overdrive", layout: "classic", width: 42, height: 94, radius: 2, gap: 10, bg: "#0b0c12", fg: "#dfe6f2", accent: "#ff5fa2", alpha: 0.95, border: 0.55, font: "JetBrains Mono", material: "solid"}
+        overdrive: {name: "Overdrive", layout: "classic", width: 42, height: 94, radius: 2, gap: 10, bg: "#0b0c12", fg: "#dfe6f2", accent: "#ff5fa2", alpha: 0.95, border: 0.55, font: "JetBrains Mono", material: "solid"},
+        velvet: {name: "Velvet", layout: "classic", width: 37, height: 92, radius: 10, gap: 18, bg: "#151218", fg: "#efe7ee", accent: "#d5a0b6", alpha: 0.98, border: 0.40, font: "IBM Plex Mono", material: "solid"},
+        neuro: {name: "Neuro", layout: "classic", width: 38, height: 96, radius: 2, gap: 12, bg: "#0e1220", fg: "#edf0ff", accent: "#85ddff", alpha: 0.99, border: 0.68, font: "JetBrains Mono", material: "solid"}
     })
     readonly property var layouts: ["classic", "wide", "vertical", "floating", "minimal"]
     readonly property var layoutSize: ({
         classic: [43, 88], wide: [58, 94], vertical: [90, 44], floating: [48, 88], minimal: [36, 76]
     })
     readonly property var positions: ["start", "center", "end"]
+    readonly property var fits: ["fit", "crop"]
+    readonly property var backgrounds: ["transparent", "matte", "accent"]
     readonly property var raw: Config.getSetting("fastfetchMedia", {}) || ({})
     readonly property var appearance: raw.appearance || ({})
     readonly property string theme: Object.keys(presets).includes(appearance.theme) ? appearance.theme : "obsidian"
@@ -33,8 +37,12 @@ QtObject {
     readonly property int radius: bound(appearance.radius, style.radius, 0, 40)
     readonly property real zoom: bound(appearance.zoom, 1, 0.5, 2)
     readonly property real opacityValue: bound(appearance.opacity, 1, 0, 1)
+    readonly property string fit: fits.includes(appearance.fit) ? appearance.fit : "fit"
+    readonly property string background: backgrounds.includes(appearance.background) ? appearance.background : "transparent"
     readonly property bool enabled: raw.enabled === true
     readonly property string path: typeof raw.path === "string" ? raw.path : ""
+    readonly property string posterPath: typeof raw.posterPath === "string" && /^\/(?!\/)/.test(raw.posterPath)
+                                         && /\.png$/i.test(raw.posterPath) ? raw.posterPath : ""
     readonly property string kind: {
         if (!/^\/(?!\/)/.test(path) || /[\x00-\x1f]/.test(path)) return "";
         if (/\.(gif|webp)$/i.test(path)) return "animated";
@@ -62,6 +70,12 @@ QtObject {
 
     function set(key, value) {
         Config.setSetting("fastfetchMedia." + key, value);
+    }
+
+    function selectFile(path) {
+        const settings = Object.assign({}, raw, {path: path});
+        delete settings.posterPath;
+        Config.setSetting("fastfetchMedia", settings);
     }
 
     function setStyle(key, value) {

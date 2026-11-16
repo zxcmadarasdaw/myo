@@ -19,6 +19,7 @@ def command(packages, action):
             "--setopt=*.pkg_gpgcheck=True", "--setopt=timeout=25", "--setopt=retries=3"]
     if packages == ["sing-box"]:
         args += [f"--repofrompath={REPO},https://rpm.sagernet.org/",
+                 f"--repo={REPO}",
                  f"--setopt={REPO}.repo_gpgcheck=True",
                  f"--setopt={REPO}.gpgkey=https://sing-box.app/gpg.key",
                  f"--setopt={REPO}.includepkgs=sing-box"]
@@ -54,9 +55,16 @@ def offline_engine():
 def main(args):
     if os.geteuid() != 0 or not args:
         return 64
+    terminal = args[0] == "--terminal"
+    if terminal:
+        # Progress and cancellation belong to the terminal installer. The
+        # privileged helper owns the maximum duration even if its caller exits.
+        if os.getuid() != 0 or os.environ.get("PKEXEC_UID") is not None:
+            return 64
+        args = args[1:]
     if args == ["offline-engine"]:
         return offline_engine()
-    if args[0] not in {"install", "repair", "upgrade"}:
+    if not args or args[0] not in {"install", "repair", "upgrade"}:
         return 64
     packages = args[1:]
     if not packages or len(set(packages)) != len(packages) or set(packages) - PACKAGES:
@@ -66,6 +74,9 @@ def main(args):
         return 64
     env = {"PATH": "/usr/sbin:/usr/bin", "HOME": "/root", "LANG": "C.UTF-8"}
     os.chdir("/")
+    if terminal:
+        argv = ["/usr/bin/timeout", "--foreground", "-k", "15s", "6m", *command(packages, action)]
+        return subprocess.run(argv, stdin=subprocess.DEVNULL, env=env, check=False).returncode
     # Authorization is over once this line is out: the caller switches from the polkit
     # timeout to the transaction timeout (serp_vpn.py install_fedora_packages).
     print(json.dumps({"event": "started"}), flush=True)

@@ -90,6 +90,40 @@ Item {
                 }
             }
             Text { visible: MusicEffects.eqState.dyneq; text: "Dynamic EQ активен — выключите для ручной настройки"; color: ThemeBackend.subtext0; font.pixelSize: 11 }
+            Canvas {
+                id: eqCurve
+                Layout.fillWidth: true
+                Layout.preferredHeight: 46
+                readonly property var bands: Array.from({length: 10}, (_, i) => Number(MusicEffects.eqState["b" + (i + 1)]))
+                onBandsChanged: requestPaint()
+                onWidthChanged: requestPaint()
+                Connections {
+                    target: studio
+                    function onEditableChanged() { eqCurve.requestPaint(); }
+                }
+                onPaint: {
+                    const c = getContext("2d");
+                    c.clearRect(0, 0, width, height);
+                    c.beginPath();
+                    c.lineWidth = 1;
+                    c.strokeStyle = ThemeBackend.surface2;
+                    c.moveTo(0, height / 2);
+                    c.lineTo(width, height / 2);
+                    c.stroke();
+                    if (!studio.editable) return;
+                    c.beginPath();
+                    c.strokeStyle = studio.accent;
+                    c.lineWidth = 2;
+                    for (let i = 0; i < bands.length; i++) {
+                        const x = (i + 0.5) * width / bands.length;
+                        const y = height / 2 - bands[i] * (height - 6) / 24;
+                        if (i === 0) c.moveTo(x, y);
+                        else c.lineTo(x, y);
+                    }
+                    c.stroke();
+                }
+                Accessible.name: qsTr("Equalizer gain across ten bands")
+            }
             RowLayout {
                 Layout.fillWidth: true
                 Text { text: "EQUALIZER · ±12 dB"; color: studio.accent; font.pixelSize: 10; font.letterSpacing: 1.5; Layout.fillWidth: true }
@@ -197,6 +231,7 @@ Item {
                 }
                 StudioButton { text: "Save Preset"; enabled: presetName.text.trim().length > 0 && MusicEffects.available && !MusicEffects.busy; onClicked: MusicEffects.command(["save_preset", presetName.text]) }
             }
+            RemixStudio { Layout.fillWidth: true }
         }
     }
 }

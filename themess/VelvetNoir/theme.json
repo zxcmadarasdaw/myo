@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "name": "VELVET//NOIR",
+  "author": "Serpantinum",
+  "description": "Matte graphite and plum, silver type and muted rose. An open center between an editorial clock, live system readings, a music console and an animated portrait beside the terminal.",
+  "referenceSize": {
+    "w": 2560,
+    "h": 1440
+  },
+  "components": {
+    "palette": "palette.json",
+    "materials": "materials.json",
+    "panels": "panels.json",
+    "animations": "animations.json",
+    "canvas": "canvas.json",
+    "dock": "dock.json",
+    "launcher": "launcher.json",
+    "notifications": "notifications.json",
+    "studio": "studio.json",
+    "fastfetch": "fastfetch.json",
+    "widgets": "widgets.json",
+    "wallpaper": "@shared/noir-chaos/anime-desktop.webm",
+    "fastfetchMedia": "@shared/noir-chaos/anime-fastfetch.webm"
+  }
+}

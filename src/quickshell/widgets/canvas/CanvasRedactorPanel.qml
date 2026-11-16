@@ -21,7 +21,7 @@ Item {
     readonly property var cam: redactor ? redactor.cam : null
     readonly property bool canvasOn: redactor ? redactor.canvasOn : false
     readonly property var selection: redactor ? redactor.selectionIdList : []
-    readonly property bool inputActive: searchInput.hasFocus || nameInput.hasFocus
+    readonly property bool inputActive: searchInput.hasFocus || nameInput.hasFocus || fusionOptions.editingText
     readonly property var results: panel.query.trim() === ""
         ? []
         : CM.searchWidgets(redactor.canvasWidgets, panel.query, CanvasState.typeNames()).slice(0, 6)
@@ -433,6 +433,13 @@ Item {
                     textColor: ThemeBackend.crust
                     onClicked: panel.commitComposition()
                 }
+            }
+
+            FusionOptions {
+                id: fusionOptions
+                Layout.fillWidth: true
+                editor: panel.redactor
+                visible: panel.expanded && (panel.selection.length >= 2 || !!panel.redactor.selectedFusion)
             }
 
             Text {

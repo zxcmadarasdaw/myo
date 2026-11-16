@@ -17,28 +17,27 @@ VpnSheet {
     property url localFile: ""
     property bool submittedSetup: false
     readonly property bool hasInput: localFile.toString() !== "" || linkInput.text.trim() !== ""
-    readonly property bool failedSetup: submittedSetup && VpnService.sbSetup && VpnService.sbError !== ""
-    readonly property bool yamlPossible: VpnService.setup.yaml === false && VpnService.setup.systemInstall === true
+    readonly property bool failedSetup: submittedSetup && VpnService.sbError !== ""
     readonly property bool readyToConnect: submittedSetup && VpnService.sbResult !== null && VpnService.sbResult.setupComplete === true
                                            && !VpnService.sbInstalling && VpnService.canConnect
     signal connectedRequested()
     signal serversRequested()
+    signal engineRequested()
 
     function tr(key, en) { return I18n.t("vpn." + key, en); }
-    function focusAdd() { Qt.callLater(() => sh.linkInput.forceActiveFocus()); }
     function applySetup() {
         if (sh.readyToConnect) {
             sh.submittedSetup = false;
             sh.connectedRequested();
             VpnService.connect();
         } else {
-            sh.add(false);
+            sh.add();
         }
     }
-    function add(system) {
-        if (VpnService.sbInstalling || VpnService.busy) return;
-        if (!VpnService.connected && (VpnService.setupNeeded || failedSetup || system || localFile.toString() !== "" || yamlPossible)) {
-            submittedSetup = VpnService.prepareVpn(linkInput.text, nameInput.text, localFile.toString(), system, yamlPossible);
+    function add() {
+        if (VpnService.sbInstalling || VpnService.busy || VpnService.setupNeeded) return;
+        if (localFile.toString() !== "") {
+            submittedSetup = VpnService.prepareVpn(linkInput.text, nameInput.text, localFile.toString());
             return;
         }
         let t = sh.linkInput.text.trim();
@@ -217,7 +216,7 @@ VpnSheet {
                 icon: "󰐕"
                 busy: VpnService.busy && VpnService.busyAction === "sub-add"
                 enabled: !VpnService.busy && !VpnService.sbInstalling && sh.hasInput
-                onClicked: sh.add(false)
+                onClicked: sh.add()
             }
         }
         RowLayout {
@@ -236,46 +235,21 @@ VpnSheet {
                 onClicked: sh.localFile = ""
             }
         }
-        Text {
+        VpnPill {
             Layout.fillWidth: true
-            visible: !VpnService.sbInstalling && ((VpnService.setupNeeded && (sh.hasInput || VpnService.hasSource))
-                                                   || (sh.yamlPossible && sh.hasInput))
-            text: {
-                if (VpnService.setup.error) return VpnService.setup.error;
-                let packages = (VpnService.setup.packages || []).slice();
-                let rpm = VpnService.mode === "tun" && VpnService.setup.binaryReady !== true;
-                if (rpm && !VpnService.sbBundleFound) packages.unshift("sing-box");
-                let parts = [];
-                if (VpnService.setupNeeded && VpnService.sbBundleFound) {
-                    parts.push(sh.tr("sb.bundle_found", "Offline bundle found: sing-box {version}. It installs without internet.")
-                        .replace("{version}", VpnService.sbInfo.bundle.version || ""));
-                    if (packages.length > 0)
-                        parts.push(sh.tr("sb.tun_missing", "Missing packages: {packages}. Run the offline installer with --system.")
-                            .replace("{packages}", packages.join(", ")));
-                } else if (VpnService.setupNeeded && VpnService.mode === "proxy")
-                    parts.push(sh.tr("setup.archive_plan", "sing-box from SagerNet GitHub, installed for this user."));
-                if (packages.length > 0 && !VpnService.sbBundleFound)
-                    parts.push(sh.tr("setup.rpm_plan", "System packages via polkit: {packages}").replace("{packages}", packages.join(", ")));
-                if (sh.yamlPossible && sh.hasInput && !VpnService.sbBundleFound)
-                    parts.push(sh.tr("setup.yaml_plan", "Clash YAML may require python3-pyyaml via polkit."));
-                return parts.join("\n");
-            }
-            wrapMode: Text.Wrap
-            font.family: ThemeBackend.fontFamily
-            font.pixelSize: Scaler.s(11)
-            color: Qt.alpha(VpnAppearance.style.text || "#ffffff", 0.7)
+            visible: VpnService.setupNeeded
+            text: sh.tr("sb.repair", "Repair VPN components")
+            filled: false
+            onClicked: sh.engineRequested()
         }
         VpnPill {
             objectName: "vpnSetupAction"
             Layout.fillWidth: true
             implicitHeight: Scaler.s(40)
-            visible: !VpnService.sbInstalling && (sh.readyToConnect || ((VpnService.setupNeeded || sh.failedSetup)
-                     && (sh.hasInput || VpnService.hasSource)))
-            enabled: !VpnService.busy && (sh.readyToConnect || (!VpnService.connected && VpnService.setup.state !== "blocked"))
+            visible: !VpnService.sbInstalling && !VpnService.setupNeeded && (sh.readyToConnect || (sh.failedSetup && sh.hasInput))
+            enabled: !VpnService.busy
             text: sh.readyToConnect ? sh.tr("setup.connect", "Connect")
-                : sh.failedSetup ? sh.tr("sb.retry", "Retry")
-                : VpnService.setup.state === "repair" ? sh.tr("setup.repair", "Check and repair VPN")
-                : sh.tr("setup.install", "Install and configure VPN")
+                : sh.tr("sb.retry", "Retry")
             onClicked: sh.applySetup()
         }
         VpnPill {
@@ -284,18 +258,9 @@ VpnSheet {
             filled: false
             onClicked: sh.serversRequested()
         }
-        VpnPill {
-            visible: !VpnService.sbInstalling && sh.failedSetup && !VpnService.setup.binaryReady
-                     && VpnService.mode === "proxy" && VpnService.setup.systemInstall === true
-            enabled: !VpnService.busy && (sh.hasInput || VpnService.hasSource)
-            text: sh.tr("setup.system_package", "Install sing-box RPM via polkit")
-            filled: false
-            onClicked: sh.add(true)
-        }
         VpnSetupProgress {
             Layout.fillWidth: true
-            visible: VpnService.sbSetup && sh.submittedSetup
-            showAnimation: sh.open
+            visible: sh.submittedSetup
         }
         Text {
             Layout.fillWidth: true

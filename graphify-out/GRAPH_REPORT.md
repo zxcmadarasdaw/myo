@@ -1,18 +1,18 @@
 # Graph Report - Serpantinum  (2026-11-15)
 
 ## Corpus Check
-- 469 files · ~416,262 words
+- 506 files · ~438,871 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 806 file(s) not represented in the graph (top: .qml 566, (none) 51, .ttf 33)
-- WARNING: 806 of 1384 files seen (58%) have no supported extractor and are missing from this graph entirely. It may look complete while representing only part of the codebase.
+- Unclassified: 815 file(s) not represented in the graph (top: .qml 574, (none) 52, .ttf 33)
+- WARNING: 815 of 1432 files seen (57%) have no supported extractor and are missing from this graph entirely. It may look complete while representing only part of the codebase.
 
 ## Summary
-- 3076 nodes · 5920 edges · 235 communities (171 shown, 64 thin omitted)
-- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 194 edges (avg confidence: 0.83)
+- 3316 nodes · 6364 edges · 253 communities (180 shown, 73 thin omitted)
+- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 204 edges (avg confidence: 0.83)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `3c13cff1`
+- Built from commit: `4084db0d`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -26,7 +26,7 @@
 - Terminal
 - CHANGELOG.md
 - gpu_policy_test.cjs
-- time
+- shutil
 - dnf.sh
 - TERMS AND CONDITIONS
 - window_actions.py
@@ -37,9 +37,9 @@
 - serp_pty.py
 - serp_vpn.py
 - subprocess
-- shutil
+- time
 - WeatherRules.js
-- json
+- subprocess
 - Bridge
 - mr-robot/theme.py
 - VpnError
@@ -48,7 +48,7 @@
 - ProcessExplorerBackendTest
 - pages/index.tsx
 - dependencies
-- status
+- main
 - ProbeTests
 - install_runtime_test.sh
 - getting-started/index.tsx
@@ -212,22 +212,22 @@
 - SingleLinks
 - BrokenInput
 - Cli
-- desktop_input_qml_test.py
+- serp_procs.py
 - run_helper
-- theme_sorter.py
-- equalizer.py
+- FakeHyprctl
+- main
 - BundleTest
 - vpn.sh
 - widget_extensions_qml_test.py
 - serp_vpn.py
-- main
+- status
 - VpnGeometry.js
 - wallpaper_audio_qml_test.py
 - serp_gpu.py
 - ExitIp
 - SingboxChoice
 - Mochi Night and ERROR//OVERDRIVE
-- clear
+- widget_fusion_test.cjs
 - OneClickSetup
 - WallpaperAudioActivity.js
 - ServiceTest
@@ -236,39 +236,52 @@
 - SystemFiles
 - ProcessBridge
 - install-vpn-bundle.sh
+- FakeNet
+- terminal_emulator_test.cjs
+- music_drawer_test.cjs
+- BindIPC
+- PackageRunner
+- WidgetFusion.js
+- Поиск обоев (Search Wallpapers)
+- Widget Fusion и Music Studio Pro
+- BindPlanTest
+- VELVET//NOIR и NEURO//CHAOS
+- Library
+- NoPtyTest
+- Countries
 
 ## God Nodes (most connected - your core abstractions)
 1. `IntegrationTests` - 41 edges
-2. `main()` - 33 edges
-3. `Terminal()` - 33 edges
-4. `VpnError` - 32 edges
-5. `ThemessTest` - 30 edges
-6. `status()` - 27 edges
-7. `vpn_setup()` - 27 edges
-8. `update()` - 24 edges
-9. `tun_connect()` - 24 edges
-10. `RobustnessTests` - 23 edges
+2. `main()` - 36 edges
+3. `VpnError` - 35 edges
+4. `Terminal()` - 33 edges
+5. `ThemessTest` - 32 edges
+6. `vpn_setup()` - 31 edges
+7. `status()` - 27 edges
+8. `main()` - 24 edges
+9. `RobustnessTests` - 23 edges
+10. `_apply()` - 23 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `Рабочие пространства и верхняя панель` --references--> `stepWorkspace()`  [INFERRED]
+  docs/installation/fedora-troubleshooting.md → compositors/hyprland/config/keybinds.lua
+- `build_release()` --indirect_call--> `stream()`  [INFERRED]
+  packaging/vpn-bundle/build_vpn_bundle.py → install/tests/wallpaper_audio_qml_test.py
 - `download()` --indirect_call--> `status()`  [INFERRED]
   src/scripts/system/serp_vpn_singbox.py → src/scripts/system/serp_vpn.py
-- `read_json()` --indirect_call--> `handle()`  [INFERRED]
-  src/scripts/theming/apptheme.py → src/scripts/system/serp_procs.py
-- `configuration()` --indirect_call--> `item()`  [INFERRED]
-  src/scripts/themess/schema.py → src/scripts/wallpaper/wallhub.py
-- `items()` --indirect_call--> `item()`  [INFERRED]
-  src/scripts/themess/schema.py → src/scripts/wallpaper/wallhub.py
-- `screenshot.sh script` --calls--> `ocr_install()`  [EXTRACTED]
-  src/scripts/screenshot.sh → src/scripts/ocr_langs.sh
+- `validate()` --calls--> `emit()`  [INFERRED]
+  src/scripts/system/serp_vpn.py → src/scripts/wallpaper/wallhub.py
+- `expire()` --calls--> `SingboxError`  [EXTRACTED]
+  src/scripts/system/serp_vpn_packages.py → src/scripts/system/serp_vpn_singbox.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (235 total, 64 thin omitted)
+## Communities (253 total, 73 thin omitted)
 
 ### Community 0 - "apptheme.py"
 Cohesion: 0.06
-Nodes (75): App, AppError, apply(), _apply(), apply_gsettings(), apply_ini(), apply_json(), apply_line() (+67 more)
+Nodes (72): App, AppError, apply(), _apply(), apply_gsettings(), apply_ini(), apply_json(), apply_line() (+64 more)
 
 ### Community 1 - ".apply"
 Cohesion: 0.09
@@ -279,12 +292,12 @@ Cohesion: 0.08
 Nodes (62): areaFromNode(), brightskyToCap(), buildDelivery(), canadaSeverity(), canadaToCap(), capFromJson(), capFromNode(), categoryOk() (+54 more)
 
 ### Community 3 - "wallhub.py"
-Cohesion: 0.08
-Nodes (51): analyse_pixels(), build_filters(), cmd_cache_thumbs(), fetch(), cmd_download(), cmd_edit(), cmd_keys(), cmd_local() (+43 more)
+Cohesion: 0.05
+Nodes (62): analyse_pixels(), build_filters(), classify_net_error(), cmd_cache_thumbs(), fetch(), cmd_download(), cmd_edit(), cmd_history() (+54 more)
 
 ### Community 4 - "themess.py"
 Cohesion: 0.09
-Nodes (40): MusicThemeTests, choice(), configuration(), items(), number(), pattern(), plain(), validate() (+32 more)
+Nodes (43): MusicThemeTests, choice(), configuration(), export_fusion(), items(), number(), pattern(), plain() (+35 more)
 
 ### Community 5 - "CanvasMath.js"
 Cohesion: 0.08
@@ -299,12 +312,12 @@ Cohesion: 0.04
 Nodes (44): 2.0.3, 2.0.4, 2.0.5, 2.0.6, 2.0.6-1, 2.0.7, 2.1.0, 2.1.1 (+36 more)
 
 ### Community 8 - "gpu_policy_test.cjs"
-Cohesion: 0.06
-Nodes (30): a, assert, b, before, C, cam, fs, P (+22 more)
+Cohesion: 0.11
+Nodes (16): a, assert, b, before, C, cam, fs, P (+8 more)
 
-### Community 10 - "time"
-Cohesion: 0.06
-Nodes (26): encode(), invoke(), set_path(), wait_for(), load(), Quiet, wait_for(), singleton() (+18 more)
+### Community 10 - "shutil"
+Cohesion: 0.04
+Nodes (29): block(), pump(), singleton(), source(), write(), encode(), invoke(), set_path() (+21 more)
 
 ### Community 11 - "dnf.sh"
 Cohesion: 0.11
@@ -315,8 +328,8 @@ Cohesion: 0.06
 Nodes (31): 0. Definitions., 10. Automatic Licensing of Downstream Recipients., 11. Patents., 12. No Surrender of Others' Freedom., 13. Remote Network Interaction; Use with the GNU General Public License., 14. Revised Versions of this License., 15. Disclaimer of Warranty., 16. Limitation of Liability. (+23 more)
 
 ### Community 13 - "window_actions.py"
-Cohesion: 0.08
-Nodes (23): actions(), BindPlanTest, FakeHyprctl, FloatToggleTest, KeybindsFileTest, ActionError, address(), bind_plan() (+15 more)
+Cohesion: 0.07
+Nodes (42): classify_theme(), classify_with_cache(), compute_dominant_hue(), compute_lightness(), fingerprint(), hex_to_rgb(), hue_to_bucket(), load_cache() (+34 more)
 
 ### Community 14 - "void.sh"
 Cohesion: 0.10
@@ -331,40 +344,40 @@ Cohesion: 0.10
 Nodes (8): BatteryStub, DeviceType, Kind, Files, NetworkingStub, UPowerDeviceState, State, UPowerStub
 
 ### Community 18 - "serp_pty.py"
-Cohesion: 0.07
-Nodes (19): cpu_times(), detail(), emit(), gpu_usage(), handle(), main(), memory(), parse_stat() (+11 more)
+Cohesion: 0.10
+Nodes (13): Bridge, emit(), exit_code(), hang_up(), main(), parse_args(), pick_shell(), set_size() (+5 more)
 
 ### Community 19 - "serp_vpn.py"
-Cohesion: 0.12
-Nodes (32): assign_tags(), _b64decode(), clash_to_server(), detect_country(), _is_ip(), _link_transport(), _looks_like_base64(), make_server() (+24 more)
+Cohesion: 0.25
+Nodes (21): _b64decode(), clash_to_server(), _is_ip(), _link_transport(), parse_hysteria(), parse_hysteria2(), parse_socks(), parse_ss() (+13 more)
 
 ### Community 20 - "subprocess"
-Cohesion: 0.07
-Nodes (9): extract_to_md3(), static_palette(), NoPtyTest, archive_bytes(), make_tar(), Messages, Countries, FreshUser (+1 more)
+Cohesion: 0.06
+Nodes (18): extract_to_md3(), static_palette(), Messages, FreshUser, KeybindsFileTest, api_digests(), build_bundle(), build_release() (+10 more)
 
-### Community 21 - "shutil"
-Cohesion: 0.15
-Nodes (15): api_digests(), build_bundle(), build_release(), fetch(), get_asset(), main(), sha256(), collect() (+7 more)
+### Community 21 - "time"
+Cohesion: 0.12
+Nodes (15): load(), Quiet, wait_for(), answer_status(), build(), call(), do(), finish() (+7 more)
 
 ### Community 22 - "WeatherRules.js"
 Cohesion: 0.18
 Nodes (24): aqiNow(), buildHours(), dailyCondition(), dateKey(), dayEnd(), dayStat(), deltaFromC(), evaluate() (+16 more)
 
-### Community 23 - "json"
-Cohesion: 0.13
-Nodes (17): command(), main(), build(), _check_value(), clean_outbound(), cmd_apply(), cmd_cleanup(), cmd_run() (+9 more)
+### Community 23 - "subprocess"
+Cohesion: 0.10
+Nodes (24): strip_comments(), collect(), decode_probe(), diagnose(), fingerprint(), inventory(), main(), read() (+16 more)
 
 ### Community 24 - "Bridge"
 Cohesion: 0.11
 Nodes (10): Bridge, PtyBridgeTest, Восстановление мыши при повторении, Выполненные проверки, Исправление ввода рабочего стола — 14 ноября 2026, Исправление и изменённые файлы, Как установить локальное исправление, Обзор остальных поверхностей и модулей (+2 more)
 
 ### Community 25 - "mr-robot/theme.py"
-Cohesion: 0.24
+Cohesion: 0.25
 Nodes (17): apply_settings(), choose_monitor(), detect_monitor(), file_mode(), import_preset(), installed_source(), json_bytes(), main() (+9 more)
 
 ### Community 26 - "VpnError"
-Cohesion: 0.15
-Nodes (10): build_config(), fetch(), is_url(), load_source_text(), read_setup_file(), singbox_bin(), singbox_check(), singbox_version() (+2 more)
+Cohesion: 0.10
+Nodes (14): assign_tags(), check_setup_config(), detect_country(), _looks_like_base64(), make_server(), parse_clash(), parse_link(), parse_singbox() (+6 more)
 
 ### Community 27 - "package.json"
 Cohesion: 0.13
@@ -382,17 +395,17 @@ Nodes (5): clsx, clsx@^2.0.0, CompositorItem, Home(), HomepageHeader()
 Cohesion: 0.12
 Nodes (17): @docusaurus/core, @docusaurus/faster, @docusaurus/preset-classic, @easyops-cn/docusaurus-search-local, @mdx-js/react, prism-react-renderer, react-dom, config (+9 more)
 
-### Community 32 - "status"
-Cohesion: 0.14
-Nodes (24): _auth_denied(), check_setup_config(), collect_checks(), _executable(), force_off(), _forget_state(), _helper(), helper_path() (+16 more)
+### Community 32 - "main"
+Cohesion: 0.17
+Nodes (25): build_config(), component_problem(), _executable(), helper_path(), helper_result(), install_fedora_packages(), install_offline_system_engine(), load_settings_readonly() (+17 more)
 
 ### Community 33 - "ProbeTests"
 Cohesion: 0.16
 Nodes (3): card(), ProbeTests, runner()
 
 ### Community 34 - "install_runtime_test.sh"
-Cohesion: 0.33
-Nodes (13): bad(), new_home(), ok(), run_deps(), run_verify(), install_runtime_test.sh script, skip(), t() (+5 more)
+Cohesion: 0.29
+Nodes (14): bad(), new_home(), ok(), run_deps(), run_verify(), install_runtime_test.sh script, skip(), t() (+6 more)
 
 ### Community 35 - "getting-started/index.tsx"
 Cohesion: 0.14
@@ -420,11 +433,11 @@ Nodes (14): `brightness`, `exit`, `gamma`, `location`, `location_manual`, `lock`
 
 ### Community 41 - "Overview.md"
 Cohesion: 0.14
-Nodes (9): Autostart, Hyprland, Keybindings, Autostart, Keybindings, Niri, Autostart, Keybindings (+1 more)
+Nodes (10): Autostart, Floating windows on the Infinite Canvas, Hyprland, Keybindings, Autostart, Keybindings, Niri, Autostart (+2 more)
 
 ### Community 42 - "qml_check.py"
-Cohesion: 0.26
-Nodes (7): check(), visible_types(), main(), qmldir_types(), read(), Scanner, strip_comments()
+Cohesion: 0.29
+Nodes (6): check(), visible_types(), main(), qmldir_types(), read(), Scanner
 
 ### Community 43 - "migrate_easyeffects_test.sh"
 Cohesion: 0.21
@@ -435,7 +448,7 @@ Cohesion: 0.48
 Nodes (13): gamma(), gamma_installed(), gamma_reset(), gamma_running(), gamma_set_auto(), gamma_set_manual(), gamma_start(), gamma_status() (+5 more)
 
 ### Community 45 - "serpantinum-gamma"
-Cohesion: 0.15
+Cohesion: 0.14
 Nodes (13): Building from source, Checking the installation, Color, Commands, Compositors, D-Bus, Day and night schedule, If nothing changes (+5 more)
 
 ### Community 46 - "Options"
@@ -455,7 +468,7 @@ Cohesion: 0.15
 Nodes (12): category, default, hint, icon, integrate, name, require_env, QT_QPA_PLATFORMTHEME (+4 more)
 
 ### Community 50 - "serp_diag.py"
-Cohesion: 0.20
+Cohesion: 0.17
 Nodes (16): add_text(), check_qml_module(), crashes(), dependencies(), export(), first_line(), main(), module_checks() (+8 more)
 
 ### Community 51 - "pacman.sh"
@@ -483,8 +496,8 @@ Cohesion: 0.39
 Nodes (11): fetch_air_quality(), get_data(), get_location(), get_weather_i18n_json(), keep_mtime(), LC_ALL, log_debug(), mark_offline_if_stale() (+3 more)
 
 ### Community 57 - "serp_vpn_singbox.py"
-Cohesion: 0.08
-Nodes (28): arch_name(), asset_name(), bundle_dirs(), candidates(), download(), extract_binary(), find_bundle(), _get() (+20 more)
+Cohesion: 0.09
+Nodes (32): arch_name(), asset_name(), bundle_dirs(), candidates(), copy_archive(), download(), extract_binary(), find_bundle() (+24 more)
 
 ### Community 59 - "Installation"
 Cohesion: 0.18
@@ -495,8 +508,8 @@ Cohesion: 0.24
 Nodes (4): format_uuid(), get_telemetry_id(), version.sh script, write_version_state()
 
 ### Community 61 - "SingboxInstall"
-Cohesion: 0.09
-Nodes (4): FakeGithub, serve(), SingboxInstall, Subscriptions
+Cohesion: 0.08
+Nodes (5): FakeGithub, make_tar(), serve(), SingboxInstall, Subscriptions
 
 ### Community 62 - "views"
 Cohesion: 0.18
@@ -527,8 +540,8 @@ Cohesion: 0.20
 Nodes (9): GPU Compatibility Manager — этап 2, Безопасное отображение, Обратимый пробный запуск на Linux, План приёмки на Fedora / Hyprland, Проверки без Linux, Профили, Смена GPU и сохранение данных, Справочные API (+1 more)
 
 ### Community 69 - "Serpantinum на Fedora: проверка, обновление, диагностика"
-Cohesion: 0.20
-Nodes (9): 1. Обновление уже установленного Serpantinum, 2. Проверка окружения после установки, 3. Автоматические тесты, 4. Ручная проверка в сессии Hyprland, 5. Если обои не загружаются, 6. Если после входа пустой рабочий стол, 7. Восстановление рабочего окружения, Serpantinum на Fedora: проверка, обновление, диагностика (+1 more)
+Cohesion: 0.08
+Nodes (22): eligible(), _G.serpantinumCanvasUpdate(), intersects(), move(), project(), nextWorkspace(), previousWorkspace(), stepWorkspace() (+14 more)
 
 ### Community 70 - "audio.sh"
 Cohesion: 0.33
@@ -579,7 +592,7 @@ Cohesion: 0.22
 Nodes (9): `config`, `info`, Keybinding examples, Options, Overview, Serpantinum client, `set`, Settings and state (+1 more)
 
 ### Community 82 - "Music Widget + Audio Studio"
-Cohesion: 0.22
+Cohesion: 0.20
 Nodes (6): Music Widget + Audio Studio, Как открыть, Локальные автоматические проверки, Проверка на Fedora 45 / Hyprland / Quickshell 0.3.2, Сохранение и темы, Что управляет звуком
 
 ### Community 83 - "Network, File Dock, Terminal and Process Explorer"
@@ -879,59 +892,63 @@ Cohesion: 0.83
 Nodes (3): clamp01(), num(), read()
 
 ### Community 196 - "update"
-Cohesion: 0.19
-Nodes (23): _clean_name(), config_dir(), _find_sub(), load_subs(), _name_from_update(), _new_sub_id(), _record_sub_update(), save_subs() (+15 more)
+Cohesion: 0.21
+Nodes (22): _clean_name(), clear(), config_dir(), _find_sub(), _forget_state(), load_subs(), _name_from_update(), _new_sub_id() (+14 more)
 
 ### Community 198 - "mr robot/theme.py"
-Cohesion: 0.25
+Cohesion: 0.24
 Nodes (17): apply_settings(), choose_monitor(), detect_monitor(), file_mode(), import_preset(), installed_source(), json_bytes(), main() (+9 more)
 
 ### Community 200 - "VPN subscriptions"
 Cohesion: 0.12
-Nodes (15): Appearance, Command line, Files and privacy, If the service hangs: Force off, Install sing-box, Manual test checklist (Fedora + Hyprland), Ping, Subscriptions (+7 more)
+Nodes (16): Appearance, Command line, Files and privacy, If the service hangs: Force off, Install on Fedora, Manual test checklist (Fedora + Hyprland), Offline VPN bundle, Ping (+8 more)
 
 ### Community 201 - "Env"
 Cohesion: 0.09
 Nodes (6): Config, Env, free_port(), Lifecycle, make_fake_singbox(), MissingSingbox
 
-### Community 205 - "desktop_input_qml_test.py"
-Cohesion: 0.11
-Nodes (11): block(), pump(), singleton(), source(), write(), find_item(), invoke(), load() (+3 more)
+### Community 205 - "serp_procs.py"
+Cohesion: 0.17
+Nodes (11): cpu_times(), detail(), emit(), gpu_usage(), handle(), main(), memory(), parse_stat() (+3 more)
 
 ### Community 206 - "run_helper"
 Cohesion: 0.19
 Nodes (4): HelperApply, HelperTemplate, run_helper(), servers_config()
 
-### Community 207 - "theme_sorter.py"
-Cohesion: 0.31
-Nodes (12): classify_theme(), classify_with_cache(), compute_dominant_hue(), compute_lightness(), fingerprint(), hex_to_rgb(), hue_to_bucket(), load_cache() (+4 more)
+### Community 207 - "FakeHyprctl"
+Cohesion: 0.22
+Nodes (3): actions(), FakeHyprctl, FloatToggleTest
 
-### Community 208 - "equalizer.py"
-Cohesion: 0.32
-Nodes (5): atomic(), Equalizer, main(), number(), validated()
+### Community 208 - "main"
+Cohesion: 0.25
+Nodes (14): check(), main(), call(), idle(), last_search_cmd(), pos(), pump(), rate_limited() (+6 more)
+
+### Community 209 - "BundleTest"
+Cohesion: 0.17
+Nodes (3): archive_bytes(), BuildScriptTest, BundleTest
 
 ### Community 210 - "vpn.sh"
-Cohesion: 0.50
-Nodes (3): install_vpn_service(), vpn.sh script, vpn_render_polkit_rules()
+Cohesion: 0.33
+Nodes (9): install_vpn_bundle(), install_vpn_service(), vpn.sh script, vpn_dnf_dependencies(), vpn_install_online(), vpn_prepare_fedora(), vpn_render_polkit_rules(), vpn_source_bundle() (+1 more)
 
 ### Community 212 - "widget_extensions_qml_test.py"
 Cohesion: 0.25
 Nodes (7): call(), check_styled_registry(), j(), pty(), registry_variants(), singleton(), write()
 
 ### Community 213 - "serp_vpn.py"
-Cohesion: 0.10
-Nodes (20): _active_sub_name(), build_checks(), country_name(), _default_name(), _die_with_parent(), dns_checks(), _emit(), _ensure_dir() (+12 more)
+Cohesion: 0.07
+Nodes (29): _active_sub_name(), build_checks(), country_name(), _default_name(), _die_with_parent(), dns_checks(), _emit(), _ensure_dir() (+21 more)
 
-### Community 214 - "main"
-Cohesion: 0.17
-Nodes (23): api(), connect(), is_running(), load_settings(), load_settings_readonly(), main(), _merge_settings(), ping() (+15 more)
+### Community 214 - "status"
+Cohesion: 0.10
+Nodes (39): api(), _auth_denied(), collect_checks(), connect(), disconnect(), force_off(), _helper(), ipcheck() (+31 more)
 
 ### Community 215 - "VpnGeometry.js"
 Cohesion: 0.27
 Nodes (10): attach(), bezier(), chamfer(), layout(), linkPath(), links(), measure(), partial() (+2 more)
 
 ### Community 216 - "wallpaper_audio_qml_test.py"
-Cohesion: 0.21
+Cohesion: 0.23
 Nodes (8): encode(), feed(), invoke(), link(), object_(), position_advances(), stream(), wait_for()
 
 ### Community 217 - "serp_gpu.py"
@@ -942,33 +959,65 @@ Nodes (9): emit(), hwmon_temp(), main(), number(), parse_nvidia(), read(), run_n
 Cohesion: 0.29
 Nodes (6): Applying, Changing the girl in the terminal, ERROR//OVERDRIVE, Mochi Night, Mochi Night and ERROR//OVERDRIVE, Workspaces
 
-### Community 221 - "clear"
-Cohesion: 0.27
-Nodes (8): clear(), disconnect(), _log_tail(), _pid_alive(), pid_path(), _proxy_disconnect(), read_text(), running_pid()
+### Community 221 - "widget_fusion_test.cjs"
+Cohesion: 0.12
+Nodes (14): assert, box, CM, fs, Fusion, members, minimum, moved (+6 more)
 
 ### Community 224 - "WallpaperAudioActivity.js"
 Cohesion: 0.60
 Nodes (4): activity(), belongsToShell(), isAudible(), isTrue()
 
+### Community 234 - "install-vpn-bundle.sh"
+Cohesion: 0.83
+Nodes (3): check_configs(), install_dependencies(), install-vpn-bundle.sh script
+
+### Community 235 - "FakeNet"
+Cohesion: 0.17
+Nodes (3): ctx(), FakeNet, Sources
+
+### Community 236 - "terminal_emulator_test.cjs"
+Cohesion: 0.17
+Nodes (8): assert, fs, path, sb(), screenText(), theme, V, vm
+
+### Community 237 - "music_drawer_test.cjs"
+Cohesion: 0.20
+Nodes (6): assert, context, fs, path, source, vm
+
+### Community 240 - "WidgetFusion.js"
+Cohesion: 0.39
+Nodes (5): forStorage(), groups(), number(), restorePosition(), settings()
+
+### Community 241 - "Поиск обоев (Search Wallpapers)"
+Cohesion: 0.29
+Nodes (6): Источники, Как открыть, Как пользоваться, Поиск обоев (Search Wallpapers), Проверка, Честные ограничения
+
+### Community 242 - "Widget Fusion и Music Studio Pro"
+Cohesion: 0.29
+Nodes (7): Music Studio Pro, Widget Fusion, Widget Fusion и Music Studio Pro, Изменённые компоненты, Локальные проверки, Перенос в Themess, Проверка на Fedora 45
+
+### Community 244 - "VELVET//NOIR и NEURO//CHAOS"
+Cohesion: 0.40
+Nodes (4): VELVET//NOIR и NEURO//CHAOS, Медиа, Проверено локально, Установка и проверка на Fedora
+
 ## Knowledge Gaps
 - **28 isolated node(s):** `SERPANTINUM_INSTALLER`, `SERPANTINUM_DIR`, `I18N_DIR`, `PM_COPR_MAP`, `PM_PKG_MAP` (+23 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1262 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **64 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1360 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **73 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `ThemessTest` connect `ThemessTest` to `subprocess`?**
-  _High betweenness centrality (0.019) - this node is a cross-community bridge._
+- **Why does `MusicEffectsTests` connect `MusicEffectsTests` to `subprocess`?**
+  _High betweenness centrality (0.013) - this node is a cross-community bridge._
 - **What connects `SERPANTINUM_INSTALLER`, `SERPANTINUM_DIR`, `I18N_DIR` to the rest of the system?**
   _28 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `apptheme.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.06307456588355465 - nodes in this community are weakly interconnected._
-- **Why does `MusicEffectsTests` connect `MusicEffectsTests` to `subprocess`?**
-  _High betweenness centrality (0.012) - this node is a cross-community bridge._
+  _Cohesion score 0.06456908344733242 - nodes in this community are weakly interconnected._
+- **Why does `Cli` connect `Cli` to `Env`, `subprocess`?**
+  _High betweenness centrality (0.011) - this node is a cross-community bridge._
 - **Should `.apply` be split into smaller, more focused modules?**
   _Cohesion score 0.08823529411764706 - nodes in this community are weakly interconnected._
-- **Why does `IntegrationTests` connect `.apply` to `subprocess`?**
-  _High betweenness centrality (0.010) - this node is a cross-community bridge._
+- **Why does `ThemessTest` connect `ThemessTest` to `subprocess`?**
+  _High betweenness centrality (0.011) - this node is a cross-community bridge._
 - **Should `GovAlertsLib.js` be split into smaller, more focused modules?**
   _Cohesion score 0.07836538461538461 - nodes in this community are weakly interconnected._

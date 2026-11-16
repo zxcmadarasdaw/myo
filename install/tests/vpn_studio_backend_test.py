@@ -493,6 +493,34 @@ class OneClickSetup(unittest.TestCase):
             self.assertEqual(vpn.subs_list()["active"], result["active"])
             self.assertEqual((Path(self.env.state) / "config.json").read_bytes(), before)
 
+    def test_panel_setup_never_fetches_components(self):
+        with patch.object(sb, "find_bundle", side_effect=AssertionError("bundle lookup")), \
+             patch.object(sb, "install", side_effect=AssertionError("download")), \
+             patch.object(vpn, "install_fedora_packages", side_effect=AssertionError("package install")), \
+             patch.object(vpn, "load_source_text", side_effect=AssertionError("read profile too soon")):
+            with self.assertRaises(vpn.VpnError) as ctx:
+                vpn.vpn_setup("https://example.invalid/sub", "Missing", self.events.append, local_engine=True)
+            self.assertEqual(ctx.exception.code, "setup_components")
+
+            self.install(self.events.append)
+            local = Path(self.env.tmp) / "profile.txt"
+            local.write_text(base.LINK_LIST, encoding="utf-8")
+            with patch.object(sb, "probe", return_value={"ok": True, "version": "1.14.4"}), \
+                 patch.object(vpn, "singbox_check", return_value=(True, "")):
+                result = vpn.vpn_setup("", "Local", self.events.append, file_path=local.as_uri(), local_engine=True)
+            self.assertEqual(result["items"][0]["kind"], "file")
+
+    def test_unavailable_components_write_failed_diagnostic(self):
+        with patch.object(vpn, "tun_installed", return_value=False):
+            result = vpn.verify_installed_components(124)
+        self.assertFalse(result["ok"])
+        self.assertIn("status 124", result["errors"][0])
+        self.assertTrue(any(error.startswith("TUN:") for error in result["errors"]))
+        self.assertTrue(any(error.startswith("PROXY:") for error in result["errors"]))
+        saved = json.loads(Path(result["report"]).read_text(encoding="utf-8"))
+        self.assertEqual(saved["errors"], result["errors"])
+        self.assertNotIn("127.0.0.1", json.dumps(saved))
+
     def test_fedora_dependencies_use_a_fixed_polkit_request(self):
         with patch.object(vpn, "_tool", return_value="/usr/bin/pkexec"), \
              patch.object(vpn, "_executable", return_value=True), \

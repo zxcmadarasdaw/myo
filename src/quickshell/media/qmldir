@@ -14,3 +14,5 @@ AudioStudioView 1.0 AudioStudioView.qml
 StudioSlider 1.0 StudioSlider.qml
 StudioButton 1.0 StudioButton.qml
 StudioComboBox 1.0 StudioComboBox.qml
+PlaybackSpeed 1.0 PlaybackSpeed.qml
+RemixStudio 1.0 RemixStudio.qml

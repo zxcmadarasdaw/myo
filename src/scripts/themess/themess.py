@@ -13,7 +13,7 @@ import subprocess
 import sys
 import tempfile
 
-from schema import SETTINGS, configuration, plain, widget_layout
+from schema import SETTINGS, configuration, export_fusion, plain, widget_layout
 
 JSON_LIMIT = 2 * 1024 * 1024
 MEDIA_LIMIT = 24 * 1024 * 1024
@@ -240,6 +240,7 @@ class Plan:
     widgets: list | None = None
     image: tuple | None = None
     media: tuple | None = None
+    reference_size: dict | None = None
     fingerprints: dict = field(default_factory=dict)
 
 
@@ -251,12 +252,18 @@ def manifest(plan):
         plan.source = "theme.json"
         data = read_json(raw)
         required = {"version", "name", "components"}
-        optional = {"author", "description"}
+        optional = {"author", "description", "referenceSize"}
         if (not isinstance(data, dict) or not required <= data.keys() <= required | optional
                 or type(data["version"]) is not int or data["version"] != 1
                 or not plain(data["name"]) or not isinstance(data["components"], dict)):
             raise ValueError("theme.json: expected version 1, name and components")
         plan.name = data["name"]
+        if "referenceSize" in data:
+            size = data["referenceSize"]
+            if (not isinstance(size, dict) or set(size) != {"w", "h"}
+                    or any(type(side) is not int or not 720 <= side <= 8192 for side in size.values())):
+                raise ValueError("theme.json: referenceSize expects integer w and h between 720 and 8192")
+            plan.reference_size = size
         if "author" in data:
             if not plain(data["author"]):
                 raise ValueError("theme.json: invalid author")
@@ -306,13 +313,13 @@ def scan(folder, caps, thumbnail=False):
                 if suffix not in WALLPAPER_SUFFIXES:
                     raise ValueError("expected a GIF, PNG, JPEG, WebP, MP4 or WebM file")
                 data = read_package_file(source, relative, MEDIA_LIMIT)
-                size = (480, 270) if thumbnail or kind != "wallpaper" else (1920, 1080)
+                size = (480, 640) if kind == "fastfetchMedia" else (480, 270) if thumbnail else (1920, 1080)
                 snapshot_of = video_snapshot if suffix in VIDEO_FORMATS else image_snapshot
                 frame = snapshot_of(data, suffix, size)
                 if kind == "wallpaper":
                     plan.image = (PurePosixPath(parts[-1]).name, suffix, data, frame)
                 else:
-                    plan.media = (PurePosixPath(parts[-1]).name, suffix, data)
+                    plan.media = (suffix, data, frame if suffix in VIDEO_FORMATS else None)
             else:
                 if name.startswith(SHARED_PREFIX):
                     raise ValueError("only media files can be shared")
@@ -403,7 +410,9 @@ def native_changes(plan, stores):
     if plan.media:
         # The clip is copied next to the wallpaper assets; settings only ever point there.
         settings = copy.deepcopy(plan.settings)
-        merge(settings, {"fastfetchMedia": {"enabled": True, "path": str(media_asset(plan, stores))}})
+        suffix, data, poster = plan.media
+        merge(settings, {"fastfetchMedia": {"enabled": True, "path": str(media_asset(stores, suffix, data)),
+                                           "posterPath": str(media_asset(stores, ".png", poster)) if poster else ""}})
     if settings:
         path = stores.safe(stores.settings)
         original = snapshot(path)
@@ -425,7 +434,26 @@ def native_changes(plan, stores):
             existing = read_json(before) if before else []
         except (ValueError, UnicodeDecodeError):
             existing = []
-        targets[path] = (before, encode(plan.widgets))
+        layout = plan.widgets
+        size = stores.caps.get("widgetSize")
+        if (plan.reference_size and isinstance(size, dict)
+                and all(type(size.get(key)) is int and size[key] > 0 for key in ("w", "h"))):
+            scale = min(1, size["w"] / plan.reference_size["w"], size["h"] / plan.reference_size["h"])
+            layout = [{**widget, **{key: round(widget[key] * scale, 2)
+                       for key in ("wX", "wY", "wWidth", "wHeight")}} for widget in layout]
+            if "canvas" in stores.caps.get("modules", []):
+                camera = stores.safe(path.with_name("canvas.json"))
+                saved = snapshot(camera)
+                try:
+                    state = read_json(saved) if saved else {}
+                except ValueError:
+                    state = {}
+                version = state.get("schema_version") if isinstance(state, dict) else None
+                if isinstance(version, (int, float)) and version > 1:
+                    raise ValueError("Canvas state uses a newer schema. Update Serpantinum before applying.")
+                targets[camera] = (saved, encode({"schema_version": 1, "camera": {"x": 0, "y": 0, "zoom": 1},
+                                                   "screen": {"w": size["w"], "h": size["h"]}}))
+        targets[path] = (before, encode(layout))
         # Shown before Apply: these widgets are replaced (and kept in the Restore Previous backup).
         detail.update(widgetCount=len(plan.widgets), widgetScreen=screen,
                       widgetsBefore=len(existing) if isinstance(existing, list) else 0)
@@ -446,19 +474,25 @@ def native_changes(plan, stores):
     return {path: pair for path, pair in targets.items() if pair[0] != pair[1]}, detail
 
 
-def media_asset(plan, stores):
-    _, suffix, data = plan.media
+def media_asset(stores, suffix, data):
     return stores.safe(stores.directory / "assets" / (digest(data) + suffix))
+
+
+def canvas_files(changes):
+    return [path.as_posix() for path in changes if path.name == "canvas.json"]
 
 
 def package_view(plan, show_image=False):
     info = {"folder": str(plan.root), "url": plan.root.as_uri(), "name": plan.name,
             "author": plan.author, "description": plan.description, "source": plan.source,
             "components": plan.components, "errors": plan.errors, "warnings": plan.warnings,
+            "referenceSize": plan.reference_size,
             "appearance": plan.settings, "widgets": plan.widgets,
             "packageToken": digest(encode([plan.fingerprints, plan.components, plan.warnings]))}
     if show_image and plan.image:
         info["image"] = "data:image/png;base64," + base64.b64encode(plan.image[3]).decode("ascii")
+    if show_image and plan.media and plan.media[2]:
+        info["fastfetchImage"] = "data:image/png;base64," + base64.b64encode(plan.media[2]).decode("ascii")
     return info
 
 
@@ -640,7 +674,7 @@ def mutate(args, stores):
                             active=active, activeName=state.get("previousName") if active else None,
                             original=state["original"] if active else None)
             update_stores(stores, state, changes, finished)
-            return dict(status(finished), message=("Original desktop settings restored." if original
+            return dict(status(finished), canvasFiles=canvas_files(changes), message=("Original desktop settings restored." if original
                                                    else "Previous desktop settings restored."))
 
         plan = scan(args.folder, stores.caps)
@@ -655,9 +689,12 @@ def mutate(args, stores):
             if snapshot(asset) != data:
                 write_atomic(asset, data)
         if plan.media:
-            asset = media_asset(plan, stores)
-            if snapshot(asset) != plan.media[2]:
-                write_atomic(asset, plan.media[2])
+            suffix, video, poster = plan.media
+            for extension, data in ((suffix, video), (".png", poster)):
+                if data is not None:
+                    asset = media_asset(stores, extension, data)
+                    if snapshot(asset) != data:
+                        write_atomic(asset, data)
         folder = str(plan.root)
         history = [folder] + [item for item in state["history"] if item != folder]
         backup = journal_entry(changes)
@@ -673,12 +710,13 @@ def mutate(args, stores):
         else:
             write_atomic(stores.directory / "state.json", encode(finished))
         message = "Package applied." if changes else "The selected settings are already active."
-        return dict(status(finished), message=message)
+        return dict(status(finished), canvasFiles=canvas_files(changes), message=message)
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("status", "catalog", "import", "remove", "scan", "preview", "apply", "restore", "restore-original"))
+    parser.add_argument("action", choices=("status", "catalog", "import", "remove", "scan", "preview", "apply",
+                                           "restore", "restore-original", "export-fusion"))
     parser.add_argument("--folder", default="")
     parser.add_argument("--token", default="")
     parser.add_argument("--caps", default="{}")
@@ -692,6 +730,12 @@ def main():
             result = catalog(stores, metadata(stores))
         elif args.action in ("scan", "preview"):
             result, _ = report(scan(args.folder, stores.caps), stores, args.action == "preview")
+        elif args.action == "export-fusion":
+            screen = stores.caps.get("widgetScreen")
+            if not screen or "widgets" not in stores.caps.get("modules", []):
+                raise ValueError("No widget output is available.")
+            saved = snapshot(stores.widget_path(screen))
+            result = {"widgetPackage": export_fusion(read_json(saved) if saved else [], stores.caps)}
         else:
             result = mutate(args, stores)
     except (OSError, ValueError, RecursionError) as error:

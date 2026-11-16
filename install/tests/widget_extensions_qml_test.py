@@ -779,7 +779,7 @@ Window {
     assert len(atelier) >= 18, atelier
     styles = re.findall(r'"(\w+)"', re.search(r"IDS\s*=\s*\[([^\]]*)\]",
                         (SRC / "widgets/faces/common/AtelierStyles.js").read_text(encoding="utf-8")).group(1))
-    assert len(styles) == 9, styles
+    assert {"velvet", "retro_tech", "cyber", "asymmetric"} <= set(styles), styles
     loaded = 0
     for light in (False, True):
         j("setLight", light)

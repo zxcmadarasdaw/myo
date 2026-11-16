@@ -1,4 +1,5 @@
 """Data-only schema for Themess v1. Package objects are validated before merging."""
+import json
 import re
 
 COLORS = """crust mantle base surface0 surface1 surface2 overlay0 overlay1 overlay2
@@ -52,7 +53,7 @@ VPN_STYLE = {
 
 
 FASTFETCH_THEMES = ("obsidian", "glass_noir", "minimal", "liquid_shadow", "terminal_classic", "floating_media",
-                    "mochi", "overdrive")
+                    "mochi", "overdrive", "velvet", "neuro")
 
 
 def validate(value, schema, label, allow_empty=False):
@@ -135,6 +136,8 @@ SETTINGS = {
             "position": choice(("start", "center", "end")),
             "width": integer(15, 100), "height": integer(15, 100),
             "zoom": number(0.5, 2), "opacity": UNIT, "radius": integer(0, 40),
+            "fit": choice(("fit", "crop")),
+            "background": choice(("transparent", "matte", "accent")),
         },
         "loop": BOOL, "autoplay": BOOL, "pauseWhenHidden": BOOL,
         "speed": number(0.25, 2), "animationFps": integer(0, 60),
@@ -148,7 +151,8 @@ SETTINGS = {
 # Widget fields a package may set besides id/type/variant/geometry. Appearance only:
 # no command, no host to ping, no path. Terminal modes that would run a configured
 # command ("monitor") are not accepted.
-ATELIER_STYLES = ("matte", "premium", "minimal", "retro", "elegant", "editorial", "technical", "borderless", "compact")
+ATELIER_STYLES = ("matte", "premium", "minimal", "retro", "elegant", "editorial", "technical", "borderless", "compact",
+                 "velvet", "retro_tech", "cyber", "asymmetric")
 WIDGET_FIELDS = {
     "faceStyle": choice(ATELIER_STYLES),
     "onlyWhilePlaying": BOOL,
@@ -161,6 +165,14 @@ TERMINAL_FIELDS = {
     "colorScheme": choice(("theme", "classic", "matrix", "cyber", "amber")),
     "backgroundOpacity": UNIT, "cornerRadius": integer(0, 40),
     "appearAnimation": choice(("fade", "slide", "scale", "none")),
+}
+
+FUSION_FIELDS = {
+    "mode": choice(("unified", "seamless", "grid", "horizontal", "vertical", "freeform", "adaptive")),
+    "style": choice(("matte", "minimal", "editorial", "retro", "technical", "borderless", "compact", "custom")),
+    "gap": number(0, 128), "padding": number(0, 128), "columns": integer(1, 12),
+    "opacity": UNIT, "radius": number(0, 60), "background": COLOR, "title": plain,
+    "animation": choice(("none", "fade")), "dividers": BOOL,
 }
 
 
@@ -189,8 +201,31 @@ def configuration(kind, value, caps, name):
     return section, value
 
 
+NATIVE_WIDGET_KEYS = {"id": "wId", "type": "wType", "variant": "wVariant", "x": "wX",
+                      "y": "wY", "w": "wWidth", "h": "wHeight", "rotation": "wRotation"}
+
+
+def widget_fields(kind, types):
+    schema = {
+        "id": IDENTIFIER, "type": choice(types),
+        "anchor": choice(ANCHORS), "x": number(-50000, 50000), "y": number(-50000, 50000),
+        "w": number(16, 8192), "h": number(16, 8192), "wOpacity": UNIT,
+        "rotation": number(0, 360), "stretchWidth": BOOL, "stretchHeight": BOOL,
+    }
+    if isinstance(kind, str) and kind in types:
+        schema.update(WIDGET_FIELDS, variant=choice(types[kind]))
+        if kind == "terminal":
+            schema.update(TERMINAL_FIELDS)
+        if kind == "music":
+            schema.update(musicDrawer=BOOL, musicAnimations=BOOL, musicVisualizer=BOOL,
+                          musicMaterial=choice(("liquid", "mica", "neon", "minimal")))
+    return schema
+
+
 def widget_layout(value, caps):
-    if isinstance(value, dict) and set(value) <= {"name", "widgets"}:
+    groups = []
+    if isinstance(value, dict) and set(value) <= {"name", "widgets", "groups"}:
+        groups = value.get("groups", [])
         value = value.get("widgets")
     if not isinstance(value, list) or len(value) > 100:
         raise ValueError("widgets: expected an array with at most 100 widgets")
@@ -199,21 +234,7 @@ def widget_layout(value, caps):
     ids = set()
     for index, item in enumerate(value):
         label = f"widgets[{index}]"
-        schema = {
-            "id": IDENTIFIER, "type": choice(types),
-            "anchor": choice(ANCHORS), "x": number(-50000, 50000), "y": number(-50000, 50000),
-            "w": number(16, 8192), "h": number(16, 8192), "wOpacity": number(0, 1),
-            "rotation": number(0, 360), "stretchWidth": BOOL, "stretchHeight": BOOL,
-        }
-        if isinstance(item, dict) and schema["type"](item.get("type")):
-            schema["variant"] = choice(types[item["type"]])
-            schema.update(WIDGET_FIELDS)
-            if item["type"] == "terminal":
-                schema.update(TERMINAL_FIELDS)
-            if item["type"] == "music":
-                # Appearance only. Themes cannot apply EQ, presets, routing or commands.
-                schema.update(musicDrawer=BOOL, musicAnimations=BOOL, musicVisualizer=BOOL,
-                              musicMaterial=choice(("liquid", "mica", "neon", "minimal")))
+        schema = widget_fields(item.get("type") if isinstance(item, dict) else None, types)
         validate(item, schema, label)
         if not {"id", "type", "x", "y", "w", "h"} <= item.keys():
             raise ValueError(f"{label}: requires id, type, x, y, w and h")
@@ -222,7 +243,57 @@ def widget_layout(value, caps):
         if item["id"] in ids:
             raise ValueError(f"{label}: duplicate widget id")
         ids.add(item["id"])
-        fields = {"id": "wId", "type": "wType", "variant": "wVariant", "x": "wX",
-                  "y": "wY", "w": "wWidth", "h": "wHeight", "rotation": "wRotation"}
-        result.append({fields.get(key, key): value for key, value in item.items()})
+        result.append({NATIVE_WIDGET_KEYS.get(key, key): value for key, value in item.items()})
+    if not isinstance(groups, list) or len(groups) > 50:
+        raise ValueError("widgets.groups: expected an array with at most 50 groups")
+    by_id = {widget["wId"]: widget for widget in result}
+    group_ids = set()
+    for index, group in enumerate(groups):
+        label = f"widgets.groups[{index}]"
+        validate(group, {"id": IDENTIFIER, "members": items(IDENTIFIER, 100), "appearance": FUSION_FIELDS}, label)
+        if not {"id", "members", "appearance"} <= group.keys() or len(group["members"]) < 2:
+            raise ValueError(f"{label}: requires id, appearance and at least two members")
+        if group["id"] in group_ids:
+            raise ValueError(f"{label}: duplicate group id")
+        group_ids.add(group["id"])
+        for order, member in enumerate(group["members"]):
+            widget = by_id.get(member)
+            if (not widget or widget.get("wGroup") or widget.get("anchor")
+                    or widget.get("stretchWidth") or widget.get("stretchHeight")):
+                raise ValueError(f"{label}: unknown, anchored, stretched or already grouped widget {member}")
+            widget.update(wGroup=group["id"], wFusionIndex=order,
+                          wFusion=json.dumps(group["appearance"], ensure_ascii=False, separators=(",", ":")))
     return result
+
+
+def export_fusion(layout, caps):
+    if not isinstance(layout, list):
+        raise ValueError("Expected a saved widget layout on this screen.")
+    grouped = {}
+    for widget in layout:
+        if isinstance(widget, dict) and IDENTIFIER(widget.get("wGroup")) and widget.get("wFusion"):
+            grouped.setdefault(widget["wGroup"], []).append(widget)
+    package = {"widgets": [], "groups": []}
+    for group_id, members in grouped.items():
+        if len(members) < 2:
+            continue
+        members.sort(key=lambda member: member.get("wFusionIndex", 0))
+        appearance = members[0]["wFusion"]
+        appearance = json.loads(appearance) if isinstance(appearance, str) else appearance
+        if not isinstance(appearance, dict):
+            raise ValueError(f"Invalid Fusion appearance in {group_id}.")
+        appearance = {key: value for key, value in appearance.items() if key in FUSION_FIELDS and value != ""}
+        package["groups"].append({"id": group_id, "members": [member.get("wId") for member in members],
+                                  "appearance": appearance})
+        for member in members:
+            fields = widget_fields(member.get("wType"), caps.get("widgetTypes", {}))
+            item = {}
+            for key, rule in fields.items():
+                value = member.get(NATIVE_WIDGET_KEYS.get(key, key))
+                if rule(value):
+                    item[key] = value
+            package["widgets"].append(item)
+    if not package["groups"]:
+        raise ValueError("There are no saved Fusion groups on this screen.")
+    widget_layout(package, caps)
+    return package

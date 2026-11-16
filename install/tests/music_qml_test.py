@@ -19,7 +19,6 @@ from PySide6.QtQuick import QQuickView
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT/"src/quickshell"
-OUT = ROOT/"reports/music-studio"
 app = QGuiApplication([])
 app.setFont(QFont("Segoe UI", 10))
 messages = []
@@ -43,6 +42,7 @@ def spin():
 
 with tempfile.TemporaryDirectory(prefix="serpantinum-music-") as directory:
     root = Path(directory)
+    OUT = root/"renders"
 
     def write(path, text):
         p = root/path
@@ -55,16 +55,18 @@ with tempfile.TemporaryDirectory(prefix="serpantinum-music-") as directory:
             f.write(f"singleton {name} 1.0 {name}.qml\n")
 
     shutil.copytree(SRC/"widgets/faces/music", root/"widgets/faces/music")
-    for name in ("AudioStudioView.qml", "StudioSlider.qml", "StudioButton.qml", "StudioComboBox.qml"):
-        write(f"media/{name}", (SRC/"media"/name).read_text(encoding="utf-8"))
-    write("media/qmldir", "AudioStudioView 1.0 AudioStudioView.qml\nStudioSlider 1.0 StudioSlider.qml\nStudioButton 1.0 StudioButton.qml\nStudioComboBox 1.0 StudioComboBox.qml\n")
+    media_types = ("AudioStudioView", "StudioSlider", "StudioButton", "StudioComboBox", "RemixStudio", "PlaybackSpeed", "MusicTrackControls")
+    for name in media_types:
+        write(f"media/{name}.qml", (SRC/"media"/f"{name}.qml").read_text(encoding="utf-8"))
+    write("media/qmldir", "".join(f"{name} 1.0 {name}.qml\n" for name in media_types))
     write("singletons/audio/MprisController.qml", (SRC/"singletons/audio/MprisController.qml").read_text(encoding="utf-8"))
     write("qmldir", "singleton MprisController 1.0 singletons/audio/MprisController.qml\n")
     singleton("ThemeBackend", '''property color base: "#11131e"; property color text: "#e9e7f4";
         property color subtext0: "#a6abc5"; property color surface0: "#242839"; property color surface1: "#33384e";
         property color surface2: "#535775"; property color mauve: "#c5a2ff"; property color sky: "#7ee6ed";
         property color blue: "#89b4fa"; property color red: "#f38ba8"; property color peach: "#ffbf89"; property real elementOpacity: 0.94; property real borderRadius: 18;
-        property string fontFamily: "Segoe UI"''')
+        property color crust: "#11111b"; property bool liquidGlass: false; property string fontFamily: "Segoe UI"''')
+    singleton("I18n", 'function t(key, values) { return key; }')
     singleton("GpuCompatibility", 'property var effective: ({profile:"Balanced"}); property bool shadersAllowed: true; property bool blurAllowed: true')
     singleton("Config", 'property bool dataReady: true; function getSetting(k,f) { return f; } function setSetting(k,v) {}')
     singleton("Scaler", "function s(x) { return x; }")
@@ -85,6 +87,18 @@ with tempfile.TemporaryDirectory(prefix="serpantinum-music-") as directory:
     write("reusables/GlassFill.qml", "import QtQuick\nItem { property real radius; property bool allowed; property color tintColor }")
     write("reusables/WallpaperBlur.qml", "import QtQuick\nItem { property real radius }")
     write("reusables/Visualizer.qml", "import QtQuick\nItem { property bool active; property bool previewDemo; property color color; property int count; property bool mirrored }")
+    for name, body in {
+        "MarqueeText": "Text { property int marqueeSpacing; property int speed; property bool active }",
+        "ClickButton": "Item { implicitWidth: 52; property int maxTextWidth; property int maxWidth; property int cornerRadius; property int horizontalPadding; property string buttonText; property real textFontSize; property color accentColor; property real bgOpacity; property color textColor; signal clicked() }",
+        "IconButton": "ClickButton { property string buttonIcon; property int iconFontSize; property bool isHoveredOrHighlighted }",
+        "Dropdown": "Item { property int cornerRadius; property var options; property int currentIndex; property real fontPixelSize; property real iconSize; property color accentColor; property color baseColor; property color hoverColor; property color dropdownColor; property color borderColor; property color textColor; property color activeTextColor; signal valueChanged(int index, string value) }",
+    }.items():
+        write(f"reusables/{name}.qml", "import QtQuick\n" + body)
+        with (root/"reusables/qmldir").open("a") as registry:
+            registry.write(f"{name} 1.0 {name}.qml\n")
+    write("reusables/media/WavySeekBar.qml", """import QtQuick
+        Item { property real from; property real to; property real value; property bool playing;
+               property color waveColor; property bool isDragging; signal moved(real value); }""")
     write("Quickshell/qmldir", "module Quickshell\nSingleton 1.0 Singleton.qml\n")
     write("Quickshell/Singleton.qml", "import QtQuick\nItem {}")
     write("Quickshell/Io/qmldir", "module Quickshell.Io\nProcess 1.0 Process.qml\nStdioCollector 1.0 StdioCollector.qml\n")
@@ -98,6 +112,7 @@ with tempfile.TemporaryDirectory(prefix="serpantinum-music-") as directory:
         property string trackTitle: ""; property string trackArtist: ""; property string trackArtUrl: "";
         property var metadata: ({}); property int playbackState: 1; property bool isPlaying: false;
         property real position: 42; property real length: 240;
+        property real rate: 1; property real minRate: 1; property real maxRate: 1;
         property bool canControl: true; property bool canPlay: true; property bool canPause: true;
         property bool canGoPrevious: true; property bool canGoNext: true; property bool canSeek: true;
         property bool lengthSupported: true; property bool positionSupported: true;
@@ -108,14 +123,36 @@ with tempfile.TemporaryDirectory(prefix="serpantinum-music-") as directory:
     singleton("MprisPlaybackState", "enum State { Stopped, Paused, Playing }", "Quickshell/Services/Mpris")
     write("Harness.qml", '''import QtQuick
         import Quickshell.Services.Mpris
+        import "media"
         import "."
         Item {
             width: 570; height: 620
-            MprisPlayer { id: first; dbusName: "org.mpris.MediaPlayer2.first"; identity: "Player One"; trackTitle: "Midnight Current"; trackArtist: "Serpantinum"; isPlaying: true }
+            MprisPlayer { id: first; dbusName: "org.mpris.MediaPlayer2.first"; identity: "Player One"; trackTitle: "Midnight Current"; trackArtist: "Serpantinum"; isPlaying: true; minRate: 0.75; maxRate: 2.5 }
             MprisPlayer { id: second; dbusName: "org.mpris.MediaPlayer2.second"; identity: "Player Two"; trackTitle: "Second Track" }
             Component.onCompleted: Mpris.players.values = [first,second]
             property alias surface: loader.item
             Loader { id: loader; objectName: "loader"; anchors.fill: parent }
+            MusicTrackControls {
+                id: tracks
+                root: QtObject {
+                    property var targetPlayer: MprisController.activePlayer
+                    property bool active: tracks.visible
+                    property color dynamicTextColor: "white"
+                    property real introText: 1
+                    property real introControls: 1
+                    property string activeDeviceIcon: ""
+                    property string activeDeviceName: "Speaker"
+                    property var playerList: Mpris.players.values
+                    property var playerOptions: []
+                    property int currentPlayerIndex: 0
+                    property real currentLivePosition: MprisController.livePosition
+                    function s(value) { return value; }
+                    function formatTime(value) { return String(Math.floor(value)); }
+                }
+                y: 210; width: 230; visible: false
+            }
+            function showTracks() { tracks.visible = true; }
+            function hideTracks() { tracks.visible = false; }
             function load(url: string) { loader.source=url; }
             function state(): string { return JSON.stringify({player:MprisController.activePlayerId, position:MprisController.livePosition, action:MprisController.activePlayer ? MprisController.activePlayer.lastAction : "", calls:MusicEffects.calls, consumers:Spectrum.consumers}); }
             function selectSecond() { MprisController.selectedBus=second.dbusName; }
@@ -199,6 +236,31 @@ with tempfile.TemporaryDirectory(prefix="serpantinum-music-") as directory:
     harness.setWidth(570); harness.setHeight(620)
     studio = load("media/AudioStudioView.qml")
     check(studio is not None, "Audio Studio loads actual QML")
+    speed = find_item(studio, "studioPlaybackSpeed")
+    invoke("showTracks")
+    quick_button = find_item(harness, "musicSpeed")
+    check(speed.property("supported") and speed.property("minimum") == 0.75 and speed.property("maximum") == 2,
+          "speed range respects both the player and the studio limit")
+    QMetaObject.invokeMethod(speed, "setRate", Q_ARG("QVariant", 1.25))
+    spin(); spin()
+    check(quick_button.property("buttonText").endswith("1.25×"), "Super+M follows a studio speed change")
+    QMetaObject.invokeMethod(quick_button, "clicked")
+    spin()
+    popup = harness.findChild(QObject, "musicSpeedPopup")
+    check(popup is not None and popup.property("visible"), "Super+M opens its speed popover")
+    quick = popup.property("contentItem")
+    QMetaObject.invokeMethod(quick, "setRate", Q_ARG("QVariant", 1.0))
+    spin(); spin()
+    check(speed.property("readout") == "1.00×", "studio follows reset in the second control")
+    QMetaObject.invokeMethod(speed, "setRate", Q_ARG("QVariant", 1.5))
+    invoke("selectAuto")
+    spin()
+    check(not speed.property("supported") and speed.property("readout") == "1.00×",
+          "a fixed-rate player disables speed")
+    invoke("restore")
+    check(speed.property("readout") == "1.00×", "a pending change is cancelled when the player changes")
+    invoke("hideTracks")
+    check(not popup.property("visible"), "closing Super+M closes its speed popover")
     band = find_item(studio,"eqBand1")
     check(band is not None and band.property("enabled"), "available engine enables EQ")
     band.setProperty("value", 6)
