@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as C
+import QtQuick.Dialogs as D
 import "../../../"
 
 // Right-hand sheet of Search Wallpapers: sources (with what each one really
@@ -83,16 +84,23 @@ Rectangle {
     function capLine(name) {
         let c = WallpaperSearch.caps[name];
         if (!c) return "";
-        let kinds = c.kinds.map(k => k === "image" ? tr("images", "картинки") : k === "animated" ? "GIF" : tr("video", "видео")).join(", ");
+        let kinds = c.kinds.map(k => k === "image" ? tr("images", "картинки") : k === "animated" ? tr("animations", "анимации") : tr("video", "видео")).join(", ");
         let safe = c.safe === "filter" ? tr("own content filter", "свой фильтр контента")
                  : c.safe === "policy" ? tr("no explicit content by site rules", "откровенный контент запрещён правилами сайта")
+                 : c.safe === "local" ? tr("local files", "локальные файлы")
                  : tr("no content filter — skipped while Safe Search is on", "нет фильтра контента — пропускается при включённом Safe Search");
         let sorts = c.sorts.filter(x => x === "newest" || x === "popular").map(x => WallpaperSearch.sortLabel(x).toLowerCase());
-        let key = c.key === "required" ? tr("needs your free API key", "нужен ваш бесплатный API-ключ")
+        let key = c.key === "required" ? tr("needs your API key", "нужен ваш API-ключ")
                 : c.key === "optional" ? tr("key optional", "ключ необязателен") : tr("no key", "без ключа");
-        return kinds + " · " + c.formats.join("/").toUpperCase() + " · " + safe + " · " + key
+        return kinds + (c.formats.length ? " · " + c.formats.join("/").toUpperCase() : "") + " · " + safe + " · " + key
              + (sorts.length ? " · " + tr("sorts: ", "сортировка: ") + sorts.join(", ") : "")
              + " · " + tr("limit: ", "лимит: ") + c.limits;
+    }
+
+    D.FolderDialog {
+        id: folderPicker
+        title: sheet.tr("Add a wallpaper folder", "Добавить папку обоев")
+        onAccepted: WallpaperSearch.editCustomSources("add", "folders", String(selectedFolder))
     }
 
     ColumnLayout {
@@ -178,6 +186,20 @@ Rectangle {
                                 SmallBtn { label: sheet.tr("Remove", "Удалить"); visible: !!WallpaperSearch.keys[srow.modelData]; onClicked: WallpaperSearch.saveKey(srow.modelData, "") }
                                 SmallBtn { label: sheet.tr("Get a key", "Получить"); visible: !!(srow.cap && srow.cap.keyUrl); onClicked: Qt.openUrlExternally(srow.cap.keyUrl) }
                             }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                visible: srow.modelData !== "local"
+                                SmallBtn {
+                                    label: sheet.tr("Test connection", "Проверить подключение")
+                                    active: !WallpaperSearch.checkingSource && (!srow.needsKey || srow.cap.key === "optional" || !!WallpaperSearch.keys[srow.modelData])
+                                    onClicked: WallpaperSearch.checkSource(srow.modelData)
+                                }
+                                Txt {
+                                    Layout.fillWidth: true
+                                    text: WallpaperSearch.sourceChecks[srow.modelData] || ""
+                                    color: ThemeBackend.subtext0
+                                }
+                            }
                         }
                     }
                 }
@@ -185,11 +207,66 @@ Rectangle {
                     Layout.fillWidth: true
                     color: ThemeBackend.subtext0
                     font.pixelSize: sheet.s(11)
-                    text: sheet.tr("Keys are personal and free. They are stored only in ~/.config/serpantinum/secrets/wallpaper_hub.json (mode 600) — never in settings.json, Themess exports or the source code. Only the official APIs of these sites are used.",
-                                   "Ключи личные и бесплатные. Хранятся только в ~/.config/serpantinum/secrets/wallpaper_hub.json (права 600) — не в settings.json, не в экспорте Themess и не в исходниках. Используются только официальные API этих сайтов.")
+                    text: sheet.tr("API keys are saved in ~/.config/serpantinum/secrets/wallpaper_hub.json (mode 600). Check the provider’s plan for quotas and pricing.",
+                                   "Ключи хранятся в ~/.config/serpantinum/secrets/wallpaper_hub.json (права 600). Лимиты и цены зависят от тарифа провайдера.")
+                }
+                Head { text: sheet.tr("Wallpaper folders", "Папки с обоями") }
+                SmallBtn {
+                    label: sheet.tr("Add folder", "Выбрать папку")
+                    active: !WallpaperSearch.editingSources
+                    onClicked: folderPicker.open()
+                }
+                Repeater {
+                    model: WallpaperSearch.customSources.folders
+                    delegate: RowLayout {
+                        required property string modelData
+                        Layout.fillWidth: true
+                        Txt { Layout.fillWidth: true; text: modelData; color: ThemeBackend.subtext0 }
+                        SmallBtn {
+                            label: sheet.tr("Remove", "Убрать")
+                            active: !WallpaperSearch.editingSources
+                            onClicked: WallpaperSearch.editCustomSources("remove", "folders", modelData)
+                        }
+                    }
+                }
+                Head { text: sheet.tr("Direct URL or feed", "Прямая ссылка или лента") }
+                RowLayout {
+                    Layout.fillWidth: true
+                    C.TextField {
+                        id: customUrl
+                        Layout.fillWidth: true
+                        placeholderText: "https://…"
+                        onAccepted: if (text.trim() !== "" && !WallpaperSearch.editingSources) {
+                            WallpaperSearch.editCustomSources("add", "urls", text.trim());
+                            text = "";
+                        }
+                    }
+                    SmallBtn {
+                        label: sheet.tr("Add", "Добавить")
+                        active: customUrl.text.trim() !== "" && !WallpaperSearch.editingSources
+                        onClicked: customUrl.accepted()
+                    }
+                }
+                Repeater {
+                    model: WallpaperSearch.customSources.urls
+                    delegate: RowLayout {
+                        required property string modelData
+                        Layout.fillWidth: true
+                        Txt { Layout.fillWidth: true; text: modelData; color: ThemeBackend.subtext0 }
+                        SmallBtn {
+                            label: sheet.tr("Remove", "Убрать")
+                            active: !WallpaperSearch.editingSources
+                            onClicked: WallpaperSearch.editCustomSources("remove", "urls", modelData)
+                        }
+                    }
                 }
 
                 Head { text: sheet.tr("Search", "Поиск") }
+                Check {
+                    text: sheet.tr("Include results with unknown resolution", "Показывать результаты с неизвестным разрешением")
+                    checked: WallpaperSearch.prefs.includeUnknown
+                    onToggled: WallpaperSearch.setFilter("includeUnknown", checked)
+                }
                 Check {
                     objectName: "translateCheck"
                     text: sheet.tr("Translate Russian queries for sources that only understand English (the translation is always shown)", "Переводить русские запросы для источников, понимающих только английский (перевод всегда показывается)")

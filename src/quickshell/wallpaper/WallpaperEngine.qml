@@ -6,6 +6,7 @@ import Quickshell.Io
 import QtMultimedia
 import "../"
 import "../reusables"
+import "../widgets/canvas"
 
 ShellRoot {
     id: globalRoot
@@ -380,7 +381,8 @@ ShellRoot {
                 }
 
                 function isGif(path) {
-                    return path.toLowerCase().endsWith(".gif");
+                    const name = path.toLowerCase();
+                    return name.endsWith(".gif") || name.endsWith(".animated.webp");
                 }
 
                 function isVideo(p) {
@@ -785,6 +787,24 @@ ShellRoot {
                     }
                 }
 
+                FusionFrames {
+                    id: widgetFusion
+                    anchors.fill: parent
+                    z: 20
+                    enabled: false
+                    property bool editing: false
+                    visible: !editing
+                    records: CanvasState.widgetsFor(barWindow.modelData.name)
+                    camera: CanvasState.cameraFor(barWindow.modelData.name)
+                    Connections {
+                        target: WidgetSync
+                        function onRedactModeChanged(monitor, active) {
+                            const name = barWindow.modelData.name;
+                            if (monitor === name || monitor === name.replace(/[^a-zA-Z0-9_-]/g, "_"))
+                                widgetFusion.editing = active;
+                        }
+                    }
+                }
                 Item {
                     id: scene
                     anchors.fill: parent

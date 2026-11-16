@@ -12,11 +12,16 @@ import importlib.util
 import io
 import json
 import os
+import base64
+import argparse
 from pathlib import Path
 import sys
 import tempfile
 import unittest
 import urllib.parse
+import shutil
+import subprocess
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 TMP = tempfile.mkdtemp(prefix="serp-wallhub-")
@@ -64,18 +69,180 @@ class Sources(unittest.TestCase):
         wh.http_get = self._orig
 
     def test_keyed_sources_never_run_without_the_users_key(self):
-        for name in ("pexels", "pixabay", "giphy"):
+        for name in ("pexels", "pixabay", "giphy", "brave"):
             res, more, note = wh.SOURCE_FUNCS[name](ctx())
             self.assertIsNone(res, name)
             self.assertIn("key", note)
             self.assertEqual(wh.plan_skip(name, "all", "relevance", True, {})[0], "key")
         self.assertIsNone(wh.plan_skip("pexels", "all", "relevance", True, {"pexels": True}))
 
+    def test_brave_uses_documented_endpoints_and_distinguishes_media_from_pages(self):
+        net = FakeNet([
+            ("https://api.search.brave.com/res/v1/images/search?", {"results": [
+                {"url": "https://example.test/bmw", "title": "BMW", "properties": {
+                    "url": "https://cdn.example.test/bmw.jpg", "width": 3840, "height": 2160},
+                 "thumbnail": {"src": "https://thumb.example.test/bmw.webp", "width": 500}}]}),
+            ("https://api.search.brave.com/res/v1/videos/search?", {"results": [
+                {"url": "https://example.test/watch", "video": {"duration": "1:20"}},
+                {"url": "https://example.test/clip.webm"},
+                {"url": "https://example.test/paid.mp4", "video": {"requires_subscription": True}},
+                {"url": "file:///private"}]})
+        ])
+        wh.http_get = net
+        keys = {"brave": "example-key"}
+        images, more, _ = wh.src_brave(ctx(q="BMW M5 night rain", kind="image", keys=keys))
+        self.assertFalse(more)
+        self.assertEqual((images[0]["width"], images[0]["pageUrl"]), (3840, "https://example.test/bmw"))
+        self.assertEqual(net.params()["q"], "BMW M5 night rain")
+        self.assertNotIn("offset", net.params())
+        self.assertEqual(wh.src_brave(ctx(kind="image", page=2, keys=keys))[0], [])
+        vids, _, _ = wh.src_brave(ctx(q="космос 4K", kind="video", page=2, lang="ru", keys=keys))
+        self.assertEqual(len(vids), 3)
+        self.assertEqual((vids[0]["kind"], vids[0]["duration"], vids[0]["url"]), ("video", 80, ""))
+        self.assertEqual(vids[1]["format"], "webm")
+        self.assertTrue(vids[2]["external"])
+        self.assertEqual(net.params()["offset"], "1")
+        self.assertEqual(net.params()["safesearch"], "strict")
+        self.assertEqual(net.params()["search_lang"], "ru")
+        self.assertEqual(net.calls[-1][1], {"X-Subscription-Token": "example-key"})
+        self.assertNotIn("example-key", net.calls[-1][0])
+
+    def test_sepia_search_keeps_safe_public_video_pages(self):
+        net = FakeNet([("https://sepiasearch.org/api/v1/search/videos?", {"total": 80, "data": [
+            {"url": "https://example.test/w/id", "name": "Loop", "nsfw": False, "thumbnailPath": "/thumb.jpg"},
+            {"url": "https://example.test/w/live", "nsfw": False, "isLive": True},
+            {"url": "https://example.test/w/adult", "nsfw": True}]})])
+        wh.http_get = net
+        rows, more, _ = wh.src_sepia(ctx(kind="video", page=2))
+        self.assertTrue(more)
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["external"])
+        self.assertEqual(rows[0]["thumb"], "https://example.test/thumb.jpg")
+        self.assertEqual(net.params()["nsfw"], "false")
+        self.assertEqual(net.params()["start"], "24")
+
+    def test_peertube_only_exposes_renditions_when_public_download_is_enabled(self):
+        data = {"privacy": {"id": 1}, "downloadEnabled": True, "nsfw": False, "files": [
+            {"fileUrl": "https://peer.test/small.mp4", "fileDownloadUrl": "https://peer.test/dl/small.mp4",
+             "width": 640, "height": 360, "hasVideo": True},
+            {"fileUrl": "https://peer.test/large.mp4", "fileDownloadUrl": "https://peer.test/dl/large.mp4",
+             "width": 3840, "height": 2160, "hasVideo": True}]}
+        args = argparse.Namespace(page_url="https://peer.test/w/example", uuid="162f04be-f987-4e19-978a-45d6eb4c5857", safe=True)
+
+        def resolve(payload):
+            with patch.object(wh, "open_media", return_value=io.BytesIO(json.dumps(payload).encode())), \
+                    patch.object(wh, "require_public_url"), contextlib.redirect_stdout(io.StringIO()) as out:
+                wh.cmd_peertube(args)
+            return json.loads(out.getvalue())["media"]
+
+        row = resolve(data)
+        self.assertEqual(row["previewVideo"], "https://peer.test/small.mp4")
+        self.assertEqual(row["url"], "https://peer.test/dl/large.mp4")
+        self.assertEqual(row["width"], 3840)
+        self.assertEqual(resolve(dict(data, downloadEnabled=False)), {})
+        self.assertEqual(resolve(dict(data, nsfw=True)), {})
+
+    def test_all_sources_isolates_a_failure_and_keeps_each_provider_page(self):
+        seen = {}
+
+        def good(c):
+            seen["wallhaven"] = c.page
+            return [wh.item(id="still", format="jpg")], True, None
+
+        def failing(c):
+            seen["openverse"] = c.page
+            raise wh.SourceError("HTTP 503")
+
+        def unused(c):
+            raise AssertionError("exhausted sources must not be retried")
+
+        args = argparse.Namespace(query="wallpaper", kind="image", sort="relevance", min="any", safe=True, page=3,
+                                  sources="wallhaven,openverse,brave", source_pages='{"openverse": 2, "wallhaven": 3}',
+                                  dir=[], translate="off", remember=False, include_unknown=True)
+        with patch.dict(wh.SOURCE_FUNCS, wallhaven=good, openverse=failing, brave=unused), contextlib.redirect_stdout(io.StringIO()) as out:
+            wh.cmd_search(args)
+        events = [json.loads(line) for line in out.getvalue().splitlines()]
+        sources = {event["source"]: event for event in events if event["event"] == "source"}
+        self.assertEqual(seen, {"wallhaven": 3, "openverse": 2})
+        self.assertEqual(sources["openverse"]["status"]["error"], "HTTP 503")
+        self.assertEqual(sources["wallhaven"]["results"][0]["id"], "still")
+        self.assertTrue(events[-1]["hasMore"])
+
     def test_no_key_is_embedded_in_the_source(self):
         text = (ROOT / "src/scripts/wallpaper/wallhub.py").read_text(encoding="utf-8")
         for pattern in ("563492ad6f917", "api_key=dc6zaTOxFJmzC"):  # well-known public demo keys
             self.assertNotIn(pattern, text)
         self.assertEqual(wh.load_keys(), {})
+
+    def test_filters_keep_unknown_option_and_do_not_call_it_4k(self):
+        unknown = wh.item(id="unknown", kind="video")
+        small = wh.item(id="small", kind="video", width=1280, height=720)
+        portrait = wh.item(id="portrait", kind="video", width=2160, height=3840)
+        still = wh.item(id="still", format="png", width=8000, height=4500)
+        self.assertEqual(wh.guard([unknown, small, portrait, still], "video", wh.RES["4k"], True),
+                         ([unknown, portrait], {"lowres": 1, "kind": 1}))
+        self.assertEqual(wh.guard([unknown], "video", wh.RES["4k"]), ([], {"unknownRes": 1}))
+        self.assertEqual(wh.guard([portrait], "video", wh.RES["8k"]), ([], {"lowres": 1}))
+
+    def test_gif_frame_check_ignores_the_static_thumbnail(self):
+        one = base64.b64decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+        frame = one[one.index(b","):-1]
+        two = one[:-1] + frame + b";"
+        self.assertEqual(wh.animation_frames(io.BytesIO(one), "gif"), 1)
+        self.assertEqual(wh.animation_frames(io.BytesIO(two), "gif"), 2)
+        self.assertEqual(wh.animation_frames(io.BytesIO(two[:-5]), "gif"), 0)
+        result = wh.item(format="gif", animationFrames=2, url="https://origin.test/animated.gif",
+                         thumb="https://origin.test/still.jpg")
+        wh.resolve_animation(result)
+        self.assertEqual((result["kind"], result["previewAnimation"]), ("animated", result["url"]))
+
+    def test_commons_video_uses_only_compatible_small_derivatives_for_preview(self):
+        net = FakeNet([("https://commons.wikimedia.org/w/api.php?", {"query": {"pages": {
+            "1": {"pageid": 1, "title": "File:Night.webm", "videoinfo": [{
+                "url": "https://commons.test/full.webm", "mime": "video/webm; codecs=vp9", "width": 3840, "height": 2160,
+                "thumburl": "https://commons.test/still.jpg", "derivatives": [
+                    {"src": "https://commons.test/full.webm", "type": "video/webm", "width": 3840, "height": 2160},
+                    {"src": "https://commons.test/480p.webm", "type": "video/webm", "width": 854, "height": 480}]}]}}}})])
+        wh.http_get = net
+        rows, _, _ = wh.src_commons(ctx(kind="video"))
+        self.assertEqual(net.params()["prop"], "videoinfo")
+        self.assertEqual((rows[0]["previewVideo"], rows[0]["url"]),
+                         ("https://commons.test/480p.webm", "https://commons.test/full.webm"))
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg and ffprobe")
+    def test_download_checks_bytes_before_replacing_a_wallpaper(self):
+        with tempfile.TemporaryDirectory(dir=TMP) as td:
+            clip = Path(td) / "demo.mp4"
+            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x48:rate=4",
+                            "-t", "1", "-c:v", "mpeg4", str(clip)], check=True)
+            data = clip.read_bytes()
+            args = dict(dest=td, identity="test:existing", title="demo", meta={}, limit=1024 * 1024,
+                        mime="video/mp4", kind="video")
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                record = wh.save_media(io.BytesIO(data), total=len(data), **args)
+                with self.assertRaises(wh.InvalidMedia):
+                    wh.save_media(io.BytesIO(b"<html>not a movie</html>"), **args)
+                self.assertIn("P ", output.getvalue())
+            self.assertEqual(record["info"]["kind"], "video")
+            self.assertEqual(Path(record["path"]).read_bytes(), data)
+            self.assertEqual(list(Path(td).glob("*.part")), [])
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg and ffprobe")
+    def test_import_apng_for_conversion_without_replacing_the_original(self):
+        with tempfile.TemporaryDirectory(dir=TMP) as td:
+            anim = Path(td) / "motion #1.apng"
+            dest = Path(td) / "library"
+            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=64x48:rate=4",
+                            "-t", "1", "-f", "apng", str(anim)], check=True)
+            capture = io.StringIO()
+            with contextlib.redirect_stdout(capture), patch.object(wh, "STATE_DIR", td):
+                wh.cmd_import(argparse.Namespace(files=[anim.as_uri()], dest=str(dest), max_mb=1))
+                imported = json.loads(capture.getvalue().splitlines()[-1])["items"][0]
+                wh.cmd_prepare_animation(argparse.Namespace(path=imported["path"]))
+            converted = json.loads(capture.getvalue().splitlines()[-1])
+            self.assertEqual(imported["info"]["format"], "apng")
+            self.assertEqual(Path(imported["path"]).read_bytes(), anim.read_bytes())
+            self.assertEqual(wh.media_info(converted["path"])["kind"], "video")
 
     def test_pexels_photos_and_videos(self):
         net = wh.http_get = FakeNet([
@@ -149,6 +316,8 @@ class Sources(unittest.TestCase):
         self.assertEqual(net.params()["rating"], "pg")
         self.assertTrue(more)
         self.assertEqual((res[0]["kind"], res[0]["format"], res[0]["width"], res[0]["provenance"]), ("animated", "gif", 480, "unknown"))
+        self.assertEqual(res[0]["url"], "")
+        self.assertTrue(res[0]["external"])
         wh.src_giphy(ctx(keys={"giphy": "g" * 20}, safe=False))
         self.assertEqual(net.params()["rating"], "r", "even with Safe Search off, adult (NC-17) content is never requested")
         self.assertEqual(wh.src_giphy(ctx(keys={"giphy": "g" * 20}, kind="video"))[0], [])
@@ -158,25 +327,56 @@ class Sources(unittest.TestCase):
         self.assertIsNone(wh.plan_skip("commons", "all", "relevance", False, {}))
         self.assertEqual(wh.plan_skip("wallhaven", "video", "relevance", True, {})[0], "kind")
         self.assertEqual(wh.plan_skip("openverse", "all", "popular", True, {})[0], "sort-popular")
+        self.assertEqual(wh.plan_skip("links", "video", "relevance", True, {})[0], "safe")
+
+    def test_steam_video_pages_use_the_official_workshop_query(self):
+        net = FakeNet([("https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/", {
+            "response": {"total": 1, "publishedfiledetails": [{"publishedfileid": "123", "title": "Night drive"}]}})])
+        wh.http_get = net
+        rows, more, _ = wh.src_steam(ctx(kind="video", keys={"steam": "fixture-key"}))
+        params = json.loads(net.params()["input_json"])
+        self.assertEqual(params["appid"], 431960)
+        self.assertEqual(params["requiredtags"], ["Video"])
+        self.assertFalse(more)
+        self.assertEqual(rows[0]["pageUrl"], "https://steamcommunity.com/sharedfiles/filedetails/?id=123")
+        self.assertTrue(rows[0]["external"])
+
+    def test_custom_feed_search_and_file_url_filter(self):
+        feed = b"""<?xml version="1.0"?><rss><channel><item><title>Night rain</title>
+        <link>https://example.org/post</link><enclosure url="/best.webm" type="video/webm" />
+        <enclosure url="file:///private.mp4" type="video/mp4" /></item></channel></rss>"""
+        with patch.object(wh, "open_media", return_value=io.BytesIO(feed)):
+            rows, more, _ = wh.src_links(ctx(q="night rain", kind="video", urls=["https://example.org/feed"]))
+        self.assertFalse(more)
+        self.assertEqual([(r["url"], r["kind"]) for r in rows], [("https://example.org/best.webm", "video")])
+
+    def test_local_source_searches_unicode_names(self):
+        with tempfile.TemporaryDirectory(dir=TMP) as td:
+            path = Path(td) / "\u043a\u043e\u0441\u043c\u043e\u0441 4K.png"
+            path.write_bytes(PNG)
+            rows, more, _ = wh.src_local(ctx(q="\u043a\u043e\u0441\u043c\u043e\u0441 4k", dirs=[td], kind="image"))
+            self.assertEqual([r["path"] for r in rows], [str(path)])
+            self.assertTrue(rows[0]["local"])
+            self.assertFalse(more)
 
 
 class Library(unittest.TestCase):
     def test_cache_thumbs_reports_each_file(self):
-        orig = wh.http_get
+        orig = wh.open_media
         good, bad = "https://example.org/a.png", "https://example.org/b.png"
 
-        def fake(url, headers=None, timeout=None, want_json=True, retries=1):
+        def fake(url, *, timeout, headers=None):
             if url == bad:
                 raise wh.SourceError("HTTP 424")
-            return PNG
-        wh.http_get = fake
+            return io.BytesIO(PNG)
+        wh.open_media = fake
         out = io.StringIO()
         try:
             sys.stdin = io.StringIO(json.dumps([good, bad]) + "\n")
             with contextlib.redirect_stdout(out):
                 wh.cmd_cache_thumbs(None)
         finally:
-            wh.http_get = orig
+            wh.open_media = orig
             sys.stdin = sys.__stdin__
         lines = [json.loads(l) for l in out.getvalue().splitlines()]
         ev = {l["url"]: l for l in lines if l.get("event") == "thumb"}

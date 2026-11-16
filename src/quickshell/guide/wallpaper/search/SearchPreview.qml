@@ -12,13 +12,18 @@ Rectangle {
     id: root
     objectName: "searchPreview"
     property var hub: null
-    readonly property var e: hub ? hub.previewEntry : null
+    readonly property var e: hub ? WallpaperSearch.resolvedResult(hub.previewEntry) : null
     readonly property bool local: !!(e && e.local)
+    readonly property bool external: !!(e && !WallpaperSearch.canFetch(e) && path === "")
     readonly property string path: e ? (local ? e.path : (WallpaperSearch.downloaded[e.id] || "")) : ""
     readonly property string key: e ? (local ? e.path : e.id) : ""
     readonly property var q: key !== "" ? (WallpaperSearch.qualityById[key] || (path !== "" ? WallpaperSearch.qualityById[path] : null) || null) : null
     readonly property var pi: key !== "" ? (WallpaperSearch.probed[key] || (path !== "" ? WallpaperSearch.probed[path] : null) || null) : null
-    readonly property string kind: e ? (pi && pi.kind ? pi.kind : e.kind) : "image"
+    readonly property string converted: WallpaperSearch.preparedAnimations[path] || ""
+    readonly property bool apng: !!(e && (pi?.format || e.format) === "apng")
+    readonly property string realKind: e ? (pi?.kind || e.kind) : "image"
+    readonly property string kind: converted !== "" ? "video" : apng ? "image" : realKind
+    readonly property var savedFavorite: e ? WallpaperSearch.favorites[e.id] || null : null
 
     // What is on screen: the downloaded original, the remote original (on demand)
     // or the source's own preview rendition.
@@ -33,9 +38,11 @@ Rectangle {
         if (e.thumbHelper) return cached !== "" ? Caching.fileUrl(cached) : "";
         return e.preview || e.thumb || "";
     }
-    readonly property string animUrl: !e ? "" : (path !== "" ? Caching.fileUrl(path) : (e.url || e.preview || ""))
+    readonly property string animUrl: !e ? "" : (path !== "" ? Caching.fileUrl(path) : (e.previewAnimation || e.url || ""))
     readonly property string videoUrl: {
         if (!e) return "";
+        if (converted !== "") return Caching.fileUrl(converted);
+        if (external) return "";
         if (path !== "") return Caching.fileUrl(path);
         if (e.previewVideo) return e.previewVideo;
         return wantVideoStream ? (e.url || "") : "";
@@ -48,12 +55,24 @@ Rectangle {
     function tr(en, ru) { return WallpaperSearch.tr(en, ru); }
     function s(v) { return hub ? hub.s(v) : v; }
     function close() { hub.previewEntry = null; }
+    function openApng() {
+        if (path !== "") WallpaperSearch.prepareAnimation(path, "");
+        else WallpaperSearch.download(e, "preview-animation");
+    }
 
     color: ThemeBackend.crust
     focus: true
     Component.onCompleted: forceActiveFocus()
     Keys.onEscapePressed: (ev) => { root.close(); ev.accepted = true; }
     Keys.onSpacePressed: (ev) => { root.togglePlay(); ev.accepted = true; }
+    Keys.onLeftPressed: (ev) => {
+        ev.accepted = ev.modifiers === Qt.NoModifier;
+        if (ev.accepted) root.hub.stepPreview(-1);
+    }
+    Keys.onRightPressed: (ev) => {
+        ev.accepted = ev.modifiers === Qt.NoModifier;
+        if (ev.accepted) root.hub.stepPreview(1);
+    }
     // Block clicks and wheel from reaching the tab underneath.
     MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: (w) => w.accepted = true }
 
@@ -122,6 +141,16 @@ Rectangle {
     property bool loopOn: true
     property bool muted: true
     property bool paused: false
+    onKeyChanged: {
+        fitMode = true;
+        wantOriginal = false;
+        wantVideoStream = false;
+        pendingOneToOne = false;
+        paused = false;
+        muted = true;
+        if (videoErr) videoErr.text = "";
+        if (collectionField) collectionField.text = savedFavorite?.collection || "";
+    }
     function togglePlay() {
         if (kind === "video") { if (video.playbackState === MediaPlayer.PlayingState) video.pause(); else video.play(); }
         else if (kind === "animated") paused = !paused;
@@ -219,12 +248,26 @@ Rectangle {
                     anchors.centerIn: parent
                     spacing: root.s(8)
                     visible: root.showing === "poster"
-                    Txt { anchors.horizontalCenter: parent.horizontalCenter; text: root.tr("This source has no small preview clip.", "У источника нет маленького превью-ролика."); color: ThemeBackend.subtext1 }
-                    Tool {
+                    Txt {
                         anchors.horizontalCenter: parent.horizontalCenter
+                        text: root.e?.id === WallpaperSearch.resolvingPeer ? root.tr("Checking available video…", "Проверяем доступные варианты видео…")
+                             : root.external ? root.tr("Video plays on the source page.", "Видео воспроизводится на странице источника.")
+                                            : root.tr("This source has no small preview clip.", "У источника нет маленького превью-ролика.")
+                        color: ThemeBackend.subtext1
+                    }
+                    Tool {
+                        objectName: "streamOriginal"
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        visible: !root.external
                         icon: "󰐊"
                         label: root.tr("Stream the original", "Воспроизвести оригинал") + (root.e && root.e.size ? " (" + WallpaperSearch.fmtSize(root.e.size) + ")" : "")
                         onClicked: root.wantVideoStream = true
+                    }
+                    Tool {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        visible: root.external && !!(root.e && root.e.pageUrl)
+                        label: root.tr("Open source", "Открыть источник")
+                        onClicked: Qt.openUrlExternally(root.e.pageUrl)
                     }
                 }
                 Txt {
@@ -279,25 +322,46 @@ Rectangle {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: root.s(6)
+                Tool {
+                    objectName: "cinemaPrev"
+                    visible: root.hub && root.hub.previewIndex >= 0
+                    label: "‹"
+                    active: visible && root.hub.previewIndex > 0
+                    onClicked: root.hub.stepPreview(-1)
+                }
+                Tool {
+                    objectName: "cinemaNext"
+                    visible: root.hub && root.hub.previewIndex >= 0
+                    label: "›"
+                    active: visible && root.hub.previewIndex + 1 < WallpaperSearch.results.count
+                    onClicked: root.hub.stepPreview(1)
+                }
                 Tool { visible: root.kind === "image"; label: root.tr("Fit", "Вписать"); on: root.fitMode; onClicked: root.fitMode = true }
-                Tool { visible: root.kind === "image"; objectName: "oneToOne"; label: "1:1"; on: !root.fitMode && Math.abs(root.zoom - 1) < 0.01; onClicked: root.oneToOne() }
+                Tool { visible: root.kind === "image" && !root.external; objectName: "oneToOne"; label: "1:1"; on: !root.fitMode && Math.abs(root.zoom - 1) < 0.01; onClicked: root.oneToOne() }
                 Tool { visible: root.kind === "image"; icon: "󰛭"; onClicked: root.setZoom(root.shownZoom / 1.25) }
                 Tool { visible: root.kind === "image"; icon: "󰛮"; onClicked: root.setZoom(root.shownZoom * 1.25) }
                 Tool {
-                    visible: root.kind === "image" && root.path === "" && !root.wantOriginal
+                    visible: root.kind === "image" && !root.external && root.path === "" && !root.wantOriginal
                     label: root.tr("Load original", "Загрузить оригинал") + (root.e && root.e.size ? " · " + WallpaperSearch.fmtSize(root.e.size) : "")
                     onClicked: root.wantOriginal = true
                 }
                 Tool {
-                    visible: root.kind !== "image"
+                    visible: root.apng && root.converted === "" && !root.external
+                    label: root.tr("Play animation", "Воспроизвести анимацию")
+                    icon: "󰐊"
+                    active: !WallpaperSearch.preparing && !WallpaperSearch.downloading
+                    onClicked: root.openApng()
+                }
+                Tool {
+                    visible: root.kind !== "image" && (!root.external || root.animUrl !== "")
                     objectName: "playPause"
                     icon: (root.kind === "video" ? video.playbackState === MediaPlayer.PlayingState : !root.paused) ? "󰏤" : "󰐊"
                     label: (root.kind === "video" ? video.playbackState === MediaPlayer.PlayingState : !root.paused) ? root.tr("Pause", "Пауза") : root.tr("Play", "Играть")
                     active: root.kind !== "video" || root.videoUrl !== ""
                     onClicked: root.togglePlay()
                 }
-                Tool { visible: root.kind !== "image"; objectName: "loopToggle"; icon: "󰑖"; label: root.tr("Loop", "Повтор"); on: root.loopOn; onClicked: { root.loopOn = !root.loopOn; if (root.loopOn) root.paused = false; } }
-                Tool { visible: root.kind === "video"; objectName: "muteToggle"; icon: root.muted ? "󰖁" : "󰕾"; on: !root.muted; onClicked: root.muted = !root.muted }
+                Tool { visible: root.kind !== "image" && (!root.external || root.animUrl !== ""); objectName: "loopToggle"; icon: "󰑖"; label: root.tr("Loop", "Повтор"); on: root.loopOn; onClicked: { root.loopOn = !root.loopOn; if (root.loopOn) root.paused = false; } }
+                Tool { visible: root.kind === "video" && !root.external; objectName: "muteToggle"; icon: root.muted ? "󰖁" : "󰕾"; on: !root.muted; onClicked: root.muted = !root.muted }
                 C.Slider {
                     Layout.fillWidth: true
                     visible: root.kind === "video" && video.duration > 0
@@ -342,6 +406,14 @@ Rectangle {
                     Tool { objectName: "previewClose"; icon: "󰅖"; onClicked: root.close() }
                 }
                 Txt { Layout.fillWidth: true; color: ThemeBackend.subtext0; text: root.e ? (root.e.sourceName || "") + (root.e.author ? " · " + root.e.author : "") + (root.e.license ? " · " + root.e.license : "") : "" }
+                Rectangle {
+                    visible: root.e?.source === "giphy"
+                    implicitWidth: root.s(117)
+                    implicitHeight: root.s(28)
+                    radius: root.s(5)
+                    color: "#161616"
+                    Image { anchors.fill: parent; anchors.margins: 2; fillMode: Image.PreserveAspectFit; source: parent.visible ? Qt.resolvedUrl("PoweredByGiphy.png") : "" }
+                }
                 Txt {
                     Layout.fillWidth: true
                     visible: !!(root.e && root.e.pageUrl)
@@ -359,14 +431,14 @@ Rectangle {
                         if (!root.e) return "";
                         let w = root.pi ? root.pi.width : root.e.width, h = root.pi ? root.pi.height : root.e.height;
                         let lines = [root.tr("Resolution: ", "Разрешение: ") + WallpaperSearch.resLabel(w, h) + (root.pi ? root.tr(" (measured in the file)", " (измерено в файле)") : root.tr(" (reported by the source)", " (по данным источника)")),
-                                     root.tr("Format: ", "Формат: ") + ((root.pi ? root.pi.format : root.e.format) || "?").toUpperCase() + " · " + WallpaperSearch.kindLabel(root.kind),
+                                     root.tr("Format: ", "Формат: ") + ((root.pi ? root.pi.format : root.e.format) || "?").toUpperCase() + " · " + WallpaperSearch.kindLabel(root.realKind),
                                      root.tr("Size: ", "Размер: ") + WallpaperSearch.fmtSize(root.pi ? root.pi.size : root.e.size)];
                         if (root.pi && root.pi.bitDepth) lines.push(root.tr("Colour depth: ", "Глубина цвета: ") + root.pi.bitDepth + root.tr(" bit per channel", " бит на канал") + (root.pi.pixFmt ? " (" + root.pi.pixFmt + ")" : ""));
-                        if (root.kind !== "image") {
+                        if (root.realKind !== "image") {
                             let fps = root.pi ? root.pi.fps : root.e.fps, dur = root.pi ? root.pi.duration : root.e.duration, br = root.pi ? root.pi.bitrate : root.e.bitrate;
                             lines.push("FPS: " + (fps ? Math.round(fps * 100) / 100 : root.tr("known after download", "известно после загрузки")));
                             lines.push(root.tr("Duration: ", "Длительность: ") + (dur ? WallpaperSearch.fmtDur(dur) : root.tr("unknown", "неизвестно")));
-                            if (root.kind === "video") lines.push(root.tr("Codec: ", "Кодек: ") + (root.pi && root.pi.codec ? root.pi.codec : root.tr("known after download", "известен после загрузки")));
+                            if (root.realKind === "video") lines.push(root.tr("Codec: ", "Кодек: ") + (root.pi && root.pi.codec ? root.pi.codec : root.tr("known after download", "известен после загрузки")));
                             lines.push(root.tr("Bitrate: ", "Битрейт: ") + (br ? WallpaperSearch.fmtRate(br, !root.pi && root.e.bitrateEstimated) : root.tr("unknown", "неизвестно")));
                             if (root.pi && root.pi.frames) lines.push(root.tr("Frames: ", "Кадров: ") + root.pi.frames);
                         }
@@ -426,6 +498,7 @@ Rectangle {
                 }
                 Tool {
                     Layout.fillWidth: true
+                    visible: !root.external
                     active: !WallpaperSearch.qualityBusy && (root.path !== "" || !WallpaperSearch.downloading)
                     label: WallpaperSearch.qualityBusy ? root.tr("Analysing…", "Анализ…") : root.tr("Check original quality", "Проверить качество оригинала")
                     onClicked: {
@@ -433,11 +506,40 @@ Rectangle {
                         else WallpaperSearch.download(root.e, "quality");
                     }
                 }
+                Tool {
+                    Layout.fillWidth: true
+                    visible: root.external && root.kind !== "video" && !!root.e?.pageUrl
+                    label: root.tr("Open source", "Открыть источник")
+                    onClicked: Qt.openUrlExternally(root.e.pageUrl)
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    C.TextField {
+                        id: collectionField
+                        Layout.fillWidth: true
+                        placeholderText: root.tr("Collection (optional)", "Коллекция (необязательно)")
+                        maximumLength: 60
+                        text: root.savedFavorite?.collection || ""
+                        onAccepted: if (root.e) WallpaperSearch.saveFavorite(root.e, text, false)
+                    }
+                    Tool {
+                        objectName: "previewFavorite"
+                        label: root.savedFavorite ? root.tr("Saved", "В избранном") : root.tr("Favorite", "В избранное")
+                        icon: root.savedFavorite ? "󰓎" : "󰓒"
+                        active: !WallpaperSearch.favoriteBusy
+                        onClicked: {
+                            const collection = collectionField.text.trim();
+                            WallpaperSearch.saveFavorite(root.e, collection, !!root.savedFavorite && root.savedFavorite.collection === collection);
+                        }
+                    }
+                }
 
                 GridLayout {
                     Layout.fillWidth: true
                     Layout.topMargin: root.s(8)
                     columns: 2
+                    visible: !root.external
                     columnSpacing: root.s(6)
                     rowSpacing: root.s(6)
                     Tool {
@@ -446,7 +548,7 @@ Rectangle {
                         objectName: "previewDownload"
                         icon: root.path !== "" ? "󰄬" : "󰇚"
                         active: root.path === "" && !WallpaperSearch.downloading
-                        label: root.path !== "" ? root.tr("Downloaded", "Скачано") : root.tr("Download original", "Скачать оригинал")
+                        label: root.path !== "" ? root.tr("Downloaded", "Скачано") : root.e?.originalAvailable === false ? root.tr("Download copy", "Скачать копию") : root.tr("Download original", "Скачать оригинал")
                         onClicked: WallpaperSearch.download(root.e, "")
                     }
                     Tool {

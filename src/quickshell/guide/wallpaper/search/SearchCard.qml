@@ -10,9 +10,17 @@ Item {
     id: card
     property var tab: null
     property var r: null
+    property bool livePreview: false
+    property bool previewFailed: false
+    property bool animationPlaying: true
+    property bool loopOn: true
+    readonly property string clipUrl: r && r.previewVideo && r.previewVideo !== r.url ? r.previewVideo : ""
+    readonly property string animationUrl: r && r.previewAnimation && r.previewAnimation !== r.url && r.format !== "apng" ? r.previewAnimation : ""
+    onRChanged: { previewFailed = false; animationPlaying = true; loopOn = true; }
     readonly property var q: r ? (WallpaperSearch.qualityById[r.id] || r.quality || null) : null
     readonly property var pi: r ? (WallpaperSearch.probed[r.id] || null) : null
-    readonly property bool isDl: !!(r && WallpaperSearch.downloaded[r.id])
+    readonly property bool isDl: !!(r && (r.local || WallpaperSearch.downloaded[r.id]))
+    readonly property bool canFetch: WallpaperSearch.canFetch(r)
     readonly property bool busy: !!(r && WallpaperSearch.dlItem && WallpaperSearch.dlItem.id === r.id)
     readonly property bool hovered: hover.hovered
     readonly property int w: pi ? pi.width : (r ? r.width : 0)
@@ -99,9 +107,10 @@ Item {
                 anchors.fill: parent
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
-                cache: true
+                cache: card.r?.source !== "giphy"
                 sourceSize.width: card.s(420)
-                source: !card.r ? "" : card.thumbFile !== "" ? Caching.fileUrl(card.thumbFile) : (card.r.thumbHelper ? "" : (card.r.thumb || ""))
+                source: !card.r ? "" : card.r.local && card.r.kind !== "video" ? Caching.fileUrl(card.r.path)
+                      : card.thumbFile !== "" ? Caching.fileUrl(card.thumbFile) : (card.r.thumbHelper ? "" : (card.r.thumb || ""))
                 scale: card.hovered ? 1.05 : 1
                 opacity: status === Image.Ready ? 1 : 0
                 Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
@@ -127,6 +136,26 @@ Item {
                 font.family: ThemeBackend.fontFamily
                 font.pixelSize: card.s(10)
             }
+            Loader {
+                id: live
+                anchors.fill: parent
+                active: card.livePreview && card.clipUrl !== ""
+                source: active ? Qt.resolvedUrl("GalleryVideo.qml") : ""
+                onStatusChanged: if (status === Loader.Error) card.previewFailed = true
+            }
+            Binding { target: live.item; when: !!live.item; property: "source"; value: card.clipUrl }
+            Binding { target: live.item; when: !!live.item; property: "loopOn"; value: card.loopOn }
+            Connections { target: live.item; function onFailed() { card.previewFailed = true; } }
+            AnimatedImage {
+                id: galleryAnimation
+                anchors.fill: parent
+                visible: status === Image.Ready && frameCount > 1
+                source: card.livePreview ? card.animationUrl : ""
+                fillMode: Image.PreserveAspectCrop
+                cache: false
+                playing: card.livePreview && card.animationPlaying
+                onCurrentFrameChanged: if (!card.loopOn && frameCount > 1 && currentFrame === frameCount - 1) card.animationPlaying = false
+            }
 
             // badges
             Row {
@@ -134,10 +163,10 @@ Item {
                 anchors.top: parent.top
                 anchors.margins: card.s(7)
                 spacing: card.s(4)
-                Badge { label: card.r ? (card.r.format || "?").toUpperCase() : ""; tint: ThemeBackend.blue }
+                Badge { visible: !!(card.r && card.r.format); label: visible ? (card.pi?.format || card.r.format).toUpperCase() : ""; tint: ThemeBackend.blue }
                 Badge {
                     visible: !!card.r && card.r.kind !== "image"
-                    label: card.r ? (card.r.kind === "video" ? "▶ " + card.tr("VIDEO", "ВИДЕО") + (card.r.duration ? " " + WallpaperSearch.fmtDur(card.r.duration) : "") : "GIF") : ""
+                    label: card.r ? (card.r.kind === "video" ? "▶ " + card.tr("VIDEO", "ВИДЕО") + (card.r.duration ? " " + WallpaperSearch.fmtDur(card.r.duration) : "") : card.tr("ANIMATED", "АНИМАЦИЯ")) : ""
                     tint: ThemeBackend.teal
                 }
                 Badge { visible: card.isDl; label: "󰄬"; tint: ThemeBackend.green }
@@ -192,15 +221,24 @@ Item {
                         onClicked: card.tab.openPreview(card.r)
                     }
                     Action {
+                        visible: !!(card.r && !card.canFetch && !card.isDl && card.r.pageUrl)
+                        anchors.verticalCenter: parent.verticalCenter
+                        icon: "󰏌"
+                        hint: card.tr("Open source", "Открыть источник")
+                        onClicked: Qt.openUrlExternally(card.r.pageUrl)
+                    }
+                    Action {
                         objectName: "cardDownload"
+                        visible: !card.r?.local && (card.canFetch || card.isDl)
                         anchors.verticalCenter: parent.verticalCenter
                         icon: card.busy ? "󰔟" : card.isDl ? "󰄬" : "󰇚"
-                        hint: card.isDl ? card.tr("Downloaded", "Скачано") : card.tr("Download original", "Скачать оригинал")
+                        hint: card.isDl ? card.tr("Downloaded", "Скачано") : card.r?.originalAvailable === false ? card.tr("Download copy", "Скачать копию") : card.tr("Download original", "Скачать оригинал")
                         active: !card.isDl && !WallpaperSearch.downloading
                         onClicked: WallpaperSearch.download(card.r, "")
                     }
                     Action {
                         objectName: "cardEdit"
+                        visible: card.canFetch || card.isDl
                         anchors.verticalCenter: parent.verticalCenter
                         icon: "󰏫"
                         hint: card.tr("Edit in Wallpaper Studio", "Изменить в Wallpaper Studio")
@@ -209,6 +247,7 @@ Item {
                     }
                     Action {
                         objectName: "cardApply"
+                        visible: card.canFetch || card.isDl
                         anchors.verticalCenter: parent.verticalCenter
                         primary: true
                         icon: "󰸉"
@@ -227,6 +266,37 @@ Item {
                 visible: card.busy
                 color: ThemeBackend.mauve
                 width: WallpaperSearch.dlTotal > 0 ? parent.width * Math.min(1, WallpaperSearch.dlDone / WallpaperSearch.dlTotal) : parent.width * 0.2
+            }
+            Row {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.topMargin: card.s(32)
+                anchors.leftMargin: card.s(7)
+                spacing: card.s(5)
+                visible: !!(live.item && live.item.ready) || galleryAnimation.visible
+                Action {
+                    readonly property bool playing: live.item ? live.item.isPlaying : galleryAnimation.playing
+                    icon: playing ? "󰏤" : "󰐊"
+                    hint: playing ? card.tr("Pause", "Пауза") : card.tr("Play", "Играть")
+                    onClicked: {
+                        if (live.item) { if (playing) live.item.pause(); else live.item.play(); }
+                        else card.animationPlaying = !playing;
+                    }
+                }
+                Action {
+                    icon: card.loopOn ? "󰑖" : "󰑗"
+                    hint: card.loopOn ? card.tr("Loop on", "Повтор включён") : card.tr("Loop off", "Повтор выключен")
+                    onClicked: card.loopOn = !card.loopOn
+                }
+            }
+            Badge {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.topMargin: card.s(32)
+                anchors.leftMargin: card.s(7)
+                visible: card.livePreview && (card.previewFailed || (card.animationUrl !== "" && galleryAnimation.status === Image.Error))
+                label: card.tr("Preview unavailable", "Превью недоступно")
+                tint: ThemeBackend.peach
             }
         }
 
@@ -262,7 +332,8 @@ Item {
                     let parts = [card.r.sourceName, WallpaperSearch.resLabel(card.w, card.h).replace(/ · .*$/, "")];
                     let size = card.pi ? card.pi.size : card.r.size;
                     if (size) parts.push(WallpaperSearch.fmtSize(size));
-                    if (!card.r.originalAvailable) parts.push(card.tr("reduced copy", "уменьшенная копия"));
+                    if (!card.canFetch && !card.isDl && card.r.pageUrl) parts.push(card.tr("source page", "страница источника"));
+                    else if (!card.r.originalAvailable) parts.push(card.tr("reduced copy", "уменьшенная копия"));
                     return parts.join(" · ");
                 }
             }

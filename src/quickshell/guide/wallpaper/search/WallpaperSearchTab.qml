@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as C
+import QtQuick.Dialogs as D
 import Quickshell
 import "../../"
 import "../../../"
@@ -25,11 +26,14 @@ GuideTab {
     function applyPath(path) { WallpaperSearch.applyPath(path, WallpaperSearch.monitor, WallpaperSearch.probed[path] || null); }
     function refreshLibrary() { WallpaperSearch.refreshLibrary(); }
 
-    property string view: "search"           // search | library
+    property string view: "search"           // search | library | favorites
     property bool showSettings: false
     property bool showDetails: false
     property var previewEntry: null
     property string studioPath: ""
+    property int galleryStart: 0
+    readonly property bool galleryMode: WallpaperSearch.prefs.gallery
+    readonly property int galleryCount: Math.min(3, Math.max(1, Math.floor(gallery.width / s(248))))
 
     readonly property bool overlayOpen: previewEntry !== null || studioPath !== "" || showSettings
     readonly property int answered: Object.keys(WallpaperSearch.statusBySource).filter(k => !WallpaperSearch.statusBySource[k].skipped).length
@@ -45,6 +49,8 @@ GuideTab {
             WallpaperSearch.refreshStatus();
             WallpaperSearch.loadHistory();
             WallpaperSearch.refreshLibrary();
+            WallpaperSearch.readFavorites();
+            WallpaperSearch.editCustomSources("", "", "");
             if (WallpaperSearch.pendingEdit !== "") { tab.studioPath = WallpaperSearch.pendingEdit; WallpaperSearch.pendingEdit = ""; }
             if (!tab.overlayOpen) searchField.forceActiveFocus();
         }
@@ -56,6 +62,12 @@ GuideTab {
         }
         function onOfflineChanged() {
             if (WallpaperSearch.offline && WallpaperSearch.results.count === 0) tab.view = "library";
+        }
+    }
+    Connections {
+        target: WallpaperSearch.results
+        function onCountChanged() {
+            if (WallpaperSearch.results.count === 0) tab.galleryStart = 0;
         }
     }
 
@@ -202,10 +214,69 @@ GuideTab {
         parts.push(st.ms + " ms");
         return name + ": " + parts.join(" · ");
     }
+    function noResultsDetail() {
+        const plan = WallpaperSearch.plan;
+        const status = Object.values(WallpaperSearch.statusBySource);
+        if (WallpaperSearch.lastError) return WallpaperSearch.lastError;
+        if (WallpaperSearch.offline) return tr("No internet connection. Your library is available.", "Нет подключения к интернету. Личная библиотека доступна.");
+        if (!plan.length) return tr("Enable a source in Sources.", "Включите один из источников в настройках.");
+        if (status.some(s => s.hidden && (s.hidden.lowres || s.hidden.reducedCopy || s.hidden.unknownRes))
+                || Object.keys(WallpaperSearch.byId).length > 0)
+            return tr("The active filters hid matching results. Try a lower minimum resolution or allow unknown resolution in Sources.",
+                      "Фильтры скрыли подходящие результаты. Снизьте минимальное разрешение или включите показ неизвестного разрешения в настройках.");
+        if (status.some(s => s.error)) return tr("A source failed to respond. See source details for the error.", "Ошибка запроса к источнику. Причина указана в подробностях источника.");
+        if (!plan.some(s => !s.skipped) && status.some(s => s.skipCode === "key"))
+            return tr("Compatible sources require an API key. Open Sources to connect one.", "Совместимые источники требуют API-ключ. Подключите источник в настройках.");
+        if (!plan.some(s => !s.skipped))
+            return tr("No enabled source supports these search filters.", "Включённые источники не поддерживают выбранные фильтры.");
+        return WallpaperSearch.kind === "video" ? tr("No matching videos from the active sources.", "Активные источники не нашли подходящих видео.")
+             : WallpaperSearch.kind === "animated" ? tr("No confirmed animations from the active sources.", "Активные источники не нашли подтверждённых анимаций.")
+             : tr("Try another query or check the source details above.", "Попробуйте другой запрос или посмотрите подробности источников.");
+    }
     function openPreview(r) { previewEntry = r; }
+    function entryAt(index) {
+        const rows = WallpaperSearch.results;
+        return index >= 0 && index < rows.count ? (WallpaperSearch.resolvedResult(WallpaperSearch.byId[rows.get(index).rid]) || null) : null;
+    }
+    readonly property int previewIndex: {
+        if (!previewEntry || view !== "search") return -1;
+        const rows = WallpaperSearch.results;
+        for (let i = 0; i < rows.count; i++) {
+            if (rows.get(i).rid === previewEntry.id) return i;
+        }
+        return -1;
+    }
+    function stepPreview(delta) {
+        if (previewIndex < 0) return;
+        const entry = entryAt(previewIndex + delta);
+        if (entry) {
+            if (galleryMode) galleryStart = Math.floor((previewIndex + delta) / galleryCount) * galleryCount;
+            openPreview(entry);
+        }
+    }
     function openLocalPreview(it) {
-        previewEntry = { local: true, path: it.path, kind: it.kind, format: it.format, title: it.title, id: it.path,
+        previewEntry = { local: true, path: it.path, kind: it.kind, format: it.format, title: it.title, id: it.id || it.path,
                          provenance: it.provenance, provenanceReason: it.provenanceReason, sourceName: it.source };
+    }
+    function favoritePath(entry) {
+        let path = WallpaperSearch.downloaded[entry.id] || entry.path;
+        return path && WallpaperSearch.library.some(it => it.path === path) ? path : "";
+    }
+    function openFavorite(entry) {
+        const path = favoritePath(entry);
+        if (path) {
+            previewEntry = Object.assign({}, entry, {local: true, path: path});
+        } else if (entry.pageUrl) {
+            Qt.openUrlExternally(entry.pageUrl);
+        }
+    }
+    D.FileDialog {
+        id: importDialog
+        title: tab.tr("Import wallpapers", "Импорт обоев")
+        fileMode: D.FileDialog.OpenFiles
+        nameFilters: [tab.tr("Images and video", "Изображения и видео") + " (*.jpg *.jpeg *.png *.gif *.webp *.apng *.mp4 *.webm)",
+                      tab.tr("All files", "Все файлы") + " (*)"]
+        onAccepted: WallpaperSearch.importFiles(selectedFiles)
     }
 
     // ---------------------------------------------------------------- layout
@@ -241,9 +312,15 @@ GuideTab {
                 Chip { objectName: "viewSearch"; label: tab.tr("Search", "Поиск"); on: tab.view === "search"; onClicked: tab.view = "search" }
                 Chip {
                     objectName: "viewLibrary"
-                    label: tab.tr("Downloaded", "Скачанные") + (WallpaperSearch.library.length ? " · " + WallpaperSearch.library.length : "")
+                    label: tab.tr("My Wallpapers", "Мои обои") + (WallpaperSearch.library.length ? " · " + WallpaperSearch.library.length : "")
                     on: tab.view === "library"
                     onClicked: { tab.view = "library"; WallpaperSearch.refreshLibrary(); }
+                }
+                Chip {
+                    objectName: "viewFavorites"
+                    label: tab.tr("Favorites", "Избранное")
+                    on: tab.view === "favorites"
+                    onClicked: { tab.view = "favorites"; WallpaperSearch.readFavorites(); }
                 }
             }
             Btn { objectName: "settingsButton"; icon: "󰒓"; hint: tab.tr("Sources, API keys and options", "Источники, API-ключи и настройки"); onClicked: tab.showSettings = true }
@@ -369,12 +446,28 @@ GuideTab {
                     }
                 }
                 Item { width: tab.s(10); height: 1 }
+                C.ComboBox {
+                    id: sourcePicker
+                    objectName: "sourcePicker"
+                    width: tab.s(190)
+                    height: tab.s(28)
+                    font.family: ThemeBackend.fontFamily
+                    font.pixelSize: tab.s(12)
+                    textRole: "text"
+                    valueRole: "name"
+                    model: [{name: "all", text: tab.tr("All Sources", "Все источники")}].concat(
+                        WallpaperSearch.sourceNames.filter(name => WallpaperSearch.prefs.sources[name] !== false)
+                            .map(name => ({name: name, text: WallpaperSearch.sourceLabel(name)})))
+                    currentIndex: indexOfValue(WallpaperSearch.prefs.sourceMode)
+                    onActivated: WallpaperSearch.setFilter("sourceMode", currentValue)
+                }
                 GroupLabel { text: tab.tr("Min. resolution", "Мин. разрешение") }
                 Repeater {
                     model: WallpaperSearch.resOptions
                     delegate: Chip {
                         required property string modelData
                         objectName: "res_" + modelData
+                        enabled: WallpaperSearch.prefs.sourceMode !== "giphy"
                         label: WallpaperSearch.resOptionLabel(modelData)
                         on: WallpaperSearch.prefs.minRes === modelData
                         tint: ThemeBackend.blue
@@ -388,6 +481,7 @@ GuideTab {
                     delegate: Chip {
                         required property string modelData
                         objectName: "sort_" + modelData
+                        enabled: WallpaperSearch.prefs.sourceMode !== "giphy"
                         label: WallpaperSearch.sortLabel(modelData)
                         on: WallpaperSearch.prefs.sort === modelData
                         tint: ThemeBackend.teal
@@ -401,6 +495,20 @@ GuideTab {
                     label: tab.tr("Safe Search — hide explicit content", "Safe Search — скрывать откровенный контент")
                     onToggled: WallpaperSearch.setFilter("safe", !WallpaperSearch.prefs.safe)
                 }
+                Chip {
+                    objectName: "galleryToggle"
+                    label: tab.tr("Gallery", "Галерея")
+                    on: tab.galleryMode
+                    onClicked: WallpaperSearch.setPref("gallery", !tab.galleryMode)
+                }
+                Rectangle {
+                    visible: WallpaperSearch.prefs.sourceMode === "giphy"
+                    width: tab.s(117)
+                    height: tab.s(28)
+                    radius: tab.s(5)
+                    color: "#161616"
+                    Image { anchors.fill: parent; anchors.margins: 2; fillMode: Image.PreserveAspectFit; source: parent.visible ? Qt.resolvedUrl("PoweredByGiphy.png") : "" }
+                }
             }
         }
 
@@ -413,7 +521,7 @@ GuideTab {
             Txt {
                 visible: WallpaperSearch.translated !== ""
                 color: ThemeBackend.subtext1
-                text: tab.tr("Translated for sources that only understand English: ", "Для источников, понимающих только английский, запрос переведён: ") + "“" + WallpaperSearch.translated + "”" + tab.tr(" (Pexels and Pixabay get your original text)", " (Pexels и Pixabay получают исходный текст)")
+                text: tab.tr("Translated for sources that only understand English: ", "Для источников, понимающих только английский, запрос переведён: ") + "“" + WallpaperSearch.translated + "”"
                 height: tab.s(22); verticalAlignment: Text.AlignVCenter
             }
             Txt {
@@ -518,7 +626,7 @@ GuideTab {
             }
         }
 
-        // free API key hint
+        // API key hint
         Rectangle {
             Layout.fillWidth: true
             visible: tab.view === "search" && tab.keyMissing.length > 0 && !WallpaperSearch.prefs.keyHintDismissed
@@ -538,8 +646,8 @@ GuideTab {
                     Layout.fillWidth: true
                     wrapMode: Text.Wrap
                     text: tab.keyMissing.map(n => WallpaperSearch.sourceLabel(n)).join(", ")
-                          + tab.tr(" also search with your own free API key — Pexels and Pixabay add photos and MP4 videos (up to 4K), Giphy adds GIFs. The key stays in a private file on this computer.",
-                                   " ищут с вашим собственным бесплатным API-ключом — Pexels и Pixabay добавляют фото и MP4-видео (до 4K), Giphy — GIF. Ключ хранится в личном файле на этом компьютере.")
+                          + tab.tr(" require an API key. Brave searches the web, Pexels and Pixabay offer downloadable MP4, and GIPHY has its own search view.",
+                                   " требуют API-ключ. Brave ищет по интернету, Pexels и Pixabay предоставляют MP4, а GIPHY выбирается отдельно.")
                 }
                 Btn { label: tab.tr("Add keys", "Добавить ключи"); accent: Qt.alpha(ThemeBackend.blue, 0.35); onClicked: tab.showSettings = true }
                 Btn { icon: "󰅖"; accent: "transparent"; fg: ThemeBackend.overlay2; hint: tab.tr("Hide", "Скрыть"); onClicked: WallpaperSearch.setPref("keyHintDismissed", true) }
@@ -641,10 +749,7 @@ GuideTab {
                     wrapMode: Text.Wrap
                     color: ThemeBackend.subtext0
                     visible: !WallpaperSearch.searching
-                    text: WallpaperSearch.query === "" ? tab.tr("Results come live from Wallhaven, Openverse and Wikimedia Commons; with your own free keys also from Pexels, Pixabay and Giphy. Nothing is pre-made or substituted.",
-                                                  "Результаты приходят напрямую из Wallhaven, Openverse и Wikimedia Commons, а с вашими бесплатными ключами — из Pexels, Pixabay и Giphy. Ничего не подставляется заранее.")
-                        : tab.tr("Why: see the status of each source above (“details”). A lower minimum resolution or Safe Search off can bring more results.",
-                                 "Почему — смотрите статус каждого источника выше («подробнее»). Меньшее минимальное разрешение или выключенный Safe Search могут дать больше результатов.")
+                    text: WallpaperSearch.query === "" ? "" : tab.noResultsDetail()
                 }
                 Row {
                     Layout.alignment: Qt.AlignHCenter
@@ -652,6 +757,7 @@ GuideTab {
                     visible: !WallpaperSearch.searching && WallpaperSearch.query !== "" && grid.count === 0
                     Btn { visible: WallpaperSearch.effectiveMinRes !== "any"; label: tab.tr("Try any resolution", "Любое разрешение"); onClicked: WallpaperSearch.setFilter("minRes", "any") }
                     Btn { visible: WallpaperSearch.kind !== "all"; label: tab.tr("All types", "Все типы"); onClicked: WallpaperSearch.setKind("all") }
+                    Btn { visible: WallpaperSearch.hasMore; label: tab.tr("Load more", "Загрузить ещё"); onClicked: WallpaperSearch.loadMore() }
                 }
             }
 
@@ -659,7 +765,7 @@ GuideTab {
                 id: grid
                 objectName: "resultsGrid"
                 anchors.fill: parent
-                visible: tab.view === "search"
+                visible: tab.view === "search" && !tab.galleryMode
                 clip: true
                 model: WallpaperSearch.results
                 readonly property int cols: Math.max(1, Math.floor(width / tab.s(268)))
@@ -669,7 +775,7 @@ GuideTab {
                 boundsBehavior: Flickable.StopAtBounds
                 C.ScrollBar.vertical: C.ScrollBar { policy: C.ScrollBar.AsNeeded }
                 // Infinite scroll: the next page is requested two rows before the end.
-                onContentYChanged: if (contentHeight > height && contentY + height > contentHeight - cellHeight * 2) WallpaperSearch.loadMore()
+                onContentYChanged: if (visible && contentHeight > height && contentY + height > contentHeight - cellHeight * 2) WallpaperSearch.loadMore()
                 footer: Item {
                     width: grid.width
                     height: grid.count > 0 ? tab.s(56) : 0
@@ -688,11 +794,116 @@ GuideTab {
                     width: grid.cellWidth
                     height: grid.cellHeight
                     tab: tabRoot
-                    r: WallpaperSearch.byId[rid] || null
+                    r: WallpaperSearch.resolvedResult(WallpaperSearch.byId[rid]) || null
+                }
+            }
+
+            ColumnLayout {
+                id: gallery
+                objectName: "liveGallery"
+                anchors.fill: parent
+                visible: tab.view === "search" && tab.galleryMode && WallpaperSearch.results.count > 0
+                enabled: visible && !tab.overlayOpen
+                spacing: tab.s(8)
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 0
+                    Repeater {
+                        model: gallery.visible ? Math.min(tab.galleryCount, Math.max(0, WallpaperSearch.results.count - tab.galleryStart)) : 0
+                        delegate: SearchCard {
+                            required property int index
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            Layout.preferredHeight: Math.round(width * 0.5625) + tab.s(76)
+                            Layout.maximumHeight: gallery.height - tab.s(52)
+                            Layout.alignment: Qt.AlignVCenter
+                            tab: tabRoot
+                            r: tabRoot.entryAt(tabRoot.galleryStart + index)
+                            livePreview: gallery.enabled
+                        }
+                    }
+                }
+                RowLayout {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.bottomMargin: tab.s(8)
+                    Btn {
+                        objectName: "galleryPrev"
+                        label: "‹"
+                        hint: tab.tr("Previous results", "Предыдущие результаты")
+                        active: tab.galleryStart > 0
+                        onClicked: tab.galleryStart = Math.max(0, tab.galleryStart - tab.galleryCount)
+                    }
+                    Txt {
+                        text: (tab.galleryStart + 1) + "–" + Math.min(tab.galleryStart + tab.galleryCount, WallpaperSearch.results.count)
+                              + " / " + WallpaperSearch.results.count
+                    }
+                    Btn {
+                        objectName: "galleryNext"
+                        label: "›"
+                        hint: tab.tr("Next results", "Следующие результаты")
+                        active: tab.galleryStart + tab.galleryCount < WallpaperSearch.results.count
+                        onClicked: tab.galleryStart += tab.galleryCount
+                    }
+                    Btn {
+                        visible: WallpaperSearch.hasMore || WallpaperSearch.searching
+                        active: WallpaperSearch.hasMore && !WallpaperSearch.searching
+                        label: WallpaperSearch.searching ? tab.tr("Loading…", "Загрузка…") : tab.tr("Load more", "Загрузить ещё")
+                        onClicked: WallpaperSearch.loadMore()
+                    }
                 }
             }
 
             // downloaded / offline library
+            ListView {
+                id: favoriteList
+                anchors.fill: parent
+                objectName: "favoriteList"
+                visible: tab.view === "favorites"
+                clip: true
+                spacing: tab.s(6)
+                model: Object.values(WallpaperSearch.favorites).sort((a, b) => a.collection.localeCompare(b.collection) || a.title.localeCompare(b.title))
+                C.ScrollBar.vertical: C.ScrollBar {}
+                delegate: RowLayout {
+                    required property var modelData
+                    width: favoriteList.width - tab.s(12)
+                    spacing: tab.s(8)
+                    Txt {
+                        Layout.fillWidth: true
+                        text: (modelData.collection ? modelData.collection + " · " : "") + (modelData.title || modelData.id)
+                        font.weight: Font.DemiBold
+                    }
+                    Btn {
+                        visible: !!(tab.favoritePath(modelData) || modelData.pageUrl)
+                        label: tab.favoritePath(modelData) ? tab.tr("Preview", "Просмотр") : tab.tr("Open source", "Открыть источник")
+                        onClicked: tab.openFavorite(modelData)
+                    }
+                    Btn {
+                        label: tab.tr("Remove", "Удалить")
+                        active: !WallpaperSearch.favoriteBusy
+                        onClicked: WallpaperSearch.saveFavorite(modelData, modelData.collection, true)
+                    }
+                }
+                Txt {
+                    anchors.centerIn: parent
+                    visible: favoriteList.count === 0
+                    text: tab.tr("Save a wallpaper from its preview to see it here.", "Добавьте обои в избранное в окне просмотра.")
+                    color: ThemeBackend.subtext0
+                }
+            }
+            DropArea {
+                anchors.fill: parent
+                z: 1
+                enabled: tab.view === "library" && !tab.overlayOpen && !WallpaperSearch.importing
+                onDropped: (event) => {
+                    if (!event.hasUrls) return;
+                    const files = Array.from(event.urls, url => String(url)).filter(url => url.startsWith("file:"));
+                    if (!files.length) return;
+                    WallpaperSearch.importFiles(files);
+                    event.acceptProposedAction();
+                }
+            }
             GridView {
                 id: libGrid
                 objectName: "libraryGrid"
@@ -775,6 +986,12 @@ GuideTab {
         RowLayout {
             Layout.fillWidth: true
             spacing: tab.s(6)
+            Btn {
+                visible: tab.view === "library"
+                active: !WallpaperSearch.importing
+                label: WallpaperSearch.importing ? tab.tr("Importing…", "Импорт…") : tab.tr("Import files", "Импорт файлов")
+                onClicked: importDialog.open()
+            }
             GroupLabel { text: tab.tr("Apply to", "Применять на") }
             Chip { label: tab.tr("All monitors", "Все мониторы"); on: WallpaperSearch.monitor === "all"; onClicked: WallpaperSearch.monitor = "all" }
             Repeater {
@@ -849,6 +1066,7 @@ GuideTab {
 
     // ---------------------------------------------------------------- overlays (loaded by URL)
     onPreviewEntryChanged: {
+        WallpaperSearch.resolvePeer(previewEntry);
         if (previewEntry === null) previewLoader.source = "";
         else if (previewLoader.status === Loader.Null) previewLoader.setSource(Qt.resolvedUrl("SearchPreview.qml"), { "hub": tab });
     }
