@@ -299,7 +299,12 @@ Item {
             desc: I18n.t("guide.themess.search_description", "Import and apply desktop configuration packages"),
             keywords: "themess package theme import desktop restore пакеты темы импорт рабочий стол откат"
         });
-        let list = [themess];
+        const ai = normalizeSearchEntry({
+            id: "ai_settings", title: "Serpantinum AI", tab: "ai", icon: "󰚩",
+            desc: I18n.t("guide.ai.search_description"),
+            keywords: "ai ollama provider models streaming privacy ии оллама провайдер модели приватность"
+        });
+        let list = [themess, ai];
         for (let k in searchIndexMap) {
             list.push(searchIndexMap[k]);
         }
@@ -658,7 +663,8 @@ Item {
         { id: "Idle", key: "idle", name: "Idle", icon: "󰒲", file: "IdleTab.qml" },
         { id: "Themess", key: "themess", name: "Themess", icon: "󰏖", file: "ThemessTab.qml" },
         { id: "Diagnostics", key: "diagnostics", name: "Diagnostics", icon: "󰃤", file: "DiagnosticsTab.qml" },
-        { id: "About", key: "about", name: "About", icon: "󰋽", separatorBefore: true, file: "AboutTab.qml" }
+        { id: "About", key: "about", name: "About", icon: "󰋽", separatorBefore: true, file: "AboutTab.qml" },
+        { id: "AI", key: "ai", name: "AI", icon: "󰚩", file: "AiTab.qml" }
     ]
 
     readonly property var currentTabModel: tabsModel[currentTab] || null

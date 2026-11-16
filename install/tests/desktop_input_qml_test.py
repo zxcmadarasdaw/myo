@@ -101,6 +101,7 @@ with tempfile.TemporaryDirectory(prefix="desktop-input-") as directory:
     write("IpcHandler.qml", 'import QtQuick\nItem { property string target }')
     write("notifications/NotificationPopups.qml", 'import QtQuick\nItem {}')
     write("WindowRegistry.js", source("WindowRegistry.js"))
+    write("ai/ChatPopup.qml", "import QtQuick\nItem { signal closeRequested(); signal navigateRequested(string target, string tab) }")
 
     # Guide: actual transitions and visibility cleanup, with unrelated search UI stubbed.
     guide = source("guide/GuidePopup.qml")
@@ -149,6 +150,10 @@ with tempfile.TemporaryDirectory(prefix="desktop-input-") as directory:
         }
         function interruptExit() { widgetCache.guide.interrupt(); }
         function closeButton() { widgetCache.guide.closePopup(); }
+        function chatMaskIsBounded() { return inputMask.item === maskContent && focusable; }
+        function closeChat() { widgetCache.ai.closeRequested(); }
+        function chatNavigate() { widgetCache.ai.navigateRequested("guide", "wallpaper_search"); }
+        function activeArgument() { return activeArg; }
     '''
     write("Main.qml", main[:main.rfind("}")] + fixture_api + "}\n")
 
@@ -235,6 +240,19 @@ with tempfile.TemporaryDirectory(prefix="desktop-input-") as directory:
     if not BASELINE:
         check(snap()["target"] == "hidden", "component error aborts without a busy retry loop")
     call(host, "command", "hidden")
+
+    if not BASELINE:
+        call(host, "command", "ai")
+        pump(.1)
+        check(snap()["target"] == "ai" and call(host, "chatMaskIsBounded"), "chat input is bounded to the panel")
+        call(host, "closeChat")
+        check(not snap()["visible"] and not snap()["input"], "chat close releases the input surface")
+        call(host, "command", "ai")
+        pump(.1)
+        call(host, "chatNavigate")
+        check(snap()["target"] == "guide" and call(host, "activeArgument") == "wallpaper_search",
+              "chat navigation uses the settings tab route")
+        call(host, "command", "hidden")
 
     editor = create("Editor.qml")
     call(editor, "resetStates")

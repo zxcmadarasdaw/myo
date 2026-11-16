@@ -163,7 +163,20 @@ test_verify() {
     chmod +x "$home/.local/share/serpantinum/bin/serpantinumd"
     cp "$home/.local/share/serpantinum/bin/serpantinumd" "$home/.local/bin/serpantinumd"
     printf '#!/bin/sh\necho "quickshell 0.3.1"\n' > "$home/stub-bin/quickshell"
-    printf '#!/bin/sh\necho "Hyprland ${STUB_HYPR_VERSION} built from branch"\n' > "$home/stub-bin/Hyprland"
+    cat > "$home/stub-bin/Hyprland" <<'EOF'
+#!/bin/sh
+case "$1" in
+    --version) echo "Hyprland ${STUB_HYPR_VERSION} built from branch" ;;
+    --verify-config)
+        [ "$2" = --config ] && [ "$3" = "$HOME/.config/hypr/hyprland.lua" ] || exit 2
+        if grep -q 'config.unload' "$3"; then
+            echo 'hl.on: unknown event "config.unload"'
+            exit 1
+        fi
+        ;;
+    *) exit 2 ;;
+esac
+EOF
     chmod +x "$home/stub-bin/"*
 
     run_verify() {
@@ -189,6 +202,10 @@ test_verify() {
     [ "$result" = "true" ] && ok "missing required package marks install incomplete" || bad "missing package detection (got $result)"
     result="$(STUB_MISSING="" run_verify 0.54.0)"
     [ "$result" = "true" ] && ok "Hyprland without Lua config support is rejected" || bad "old Hyprland detection (got $result)"
+    printf 'hl.on("config.unload", function() end)\n' > "$home/.config/hypr/hyprland.lua"
+    result="$(STUB_MISSING="" run_verify 0.56.2)"
+    [ "$result" = "true" ] && ok "unknown Lua event marks install incomplete" || bad "Hyprland config error detection (got $result)"
+    : > "$home/.config/hypr/hyprland.lua"
 
     # The real shell tree passes the Quickshell QML check; a sibling type that
     # Quickshell cannot see (the WallpaperGif crash, exit 255) fails verify.

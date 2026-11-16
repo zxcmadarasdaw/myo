@@ -3,6 +3,8 @@
 -- camera move without polling or taking over Hyprland's pointer grabs.
 local windows = {}
 local cameras = {}
+local major, minor = hl.version():match("^(%d+)%.(%d+)")
+local hasUnload = major and (tonumber(major) > 0 or tonumber(minor) >= 57)
 
 local function eligible(window)
   return window.mapped and not window.hidden and window.floating and not window.pinned
@@ -11,6 +13,10 @@ end
 
 local function move(window, x, y)
   return hl.dispatch(hl.dsp.window.move({window = window, x = x, y = y}))
+end
+
+local function tag(window, value)
+  return hl.dispatch(hl.dsp.window.tag({window = window, tag = value}))
 end
 
 local function intersects(x, y, size, output)
@@ -46,6 +52,7 @@ function _G.serpantinumCanvasUpdate(views)
       local at, size = window.at, window.size
       local id = window.address
       local record = windows[id]
+      local previousTag = record and record.parkingTag
       local sameOutput = record and record.output == name
       local moved = sameOutput and (at.x ~= record.appliedX or at.y ~= record.appliedY)
         and (at.x - output.x ~= record.appliedX - record.outputX or at.y - output.y ~= record.appliedY - record.outputY)
@@ -64,6 +71,11 @@ function _G.serpantinumCanvasUpdate(views)
 
       if camera.active then
         local x, y, parked = project(record, camera, output, size, parking)
+        -- Manual window tags survive a config reload, even when the Lua VM
+        -- and its tables are replaced. Record the destination before parking.
+        local parkingTag = parked and ("serpantinum-canvas-park:%s:%s:%s:%s:%s"):format(
+          x, y, record.visibleX, record.visibleY, name) or nil
+        if parkingTag and parkingTag ~= previousTag then tag(window, "+" .. parkingTag) end
         if x ~= at.x or y ~= at.y then
           move(window, x, y)
         end
@@ -71,6 +83,11 @@ function _G.serpantinumCanvasUpdate(views)
         record.appliedX, record.appliedY = actual.x, actual.y
         record.outputX, record.outputY = output.x, output.y
         record.parked = parked and actual.x == x and actual.y == y
+        record.parkingTag = record.parked and parkingTag or nil
+        if previousTag and previousTag ~= record.parkingTag then tag(window, "-" .. previousTag) end
+        if parkingTag and parkingTag ~= previousTag and not record.parked then
+          tag(window, "-" .. parkingTag)
+        end
         if intersects(actual.x, actual.y, size, output) then
           record.visibleX, record.visibleY = actual.x - output.x, actual.y - output.y
         end
@@ -79,8 +96,10 @@ function _G.serpantinumCanvasUpdate(views)
         local x, y, parked = project(record, camera, output, size, parking)
         if parked then x, y = output.x + record.visibleX, output.y + record.visibleY end
         if x ~= at.x or y ~= at.y then move(window, x, y) end
+        if record.parkingTag then tag(window, "-" .. record.parkingTag) end
         windows[id] = nil
       else
+        if previousTag then tag(window, "-" .. previousTag) end
         windows[id] = nil
       end
     end
@@ -92,16 +111,22 @@ end
 hl.on("window.close", function(window)
   if window.address then windows[window.address] = nil end
 end)
-hl.on("config.unload", function()
-  -- The Lua VM is replaced at reload. Return parked windows to their last
-  -- visible position so they stay reachable even if the next config is custom.
+-- Hyprland added its pre-reload hook in 0.57. Older versions recover from
+-- the window tags when the new config has registered its callbacks.
+hl.on(hasUnload and "config.unload" or "config.reloaded", function()
   for _, window in ipairs(hl.get_windows()) do
-    local record = windows[window.address]
-    local monitor = record and record.parked and window.monitor
-    if monitor and monitor.name == record.output and eligible(window) then
-      local at = window.at
-      if at.x == record.appliedX and at.y == record.appliedY then
-        move(window, monitor.x + record.visibleX, monitor.y + record.visibleY)
+    for _, value in ipairs(window.tags) do
+      local x, y, visibleX, visibleY, output = value:match(
+        "^serpantinum%-canvas%-park:([^:]+):([^:]+):([^:]+):([^:]+):(.+)$")
+      if output then
+        local monitor, at = window.monitor, window.at
+        visibleX, visibleY = tonumber(visibleX), tonumber(visibleY)
+        if visibleX and visibleY and monitor and monitor.name == output and eligible(window)
+            and at.x == tonumber(x) and at.y == tonumber(y) then
+          move(window, monitor.x + visibleX, monitor.y + visibleY)
+          windows[window.address] = nil
+        end
+        tag(window, "-" .. value)
       end
     end
   end

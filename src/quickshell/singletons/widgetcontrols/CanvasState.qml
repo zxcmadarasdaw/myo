@@ -166,8 +166,9 @@ Item {
             if (!root.hyprlandUpdatePending || root.hyprlandViews === "" || hyprlandSync.running) return;
             root.hyprlandUpdatePending = false;
             hyprlandSync.reply = "";
-            hyprlandSync.command = ["timeout", "2s", "hyprctl", "repl",
-                                    "serpantinumCanvasUpdate and serpantinumCanvasUpdate(" + root.hyprlandViews + ")"];
+            // The eval command is available in Hyprland 0.55 as well.
+            hyprlandSync.command = ["timeout", "2s", "hyprctl", "eval",
+                                    "assert(serpantinumCanvasUpdate(" + root.hyprlandViews + ") == 'canvas-ok')"];
             hyprlandSync.running = true;
         }
     }
@@ -176,7 +177,7 @@ Item {
         property string reply: ""
         stdout: StdioCollector { onStreamFinished: hyprlandSync.reply = text.trim() }
         onExited: code => {
-            let ok = code === 0 && reply === "canvas-ok";
+            let ok = code === 0 && reply === "ok";
             if (!ok && !root.hyprlandWarned)
                 console.warn("Infinite Canvas: Hyprland window sync unavailable", reply || code);
             root.hyprlandWarned = !ok;

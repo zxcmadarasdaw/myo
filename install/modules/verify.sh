@@ -23,14 +23,24 @@ MIN_HYPRLAND_LUA_VERSION="0.55.0"
 # "X is not a type" and quickshell exit code 255.
 VERIFY_QML_CHECK="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/qml_check.py"
 
-hyprland_version() {
+hyprland_binary() {
     local bin
     for bin in Hyprland hyprland; do
-        command -v "$bin" >/dev/null 2>&1 || continue
-        "$bin" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1
-        return 0
+        command -v "$bin" && return 0
     done
     return 1
+}
+
+hyprland_version() {
+    local bin
+    bin="$(hyprland_binary)" || return 1
+    "$bin" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1
+}
+
+check_hyprland_config() {
+    local config="$1" bin
+    bin="$(hyprland_binary)" || return 1
+    "$bin" --verify-config --config "$config"
 }
 
 version_at_least() {
@@ -59,7 +69,7 @@ ensure_hyprland_lua_support() {
 
 verify_installation() {
     local target_base="$HOME/.local/share/serpantinum"
-    local comp pkg missing version
+    local comp pkg missing version hypr_config hypr_report
 
     VERIFY_ERRORS=()
     VERIFY_WARNINGS=()
@@ -86,12 +96,16 @@ verify_installation() {
     for comp in "${SELECTED_COMPOSITORS[@]}"; do
         case "$comp" in
             hyprland)
+                hypr_config="$HOME/.config/hypr/hyprland.lua"
                 if ! version="$(hyprland_version)"; then
                     verify_error "Hyprland is not installed"
                 elif ! version_at_least "$version" "$MIN_HYPRLAND_LUA_VERSION"; then
                     verify_error "Hyprland $version does not support the Lua config (needs >= $MIN_HYPRLAND_LUA_VERSION); the session would start without the shell"
+                elif [ ! -f "$hypr_config" ]; then
+                    verify_error "$hypr_config was not deployed"
+                elif ! hypr_report="$(check_hyprland_config "$hypr_config" 2>&1)"; then
+                    verify_error "Hyprland $version could not validate $hypr_config:"$'\n'"${hypr_report:-No diagnostic output}"
                 fi
-                [ -f "$HOME/.config/hypr/hyprland.lua" ] || verify_error "~/.config/hypr/hyprland.lua was not deployed"
                 # Hyprland's own dialogs (app not responding, permission
                 # prompts). Not used by Serpantinum; Fedora ships it only in
                 # COPR, which may need newer hypr* libraries than Fedora's

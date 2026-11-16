@@ -27,6 +27,10 @@ __pycache__/
 .env.*
 !.env.example
 
+# Local AI provider credentials (never commit real keys)
+coarena_api_key.txt
+coarena_api_key.local.txt
+
 # Build artifacts
 build/
 dist/

@@ -5,7 +5,7 @@ local desk1, desk2 = {id = 1, visible = true}, {id = 2, visible = false}
 local desk3 = {id = 3, visible = true}
 local function window(address, x, y, monitor, workspace)
   return {address = address, at = {x = x, y = y}, size = {x = 800, y = 600},
-          monitor = monitor, workspace = workspace, mapped = true, fullscreen = 0, floating = true}
+          monitor = monitor, workspace = workspace, mapped = true, fullscreen = 0, floating = true, tags = {}}
 end
 local firefox = window("0x1", -1500, 220, screen, desk1)
 local inactive = window("0x2", -1700, 250, screen, desk2)
@@ -18,12 +18,35 @@ pinned.pinned, tiled.floating, fullscreen.fullscreen = true, false, 1
 
 local count = 0
 local events = {}
+local version = "0.56.2"
 hl = {
+  version = function() return version end,
   get_monitors = function() return {screen, adjacent} end,
   get_windows = function() return {firefox, inactive, pinned, tiled, fullscreen, special, external} end,
-  on = function(name, callback) events[name] = callback end,
-  dsp = {window = {move = function(args) return args end}},
+  on = function(name, callback)
+    assert(name == "window.close" or name == "config.reloaded"
+      or (name == "config.unload" and version == "0.57.0"), "unknown event " .. name)
+    events[name] = callback
+  end,
+  dsp = {window = {
+    move = function(args) return args end,
+    tag = function(args) return args end,
+  }},
   dispatch = function(args)
+    if args.tag then
+      local tags, value = args.window.tags, args.tag:sub(2)
+      if args.tag:sub(1, 1) == "+" then
+        tags[#tags + 1] = value
+      else
+        for index, current in ipairs(tags) do
+          if current == value then
+            table.remove(tags, index)
+            break
+          end
+        end
+      end
+      return
+    end
     assert(args.workspace == nil and args.relative == nil)
     args.window.at = {x = args.x, y = args.y}
     count = count + 1
@@ -79,8 +102,27 @@ pos(firefox, -1380, 520)
 update(4000, 0, 1)
 update(0, 0, 1, false)
 pos(firefox, -1380, 520)
+assert(#firefox.tags == 0)
 
 -- The Lua VM disappears when the compositor config is reloaded.
+update(0, 0, 1)
+update(4000, 0, 1)
+assert(#firefox.tags == 1)
+inactive.at = {x = -1600, y = 320}
+events = {}
+serpantinumCanvasUpdate = nil
+dofile("compositors/hyprland/config/canvas.lua")
+assert(not events["config.unload"])
+events["config.reloaded"]()
+pos(firefox, -1380, 520)
+pos(inactive, -1600, 320)
+assert(#firefox.tags == 0 and #inactive.tags == 0)
+assert(firefox.workspace == desk1 and inactive.workspace == desk2)
+
+version = "0.57.0"
+events = {}
+dofile("compositors/hyprland/config/canvas.lua")
+assert(not events["config.reloaded"])
 update(0, 0, 1)
 update(4000, 0, 1)
 events["config.unload"]()

@@ -59,6 +59,13 @@ function getWidgetLauncherEntries(i18n) {
             description: tr("widgets.system.desc", "Performance monitor, power, and quick settings"),
             icon: "preferences-system",
             fontIcon: "󰒓"
+        },
+        {
+            id: "ai",
+            name: "Serpantinum AI",
+            description: tr("guide.ai.chat_description", "Open the local AI chat"),
+            icon: "applications-utilities",
+            fontIcon: "󰚩"
         }
     ];
 }
@@ -95,6 +102,10 @@ function getLayout(name, mx, my, mw, mh, userScale, barPosition) {
                 "left": { anchor: "center" }, 
                 "right": { anchor: "center" } 
             } 
+        },
+        "ai": {
+            w: 810, h: 620, comp: "ai/ChatPopup.qml", draggable: true,
+            pos: { "top": { anchor: "center" } }
         },
         "wallpaper": { 
             w: "fill", h: 650, comp: "wallpaper/WallpaperPicker.qml", 
@@ -149,6 +160,10 @@ function getLayout(name, mx, my, mw, mh, userScale, barPosition) {
 
     let finalW = t.w === "fill" ? mw : s(t.w, scale);
     let finalH = t.h === "fill" ? mh : s(t.h, scale);
+    if (name === "ai") {
+        finalW = Math.min(finalW, mw - s(16, scale));
+        finalH = Math.min(finalH, mh - s(16, scale));
+    }
 
     let rx = 0;
     let ry = 0;

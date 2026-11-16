@@ -1,0 +1,4 @@
+# Optional CoArena/OpenAI-compatible provider key for local development.
+# Copy this file to coarena_api_key.txt and replace the value locally.
+# Never commit the real key or paste it into source files.
+COARENA_API_KEY=coa_replace_with_your_key

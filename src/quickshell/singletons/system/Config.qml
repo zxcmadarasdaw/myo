@@ -30,6 +30,7 @@ Item {
         'fi\n'
 
     signal settingsLoaded()
+    signal settingsWriteFinished(bool success)
 
     function reloadFromDisk() {
         if (!isWriting) settingsWatcher.reload();
@@ -153,6 +154,7 @@ Item {
         command: []
         onExited: function(exitCode, exitStatus) {
             config.isWriting = false;
+            config.settingsWriteFinished(exitCode === 0 && exitStatus === 0);
             if (config.pendingPayload !== null) {
                 let next = config.pendingPayload;
                 config.pendingPayload = null;

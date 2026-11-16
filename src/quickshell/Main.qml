@@ -401,6 +401,13 @@ PanelWindow {
 
         let item = comp.createObject(preloaderContainer);
         if (item) {
+            if (name === "ai") {
+                item.closeRequested.connect(() => masterWindow.switchWidget("hidden", ""));
+                item.navigateRequested.connect((target, tab) => {
+                    if (target === "guide") masterWindow.handleEmbeddedSettings("open", tab);
+                    else if (target === "system") masterWindow.switchWidget("system", "");
+                });
+            }
             item.visible = false;
             widgetCache[name] = item;
         }
@@ -501,7 +508,7 @@ PanelWindow {
         if (!result) return null;
 
         let scale = masterWindow.globalUiScale || 1.0;
-        let isFixed = (name === "guide" || name === "wallpaper" || name === "notifications" || name === "system" || name === "hidden");
+        let isFixed = (name === "guide" || name === "ai" || name === "wallpaper" || name === "notifications" || name === "system" || name === "hidden");
 
         if (effHidden && !isFixed) {
             let offsetAdjustment = Math.round(46 * scale);
