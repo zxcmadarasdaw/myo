@@ -75,6 +75,16 @@ ensure_hyprland_lua_support() {
     fi
 }
 
+installed_program_matches() {
+    local entry
+    for entry in bin src themess; do
+        if [ -d "$PROJECT_ROOT/$entry" ] &&
+            ! diff -rq -x __pycache__ -x version.txt -- "$PROJECT_ROOT/$entry" "$1/$entry" >/dev/null 2>&1; then
+            return 1
+        fi
+    done
+}
+
 verify_installation() {
     local target_base="$HOME/.local/share/serpantinum"
     local comp pkg missing version hypr_config hypr_report
@@ -115,7 +125,12 @@ verify_installation() {
                 elif ! version_at_least "$version" "$MIN_HYPRLAND_LUA_VERSION"; then
                     verify_error "Hyprland $version does not support the Lua config (needs >= $MIN_HYPRLAND_LUA_VERSION); the session would start without the shell"
                 elif [ ! -f "$hypr_config" ]; then
-                    verify_error "$hypr_config was not deployed"
+                    if [ "${MANAGED_INSTALL:-false}" = true ] && [ "$MANAGER_ACTION" != verify ] &&
+                        [ "$OPT_CONFIG" != true ]; then
+                        verify_warning "Configuration deployment was skipped. Add Serpantinum to your Hyprland autostart before using it as your desktop shell."
+                    else
+                        verify_error "$hypr_config was not deployed"
+                    fi
                 elif ! hypr_report="$(check_hyprland_config "$hypr_config" 2>&1)"; then
                     verify_error "Hyprland $version could not validate $hypr_config:"$'\n'"${hypr_report:-No diagnostic output}"
                 fi
@@ -137,7 +152,11 @@ verify_installation() {
     done
 
     [ -f "$target_base/src/quickshell/Shell.qml" ] || verify_error "shell files missing in $target_base/src"
-    if [ -n "${PROJECT_ROOT:-}" ] && [ -d "$PROJECT_ROOT/src/quickshell" ] && [ -d "$target_base/src/quickshell" ]; then
+    if [ "${MANAGED_INSTALL:-false}" = true ] && [ "$MANAGER_ACTION" != missing ]; then
+        if ! installed_program_matches "$target_base"; then
+            verify_error 'The installed program files differ from this checkout. Use Update for a newer checkout or Repair for missing or damaged files.'
+        fi
+    elif [ "${MANAGED_INSTALL:-false}" != true ] && [ -n "${PROJECT_ROOT:-}" ] && [ -d "$PROJECT_ROOT/src/quickshell" ] && [ -d "$target_base/src/quickshell" ]; then
         if ! diff -rq -x __pycache__ "$PROJECT_ROOT/src/quickshell" "$target_base/src/quickshell" >/dev/null 2>&1; then
             verify_error "installed shell differs from $PROJECT_ROOT/src/quickshell (stale or incomplete copy)"
         fi

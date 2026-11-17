@@ -24,8 +24,8 @@ REPLACE_DM=false
 SDDM_WAYLAND="$PM_SDDM_WAYLAND_DEFAULT"
 
 USER_NAME="${USER:-$(whoami)}"
-OS_NAME=$(grep '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')
-[[ -z "$OS_NAME" ]] && OS_NAME="$(t "installer.os.default_os")"
+OS_NAME=$(grep '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2- | tr -d '"' || true)
+if [ -z "$OS_NAME" ]; then OS_NAME="${DISTRO_ID:-Linux}"; fi
 CPU_INFO=$(grep -m 1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs || true)
 [[ -z "$CPU_INFO" ]] && CPU_INFO="$(t "installer.os.unknown_cpu")"
 
@@ -37,7 +37,6 @@ cleanup_terminal() {
     printf "\e[?25h" 2>/dev/null || true
     stty echo icanon 2>/dev/null || true
 }
-trap cleanup_terminal EXIT INT TERM
 
 read_key() {
     local key=""
@@ -162,17 +161,23 @@ EOF
     printf "\033[K%s================================================================================%s\n\n" "$C_BLUE" "$RESET"
 }
 
-show_package_overview() {
-    local target_list=("${REQUIRED_PKGS[@]}")
+collect_dependency_targets() {
+    local -n result_array="$1"
+    result_array=("${REQUIRED_PKGS[@]}")
     for comp in "${SELECTED_COMPOSITORS[@]}"; do
-        target_list+=("$(compositor_package_name "$comp")")
+        result_array+=("$(compositor_package_name "$comp")")
     done
     if [ "$OPT_SDDM" = true ]; then
         local sddm_pkgs=()
         mapfile -t sddm_pkgs < <(sddm_packages)
-        target_list+=("${sddm_pkgs[@]}")
+        result_array+=("${sddm_pkgs[@]}")
     fi
-    target_list+=("${PM_EXTRA_PKGS[@]}")
+    result_array+=("${PM_EXTRA_PKGS[@]}")
+}
+
+show_package_overview() {
+    local target_list=()
+    collect_dependency_targets target_list
 
     local missing_raw
     if ! missing_raw=$(pm_missing_pkgs "${target_list[@]}"); then

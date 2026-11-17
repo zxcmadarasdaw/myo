@@ -71,9 +71,15 @@ audio_build_from_source() {
     tar -xzf "$work/source.tar.gz" -C "$work/source" --strip-components=1 || return 1
     src_dir="$work/source"
 
-    make -C "$src_dir" >/dev/null || return 1
+    if [ "${MANAGED_INSTALL:-false}" = true ]; then
+        printf '@@activity\tBuilding\tSerpantinum Audio DSP\n'
+    fi
+    make -C "$src_dir" || return 1
     "$src_dir/serpantinum-audio" version >/dev/null 2>&1 || return 1
-    sudo make -C "$src_dir" install PREFIX="$AUDIO_PREFIX" >/dev/null
+    sudo install -Dm755 "$src_dir/serpantinum-audio" "$AUDIO_PREFIX/bin/serpantinum-audio" || return 1
+    if [ -f "$src_dir/LICENSE" ]; then
+        sudo install -Dm644 "$src_dir/LICENSE" "$AUDIO_PREFIX/share/licenses/serpantinum-audio/LICENSE"
+    fi
 }
 
 hand_over_from_easyeffects() {
@@ -109,7 +115,9 @@ install_audio_daemon() {
     mkdir -p "$cache"
     work="$(mktemp -d "$cache/serpantinum-audio.XXXXXX")"
 
-    if audio_install_prebuilt "$json" "$work" || audio_build_from_source "$json" "$work"; then
+    if audio_install_prebuilt "$json" "$work" ||
+        { { [ "${MANAGED_INSTALL:-false}" != true ] || [ "$OPT_BUILD" = true ]; } &&
+          audio_build_from_source "$json" "$work"; }; then
         hash -r
         echo -e "\e[32m[ OK ] $(t "installer.audio.installed" "version=${tag#v}")\e[0m"
         restart_daemon_if_running serpantinum-audio '(^|/)serpantinum-audio daemon$' ctl quit

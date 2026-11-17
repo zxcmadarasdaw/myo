@@ -67,12 +67,33 @@ check_install_space() {
     fi
 }
 
-bootstrap_git() {
-    command -v git >/dev/null && return 0
+install_live_session() {
+    grep -Eq '(^| )(rd\.live\.image|root=live:|archisobasedir=|archisolabel=|cow_spacesize=|boot=live)' /proc/cmdline ||
+        [ -d /run/archiso ] || [ -d /run/initramfs/live ] ||
+        [ "$(findmnt -no FSTYPE / 2>/dev/null)" = overlay ]
+}
+
+bootstrap_tool() {
+    local package="$1" reason="$2" answer updates db
+    printf '%s Install %s with %s using its configured repositories? [y/N] ' "$reason" "$package" "$PM_COMMAND" >&2
+    read -r answer </dev/tty || return 1
+    [[ "$answer" =~ ^[yY]$ ]] || return 1
     case "$PM_NAME" in
-        pacman) sudo pacman -Syu --needed git ;;
-        dnf) sudo dnf --disablerepo='terra*' install -y git ;;
-        void) sudo xbps-install -Suy xbps && sudo xbps-install -Sy git ;;
+        pacman)
+            db="$(pacman-conf DBPath)" || return 1
+            if [ -e "${db%/}/db.lck" ]; then
+                printf 'Pacman is busy (%s/db.lck). Retry after the transaction finishes.\n' "${db%/}" >&2
+                return 1
+            fi
+            pacman -Sl >/dev/null || return 1
+            updates="$(pacman -Qu)" || true
+            if [ -n "$updates" ]; then
+                echo 'Pending system upgrades in the package databases. Use a current Live image or review a full upgrade of the installed system first.' >&2
+                return 1
+            fi
+            sudo pacman -S --needed "$package" </dev/tty ;;
+        dnf) sudo dnf --disablerepo='terra*' --setopt=assumeyes=False install "$package" </dev/tty ;;
+        void) sudo xbps-install -Suy xbps && sudo xbps-install -Sy "$package" </dev/tty ;;
     esac
 }
 
@@ -82,6 +103,12 @@ installer_phase() {
 
 [[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
 set -e
+
+case "${1:-}" in
+    -h|--help)
+        echo 'Usage: bash install.sh [--tui | --check | --vpn-check | --vpn-only | --legacy-tui]'
+        exit 0 ;;
+esac
 
 if [ "$EUID" -eq 0 ]; then
     echo "Run the installer as your desktop user. It calls sudo when required." >&2
@@ -105,7 +132,10 @@ fi
 
 if [[ -z "$PROJECT_ROOT" || ! -f "$PROJECT_ROOT/install/modules/deps.sh" || ! -d "$PROJECT_ROOT/src" ]]; then
     check_install_space "$CACHE_BASE" 524288
-    bootstrap_git
+    if ! command -v git >/dev/null; then
+        bootstrap_tool git 'Git is needed to fetch Serpantinum.'
+        command -v git >/dev/null
+    fi
     mkdir -p "$CACHE_BASE"
     checkout="$(mktemp -d "$CACHE_BASE/checkout.XXXXXX")"
     trap 'rm -rf -- "$checkout"' EXIT
@@ -118,11 +148,33 @@ if [[ -z "$PROJECT_ROOT" || ! -f "$PROJECT_ROOT/install/modules/deps.sh" || ! -d
     exit
 fi
 
+if [[ "$PM_NAME" != void ]]; then
+    case "${1:-}" in
+        --manager-probe|--manager-run|--legacy-tui|--vpn-check|--vpn-only) ;;
+        ''|--tui|--check)
+            if ! command -v python3 >/dev/null; then
+                if [[ "${1:-}" == --check ]]; then
+                    exec bash "${BASH_SOURCE[0]}" --manager-probe inspect auto
+                fi
+                python_package=python3
+                if [ "$PM_NAME" = pacman ]; then python_package=python; fi
+                bootstrap_tool "$python_package" 'Python 3 is needed to open the installer.' || {
+                    echo 'Run the Python setup from a terminal, or use --legacy-tui to open the original terminal installer.' >&2
+                    exit 1
+                }
+                command -v python3 >/dev/null
+            fi
+            exec python3 "$INSTALL_DIR/manager.py" "$@" ;;
+        *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
+    esac
+fi
+
 export SERPANTINUM_DIR="$PROJECT_ROOT/src"
 export I18N_DIR="$PROJECT_ROOT/src/assets/languages"
 
 MODULES_DIR="$INSTALL_DIR/modules"
 
+case "${1:-}" in --manager-probe|--manager-run) export SERPANTINUM_INSTALLER_READ_ONLY=1 ;; esac
 source "$PROJECT_ROOT/src/scripts/i18n.sh"
 source "$MODULES_DIR/pm.sh"
 source "$MODULES_DIR/deps.sh"
@@ -138,6 +190,16 @@ source "$MODULES_DIR/service.sh"
 source "$MODULES_DIR/vpn.sh"
 source "$MODULES_DIR/ui.sh"
 source "$MODULES_DIR/verify.sh"
+
+if [[ "${1:-}" == --manager-probe || "${1:-}" == --manager-run ]]; then
+    source "$MODULES_DIR/manager.sh"
+    installer_manager "$@"
+    exit
+fi
+
+if [ "$PM_NAME" = pacman ] && install_live_session; then
+    PM_ARCH_EXISTING_DB_ONLY=true
+fi
 
 if [ "${1:-}" = "--vpn-check" ]; then
     check_vpn_components

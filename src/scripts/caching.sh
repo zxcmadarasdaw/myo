@@ -16,6 +16,8 @@ export QS_RUN_DIR="${XDG_RUNTIME_DIR:-/tmp}/serpantinum"
 export QS_LOG_DIR="$QS_RUN_DIR/logs"
 export QS_SETTINGS="$(serpantinum_settings_path)"
 
+if [ "${SERPANTINUM_INSTALLER_READ_ONLY:-}" = 1 ]; then return 0; fi
+
 [[ -d "$QS_LOG_DIR" && -d "$QS_CACHE_DIR" && -d "$QS_STATE_DIR" ]] || mkdir -p "$QS_CACHE_DIR" "$QS_STATE_DIR" "$QS_RUN_DIR" "$QS_LOG_DIR"
 
 qs_ensure_cache() {

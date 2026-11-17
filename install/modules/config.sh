@@ -19,7 +19,7 @@ init_serpantinum_config() {
     (set -o noclobber; printf '%s\n' "$initial_json" > "$CONFIG_FILE") || return 1
     SERP_NEW_SETTINGS=true
 
-    if [ -f "$script_path" ]; then
+    if [ "${MANAGED_INSTALL:-false}" != true ] && [ -f "$script_path" ]; then
         bash "$script_path" --refresh >/dev/null 2>&1 || true
     fi
 }

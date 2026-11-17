@@ -78,6 +78,11 @@ install_ski() {
             rm -rf "$work"
             return 0
         fi
+    elif [ "${MANAGED_INSTALL:-false}" = true ]; then
+        echo 'Ski download has no readable SHA256SUMS file.'
+        FAILED_PKGS+=("ski")
+        rm -rf -- "$work"
+        return 1
     fi
 
     mkdir -p "$work/stage"

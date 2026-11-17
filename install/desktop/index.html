@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Serpantinum Installer</title>
+  <link rel="stylesheet" href="/installer.css">
+  <script defer src="/installer.js"></script>
+</head>
+<body>
+  <main>
+    <header class="masthead">
+      <div><span class="section-title">Installation manager</span><h1>Serpantinum</h1></div>
+      <button id="close" class="quiet">Close installer</button>
+    </header>
+    <section class="system" aria-label="System and version">
+      <div><span>Version</span><strong id="version">Loading</strong></div>
+      <div><span>Operating system</span><strong id="os">—</strong></div>
+      <div><span>Package manager</span><strong id="manager">—</strong></div>
+      <div><span>Installation</span><strong id="existing">—</strong></div>
+    </section>
+    <p id="error" role="alert" hidden></p>
+    <ul id="warnings" class="warnings" hidden></ul>
+
+    <div class="layout">
+      <section class="panel inventory" aria-labelledby="components-heading">
+        <div class="heading">
+          <h2 id="components-heading">Components</h2>
+          <button id="refresh" class="quiet">Refresh</button>
+        </div>
+        <div id="components"></div>
+        <details class="package-group">
+          <summary>Package inventory <span id="package-count"></span></summary>
+          <div id="packages"></div>
+        </details>
+        <details class="package-group">
+          <summary>Disk space</summary>
+          <div id="free-space"></div>
+        </details>
+      </section>
+
+      <div class="work">
+        <section class="panel" id="preparation" aria-labelledby="prepare-heading">
+          <h2 id="prepare-heading">Prepare installation</h2>
+          <div class="actions" id="actions" aria-label="Action"></div>
+          <fieldset id="compositors"><legend>Desktop sessions</legend></fieldset>
+          <details class="settings" open id="settings">
+            <summary>Configuration and optional components</summary>
+            <fieldset id="options" aria-label="Installation options"></fieldset>
+          </details>
+          <div class="buttons">
+            <button id="review" class="primary">Review changes</button>
+          </div>
+        </section>
+
+        <section class="panel" id="plan" aria-labelledby="plan-heading" hidden>
+          <h2 id="plan-heading">Review changes</h2>
+          <ul id="changes"></ul>
+          <div id="space"></div>
+          <details id="target-packages">
+            <summary>Packages missing or due for update</summary>
+            <p id="targets"></p>
+          </details>
+          <ul id="plan-errors" class="warnings" hidden></ul>
+          <div class="buttons"><button id="start" class="primary">Approve and start</button></div>
+        </section>
+
+        <section class="panel" id="operation" aria-labelledby="operation-heading" hidden>
+          <div class="heading"><h2 id="operation-heading">Installation progress</h2><span id="elapsed"></span></div>
+          <div id="status" role="status" class="status"></div>
+          <p id="current"></p>
+          <label class="progress-label" for="overall">Installation phases</label>
+          <progress id="overall" aria-label="Completed phases"></progress>
+          <div id="transfer" hidden>
+            <label class="progress-label" for="download">Current transfer</label>
+            <progress id="download" max="100" aria-label="Download progress"></progress>
+          </div>
+          <p id="metrics" class="muted"></p>
+          <p id="activity" class="muted"></p>
+          <div id="question" class="question" hidden>
+            <label for="answer" id="prompt"></label>
+            <div class="answer-row">
+              <input id="answer" autocomplete="off" spellcheck="false">
+              <button id="send" class="primary">Send response</button>
+            </div>
+            <p>Read the transaction in the journal before answering. An empty response uses the command’s default.</p>
+          </div>
+          <div class="buttons">
+            <button id="manual" class="quiet">Respond to a terminal prompt</button>
+            <button id="cancel" class="danger">Cancel safely</button>
+            <button id="retry" class="primary" hidden>Retry failed step</button>
+            <button id="restart" hidden>Restart approved plan</button>
+            <button id="launch" class="primary" hidden>Launch Serpantinum</button>
+          </div>
+          <p id="recovery" class="muted" hidden></p>
+          <details id="journal" class="journal">
+            <summary>Installation journal</summary>
+            <pre id="lines" tabindex="0" aria-label="Installer output"></pre>
+            <button id="download-log" class="quiet">Save full journal</button>
+            <p id="log-path"></p>
+          </details>
+        </section>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

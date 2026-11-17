@@ -83,9 +83,11 @@ install_dependencies() {
     done < "$BUNDLE/rpms/packages.tsv"
     [ "${#rpms[@]}" -gt 0 ] || return 1
     printf 'Installing Fedora VPN dependencies from local signed RPMs: %s\n' "${needed[*]}"
-    sudo /usr/bin/timeout -k 15s 6m /usr/bin/dnf5 --assumeyes --no-plugins --disable-repo='*' \
+    local confirmation=--assumeyes
+    if [ "${SERPANTINUM_MANAGED_VPN:-false}" = true ]; then confirmation=--setopt=assumeyes=False; fi
+    sudo /usr/bin/timeout -k 15s 6m /usr/bin/dnf5 "$confirmation" --no-plugins --disable-repo='*' \
         --setopt=localpkg_gpgcheck=True --setopt=install_weak_deps=False --setopt=allow_downgrade=False \
-        install "${rpms[@]}"
+        install "${rpms[@]}" || return 1
     rpm -q --quiet "${needed[@]}"
 }
 

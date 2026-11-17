@@ -5,16 +5,44 @@ PM_EXTRA_PKGS=(qt6-multimedia-ffmpeg polkit python-yaml iproute2 nftables)
 PM_AUDIO_BUILD_PKGS=(base-devel pkgconf pipewire)
 PM_PACMAN_SYNCED=false
 
+pm_pacman_ready() {
+    local updates status=0 db
+    db="$(pacman-conf DBPath)" || return 1
+    if [ -e "${db%/}/db.lck" ]; then
+        echo "Pacman is locked at ${db%/}/db.lck. Wait for the current transaction and retry." >&2
+        return 1
+    fi
+    if ! pacman -Sl >/dev/null; then
+        echo 'Repository databases are unavailable. To refresh them with a consistent package set, review a full system upgrade.' >&2
+        return 1
+    fi
+    updates="$(pacman -Qu)" || status=$?
+    if (( status > 1 )); then return "$status"; fi
+    if [ -n "$updates" ]; then
+        echo 'The current repository databases have pending system upgrades. Review a full pacman upgrade, or use a Live image with a matching package snapshot.' >&2
+        printf '%s\n' "$updates" >&2
+        return 1
+    fi
+}
+
 pm_pacman_install() {
     local operation="-Syu"
     [ "$PM_PACMAN_SYNCED" = false ] || operation="-S"
+    if [ "${MANAGED_INSTALL:-false}" = true ] || [ "${PM_ARCH_EXISTING_DB_ONLY:-false}" = true ]; then
+        pm_pacman_ready || return 1
+        operation=-S
+    fi
     printf 'Pacman repository packages: %s\n' "$*"
     if ! sudo pacman "$operation" --needed "$@"; then
         echo "Pacman transaction failed. Check the configured repositories, package conflicts and disk space, then run the installer again. No AUR package was requested." >&2
         return 1
     fi
     PM_PACMAN_SYNCED=true
-    pacman -Q "$@"
+    if [ "${MANAGED_INSTALL:-false}" = true ]; then
+        pacman -T "$@"
+    else
+        pacman -Q "$@"
+    fi
 }
 
 pm_bootstrap_install() {

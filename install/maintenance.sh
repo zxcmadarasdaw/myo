@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
-
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 source "$root/src/scripts/xdg_paths.sh"
 
@@ -43,8 +41,8 @@ lock_installation() {
 
 make_snapshot() {
     local snapshot key path
-    mkdir -p -- "$backup_home"
-    snapshot="$(mktemp -d -- "$backup_home/snapshot_XXXXXX")"
+    mkdir -p -- "$backup_home" || return 1
+    snapshot="$(mktemp -d -- "$backup_home/snapshot_XXXXXX")" || return 1
     for key in "${!snapshot_paths[@]}"; do
         path="${snapshot_paths[$key]}"
         exists "$path" || continue
@@ -54,7 +52,7 @@ make_snapshot() {
         fi
         cp -a -- "$path" "$snapshot/$key" || return 1
     done
-    printf 'serpantinum-snapshot-v1\n' > "$snapshot/.format"
+    printf 'serpantinum-snapshot-v1\n' > "$snapshot/.format" || return 1
     printf '%s\n' "$snapshot"
 }
 
@@ -111,6 +109,9 @@ archive_installation() {
     done
     echo "User settings and data are in their original locations."
 }
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
+set -euo pipefail
 
 if [ "$EUID" -eq 0 ]; then
     echo "Run maintenance as your desktop user." >&2

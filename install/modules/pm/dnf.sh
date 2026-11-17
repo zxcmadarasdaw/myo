@@ -95,6 +95,14 @@ pm_dnf_repo_opts() {
 pm_dnf() {
     local PM_DNF_OPTS
     pm_dnf_repo_opts
+    if [ "${MANAGED_INSTALL:-false}" = true ]; then
+        local arg args=()
+        for arg in "$@"; do
+            case "$arg" in -y|--assumeyes) ;; *) args+=("$arg");; esac
+        done
+        sudo dnf "${PM_DNF_OPTS[@]}" --setopt=assumeyes=False "${args[@]}"
+        return
+    fi
     sudo dnf "${PM_DNF_OPTS[@]}" "$@"
 }
 
@@ -175,7 +183,7 @@ pm_matugen_release_url() {
 pm_install_matugen() {
     pm_install_release_binary "$(pm_matugen_release_url)" matugen || return 1
     pm_matugen_ok || return 1
-    if rpm -q matugen &>/dev/null; then
+    if [ "${MANAGED_INSTALL:-false}" != true ] && rpm -q matugen &>/dev/null; then
         pm_dnf remove -y matugen || true
     fi
 }
@@ -225,17 +233,40 @@ pm_enable_copr() {
 pm_enable_terra() {
     rpm -q terra-release &>/dev/null && return 0
     echo -e "\e[36m[ INFO ]\e[0m $(t "installer.deps.enabling_terra")"
+    if [ "${MANAGED_INSTALL:-false}" = true ]; then
+        echo "MangoWC needs a configured and trusted Terra repository. Configure Terra with its signing keys before retrying." >&2
+        return 1
+    fi
     pm_dnf install -y --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release
 }
 
 pm_install_release_binary() {
     local url="$1" binary="$2"
     local bin_dir="$HOME/.local/bin"
-    local tmp found
+    local tmp found digest=""
     [ "$(uname -m)" = "x86_64" ] || return 1
+    if [ "${MANAGED_INSTALL:-false}" = true ]; then
+        local repo release asset
+        if [[ ! "$url" =~ ^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/releases/(download/([A-Za-z0-9_.-]+)|latest/download)/([A-Za-z0-9_.-]+)$ ]]; then
+            echo "Cannot match the upstream release asset for $binary." >&2
+            return 1
+        fi
+        repo="${BASH_REMATCH[1]}" release="${BASH_REMATCH[3]}" asset="${BASH_REMATCH[4]}"
+        local endpoint=latest
+        if [ -n "$release" ]; then endpoint="tags/$release"; fi
+        local metadata
+        metadata="$(curl -fsSL --connect-timeout 15 --max-time 60 "https://api.github.com/repos/$repo/releases/$endpoint")" || return 1
+        digest="$(jq -r --arg name "$asset" '.assets[] | select(.name == $name) | .digest // empty' <<< "$metadata")"
+        if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "No SHA-256 digest is published for $repo/$asset. Install a verified package and retry." >&2
+            return 1
+        fi
+    fi
     tmp="$(mktemp -d)"
     mkdir -p "$bin_dir"
-    if curl -fsSL --connect-timeout 15 --retry 3 "$url" -o "$tmp/pkg.tar.gz" && tar -xzf "$tmp/pkg.tar.gz" -C "$tmp"; then
+    if curl -fsSL --connect-timeout 15 --retry 3 "$url" -o "$tmp/pkg.tar.gz" &&
+        { [ -z "$digest" ] || printf '%s  %s\n' "${digest#sha256:}" "$tmp/pkg.tar.gz" | sha256sum -c --quiet -; } &&
+        tar -xzf "$tmp/pkg.tar.gz" -C "$tmp"; then
         found="$(find "$tmp" -type f -name "$binary" | head -n 1)"
         if [ -n "$found" ]; then
             install -m 0755 "$found" "$bin_dir/$binary"
@@ -264,6 +295,8 @@ pm_install_batch() {
             echo -e "\n\e[32m[ OK ] $(t "installer.deps.install_ok" "pkg=$pkg")\e[0m"
         done
         PM_BATCH_LEFT=("${rest[@]}")
+    elif [ "${MANAGED_INSTALL:-false}" = true ]; then
+        return 1
     fi
 }
 
@@ -287,7 +320,13 @@ pm_install_pkg() {
     local PM_USE_TERRA=false
     [ -n "${PM_TERRA_MAP[$pkg]:-}" ] && PM_USE_TERRA=true
 
-    if [ -z "$(pm_dnf_query repoquery --available --quiet "$target" 2>/dev/null | head -n 1)" ]; then
+    local available
+    if [ "${MANAGED_INSTALL:-false}" = true ]; then
+        available="$(pm_dnf_query --setopt=assumeno=True repoquery --available --quiet "$target")" || return 1
+    else
+        available="$(pm_dnf_query repoquery --available --quiet "$target" 2>/dev/null | head -n 1)"
+    fi
+    if [ -z "$available" ]; then
         if [ -n "${PM_TERRA_MAP[$pkg]:-}" ]; then
             if ! pm_enable_terra; then
                 echo -e "\e[31m[ ERROR ]\e[0m Terra repository could not be enabled; $pkg is unavailable (network error or repository down). Other compositors are unaffected." >&2

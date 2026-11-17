@@ -370,6 +370,10 @@ create_config_backup_dir() {
 }
 
 confirm_config_replacement() {
+    if [ "${MANAGED_INSTALL:-false}" = true ]; then
+        [ "$OPT_REPLACE_CONFIG" = true ]
+        return
+    fi
     local answer
     printf 'Back up and replace matching configuration files in %s? [y/N] ' "$1" >&2
     if [ -t 0 ]; then
@@ -382,6 +386,13 @@ confirm_config_replacement() {
     [[ "$answer" =~ ^[Yy]$ ]]
 }
 
+replace_config_file() (
+    local source="$1" destination="$2" staged
+    staged="$(mktemp -- "${destination}.new.XXXXXX")" || return 1
+    trap 'rm -f -- "$staged"' EXIT
+    cp -p -- "$source" "$staged" && mv -T -- "$staged" "$destination"
+)
+
 install_config_tree() {
     local source="$1" target="$2" entry destination backup
     local changed=false replaces=false
@@ -393,12 +404,19 @@ install_config_tree() {
     fi
     while IFS= read -r -d '' entry; do
         destination="$target/${entry#"$source/"}"
-        if [ -L "$destination" ]; then
-            echo "Cannot deploy over linked config $destination. The link was kept." >&2
+        if [ -L "$destination" ] || [ -L "$entry" ]; then
+            echo "Cannot deploy linked config $destination." >&2
             return 1
         fi
         if [ -d "$entry" ]; then
+            if [ -e "$destination" ] && [ ! -d "$destination" ]; then
+                echo "Cannot replace a file with a config directory at $destination." >&2
+                return 1
+            fi
             [ -d "$destination" ] || changed=true
+        elif [ -e "$destination" ] && [ ! -f "$destination" ]; then
+            echo "Cannot deploy a config file over $destination." >&2
+            return 1
         elif ! cmp -s -- "$entry" "$destination"; then
             changed=true
             if [ -e "$destination" ]; then replaces=true; fi
@@ -411,14 +429,24 @@ install_config_tree() {
             printf 'Keeping %s. For a custom compositor configuration, add serpantinumd start to its autostart.\n' "$target"
             return 0
         fi
-        backup="$(create_config_backup_dir "${target}_backup" backup)" || return 1
-        if ! cp -a -- "$target/." "$backup/"; then
-            echo "Backup failed for $target. Its contents were kept." >&2
-            return 1
+        if [ "$replaces" = true ] || [ "${MANAGED_INSTALL:-false}" != true ]; then
+            backup="$(create_config_backup_dir "${target}_backup" backup)" || return 1
+            if ! cp -a -- "$target/." "$backup/"; then
+                echo "Backup failed for $target. Its contents were kept." >&2
+                return 1
+            fi
+            printf 'Backup of %s: %s\n' "$target" "$backup"
         fi
-        printf 'Backup of %s: %s\n' "$target" "$backup"
     fi
-    mkdir -p -- "$target" && cp -r --remove-destination -- "$source/." "$target/"
+    mkdir -p -- "$target" || return 1
+    while IFS= read -r -d '' entry; do
+        destination="$target/${entry#"$source/"}"
+        if [ -d "$entry" ]; then
+            mkdir -p -- "$destination" || return 1
+        elif ! cmp -s -- "$entry" "$destination"; then
+            replace_config_file "$entry" "$destination" || return 1
+        fi
+    done < <(find "$source" -mindepth 1 -print0)
 }
 
 # Updates never overwrite compositor configs wholesale. A file the user has not edited
@@ -446,11 +474,11 @@ update_untouched_compositor_file() {
         if [ -L "$dest" ]; then
             echo -e "\e[33m[ NOTE ]\e[0m ~/.config/$target/$comp_file is a symlink and was kept; the new version is $repo/$file"
         elif [ ! -e "$dest" ]; then
-            mkdir -p "$(dirname "$dest")" && cp "$repo/$file" "$dest" || return 1
+            mkdir -p "$(dirname "$dest")" && replace_config_file "$repo/$file" "$dest" || return 1
         elif [ -n "$old_commit" ] && git -C "$repo" show "$old_commit:$file" 2>/dev/null | cmp -s - "$dest"; then
             backup="$(create_config_backup_dir "$config_home/${target}_backup" update)" || return 1
             backup="$backup/$comp_file"
-            if mkdir -p "$(dirname "$backup")" && cp -a "$dest" "$backup" && cp "$repo/$file" "$dest"; then
+            if mkdir -p "$(dirname "$backup")" && cp -a "$dest" "$backup" && replace_config_file "$repo/$file" "$dest"; then
                 echo -e "\e[32m[ OK ]\e[0m Updated ~/.config/$target/$comp_file (backup: $backup)"
             else
                 echo "Could not back up or update $dest." >&2
@@ -462,7 +490,7 @@ update_untouched_compositor_file() {
     done
 }
 
-sync_program_dir() {
+sync_program_dir() (
     local src="$1" dst="$2" work
     [ -d "$src" ] || return 0
     if [ -L "$dst" ]; then
@@ -470,26 +498,25 @@ sync_program_dir() {
         return 1
     fi
     work="$(mktemp -d -- "$dst.swap.XXXXXX")" || return 1
-    if ! mkdir "$work/new" || ! cp -r -- "$src/." "$work/new/"; then
+    trap 'exit 130' INT
+    trap 'exit 143' HUP TERM
+    trap '
+        if [ -e "$work/previous" ] && [ ! -e "$dst" ]; then
+            mv -T -- "$work/previous" "$dst" || {
+                echo "Previous program files are at $work/previous." >&2
+                exit 1
+            }
+        fi
         rm -rf -- "$work"
+    ' EXIT
+    if ! mkdir "$work/new" || ! cp -r -- "$src/." "$work/new/"; then
         echo -e "\e[31m[ ERROR ]\e[0m Failed to copy $src to $dst" >&2
         return 1
     fi
     find "$work/new" -type d -name "__pycache__" -prune -exec rm -rf {} + 2>/dev/null || true
-    if [ -e "$dst" ] && ! mv -T -- "$dst" "$work/previous"; then
-        rm -rf -- "$work"
-        return 1
-    fi
-    if ! mv -T -- "$work/new" "$dst"; then
-        if [ -e "$work/previous" ] && ! mv -T -- "$work/previous" "$dst"; then
-            echo "Previous program files are at $work/previous." >&2
-            return 1
-        fi
-        rm -rf -- "$work"
-        return 1
-    fi
-    rm -rf -- "$work"
-}
+    if [ -e "$dst" ]; then mv -T -- "$dst" "$work/previous" || return 1; fi
+    mv -T -- "$work/new" "$dst"
+)
 
 install_launcher_link() {
     local source="$1" link="$2"
@@ -503,7 +530,13 @@ install_launcher_link() {
         ln -s -- "$source" "$link" || return 1
     fi
     if [ ! -e "$global" ] && [ ! -L "$global" ]; then
-        sudo ln -s -- "$source" "$global" || echo "Launcher installed in $link."
+        if [ "${MANAGED_INSTALL:-false}" = true ]; then
+            if [ "${OPT_GLOBAL_LAUNCHERS:-false}" = true ]; then
+                sudo ln -sT -- "$source" "$global" || return 1
+            fi
+        else
+            sudo ln -s -- "$source" "$global" || echo "Launcher installed in $link."
+        fi
     fi
 }
 
@@ -527,7 +560,9 @@ deploy_package() {
     local config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
     mkdir -p "$TARGET_BASE" "$BIN_DIR"
 
-    if [ "$is_update" = true ]; then
+    if [ "${MANAGED_INSTALL:-false}" = true ] && [ "$OPT_CONFIG" != true ]; then
+        echo "Keeping compositor and Kitty configuration."
+    elif [ "$is_update" = true ]; then
         # Refresh stock Hyprland files and leave locally modified ones in place.
         for cfg in config/settings.lua config/keybinds.lua config/canvas.lua config/autostart.lua config/env.lua hyprland.lua; do
             update_untouched_compositor_file "$REPO_ROOT" "$OLD_COMMIT" \
@@ -547,15 +582,18 @@ deploy_package() {
 
     # Mirror installed program directories, including local source changes.
     # User data and the cached VPN bundle live outside these directories.
-    sync_program_dir "$REPO_ROOT/bin" "$TARGET_BASE/bin" || return 1
-    sync_program_dir "$REPO_ROOT/src" "$TARGET_BASE/src" || return 1
-    sync_program_dir "$REPO_ROOT/themess" "$TARGET_BASE/themess" || return 1
+    for cfg in bin src themess; do
+        if [ "${MANAGED_INSTALL:-false}" = true ] &&
+            diff -rq -x __pycache__ -x version.txt -- "$REPO_ROOT/$cfg" "$TARGET_BASE/$cfg" >/dev/null 2>&1; then
+            continue
+        fi
+        sync_program_dir "$REPO_ROOT/$cfg" "$TARGET_BASE/$cfg" || return 1
+    done
     chmod +x "$TARGET_BASE/bin/"* 2>/dev/null || true
     find "$TARGET_BASE/src" -type f \( -name "*.sh" -o -name "*.py" \) -exec chmod +x {} + 2>/dev/null || true
 
     if [ -f "$REPO_ROOT/version.txt" ]; then
-        rm -f "$TARGET_BASE/src/version.txt"
-        cp "$REPO_ROOT/version.txt" "$TARGET_BASE/src/version.txt"
+        replace_config_file "$REPO_ROOT/version.txt" "$TARGET_BASE/src/version.txt" || return 1
     fi
 
     if [ -f "$TARGET_BASE/bin/serpantinum" ]; then
@@ -566,7 +604,10 @@ deploy_package() {
         install_launcher_link "$TARGET_BASE/bin/serpantinumd" "$BIN_DIR/serpantinumd" || return 1
     fi
 
-    remove_settings_desktop_entry
-
-    setup_pam_service
+    if [ "${MANAGED_INSTALL:-false}" != true ] || [ "$OPT_CONFIG" = true ]; then
+        remove_settings_desktop_entry
+    fi
+    if [ "${MANAGED_INSTALL:-false}" != true ] || [ "$OPT_SERVICES" = true ]; then
+        setup_pam_service
+    fi
 }

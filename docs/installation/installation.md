@@ -36,14 +36,16 @@ Use a checkout of the version you want to install. From the repository root, as 
 ```bash
 bash install/maintenance.sh check
 bash install/maintenance.sh backup
-bash install/install.sh
+bash install.sh
 ```
 
-Select **Hyprland** in the installer. CachyOS and Arch use pacman and the configured binary repositories. When needed, the installer refreshes repositories as part of a full pacman upgrade. Fedora 45 uses DNF and retains its Fedora-specific packages and repositories. The supported Hyprland Lua baseline is 0.55.0 and the Quickshell baseline is 0.3.0. [Compatibility and Linux verification](../cachyos-port/TESTS.md)
+The installer opens in your desktop browser and works before Quickshell is installed. On a minimal system it offers to install Python 3 in the terminal first. Use `bash install.sh --tui` from a terminal or `bash install.sh --check` for the inventory. Select **Hyprland**, review the plan, and approve the listed changes. Package manager questions appear in the installer's journal.
+
+CachyOS and Arch use pacman and the configured binary repositories. You can explicitly select a full system upgrade on an installed system if the existing package databases need to be refreshed. Fedora 45 uses DNF and its Fedora-specific packages and repositories. The supported Hyprland Lua baseline is 0.55.0 and the Quickshell baseline is 0.3.0. [Installer checks](../installer/TESTS.md)
 
 If you already log into KDE through SDDM or another display manager, keep the optional SDDM step off. Select the Hyprland session in your existing login screen after the installer reports success. Switch back to KDE from the same session picker. Close your session before switching compositor. Existing custom SDDM files in `/etc/sddm.conf` continue to take precedence over drop-ins.
 
-To update, update your checkout and rerun `bash install/install.sh`. Choose **Update** when offered. After a failed run, consult the `install.*.log` path printed by the installer and rerun the same command. For VPN components alone, use `bash install/install.sh --vpn-only` in an active local session.
+To update, update your checkout, rerun `bash install.sh`, and choose **Update**. Use **Verify** to inspect the existing installation, **Repair** to restore files, or **Install Missing** to fill in missing parts. After a failure, open the journal and use **Retry failed step** after resolving the cause. For VPN components alone, use `bash install.sh --vpn-only` in an active local session. The original terminal installer is available with `--legacy-tui`. Void uses that flow.
 
 ### Back up, restore or remove the shell installation
 
