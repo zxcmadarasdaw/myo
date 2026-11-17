@@ -14,6 +14,8 @@ Item {
     property string hostname: ""
     property string avatarPath: ""
     property string osName: ""
+    property string osId: ""
+    property string osLike: ""
     property string kernelVersion: ""
     property string uptime: ""
     property int uptimeSeconds: 0
@@ -30,6 +32,14 @@ Item {
 
     property bool isDesktop: true
     property bool hasBatSupply: true
+
+    function packageInstallHint(name) {
+        if (osId === "arch" || osId === "cachyos" || osLike.split(/\s+/).includes("arch"))
+            return "sudo pacman -Syu --needed " + name;
+        if (osId === "fedora")
+            return "sudo dnf install " + name;
+        return name;
+    }
 
     Connections {
         target: Config
@@ -97,16 +107,14 @@ Item {
         onLoaded: {
             let txt = text();
             if (!txt) return;
-            let lines = txt.split("\n");
-            for (let i = 0; i < lines.length; i++) {
-                let line = lines[i];
-                if (line.startsWith("PRETTY_NAME=")) {
-                    root.osName = line.split("=")[1].replace(/"/g, "").trim();
-                    break;
-                } else if (line.startsWith("NAME=") && !root.osName) {
-                    root.osName = line.split("=")[1].replace(/"/g, "").trim();
-                }
+            const os = {};
+            for (const line of txt.split("\n")) {
+                const field = line.match(/^(ID|ID_LIKE|PRETTY_NAME|NAME)=(.*)$/);
+                if (field) os[field[1]] = field[2].trim().replace(/^["']|["']$/g, "");
             }
+            root.osName = os.PRETTY_NAME || os.NAME || "";
+            root.osId = os.ID || "";
+            root.osLike = os.ID_LIKE || "";
         }
     }
 

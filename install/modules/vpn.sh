@@ -96,16 +96,20 @@ vpn_verify_unit_permission() {
     }
 }
 
-vpn_prepare_fedora() {
+vpn_prepare_linux() {
     local bundle machine unit_state
+    local engine_check=(system-engine-check)
     machine="$(uname -m)" || return 1
     case "$machine" in
         x86_64|aarch64) ;;
-        *) echo "VPN installation on Fedora does not support architecture $machine" >&2; return 1 ;;
+        *) echo "VPN installation does not support architecture $machine" >&2; return 1 ;;
     esac
-    echo "Preparing VPN for Fedora ${VERSION_ID:-unknown} / $machine"
-    if grep -Eq '(^| )(rd\.live\.image|root=live:)' /proc/cmdline || [ -d /run/initramfs/live ]; then
-        echo "Fedora Live detected. With a nonpersistent overlay, repeat setup after reboot."
+    echo "Preparing VPN for $DISTRO_ID ${DISTRO_VERSION:-rolling} / $machine"
+    if [ "$DISTRO_ID" = fedora ]; then
+        engine_check+=(--bundled)
+        if grep -Eq '(^| )(rd\.live\.image|root=live:)' /proc/cmdline || [ -d /run/initramfs/live ]; then
+            echo "Fedora Live detected. With a nonpersistent overlay, repeat setup after reboot."
+        fi
     fi
     if ! bundle="$(vpn_source_bundle)"; then
         echo "Offline VPN bundle missing. Restore vpn-bundle/ from the matching Serpantinum checkout."
@@ -116,7 +120,7 @@ vpn_prepare_fedora() {
     case "$unit_state" in
         active)
             echo "Serpantinum TUN is active. Checking the current system engine without restarting it."
-            timeout 5s python3 "$PROJECT_ROOT/src/scripts/system/serp_vpn.py" system-engine-check --bundled || {
+            timeout 5s python3 "$PROJECT_ROOT/src/scripts/system/serp_vpn.py" "${engine_check[@]}" || {
                 echo "Disconnect TUN before repairing the system engine."
                 return 1
             }
@@ -130,7 +134,7 @@ vpn_prepare_fedora() {
                 sudo timeout 10s modprobe tun || echo "Could not load the TUN kernel module."
             fi
             if [ ! -c /dev/net/tun ]; then
-                echo "TUN is unavailable: Fedora needs the /dev/net/tun character device."
+                echo "TUN is unavailable: /dev/net/tun must be a character device."
             fi
             install_vpn_service || return 1
             install_vpn_bundle "$bundle" --system --yaml || return 1
@@ -141,6 +145,8 @@ vpn_prepare_fedora() {
 
 check_vpn_components() {
     local bundle status=0
+    local engine_check=(system-engine-check)
+    if [ "$DISTRO_ID" = fedora ]; then engine_check+=(--bundled); fi
     if bundle="$(vpn_source_bundle)"; then
         install_vpn_bundle "$bundle" --verify-bundle || status=$?
     else
@@ -148,7 +154,7 @@ check_vpn_components() {
         status=1
     fi
     if [ "$status" -eq 0 ]; then
-        timeout 5s python3 "$PROJECT_ROOT/src/scripts/system/serp_vpn.py" system-engine-check --bundled || status=$?
+        timeout 5s python3 "$PROJECT_ROOT/src/scripts/system/serp_vpn.py" "${engine_check[@]}" || status=$?
     fi
     timeout 65s python3 "$PROJECT_ROOT/src/scripts/system/serp_vpn.py" verify-install \
         "--prepare-status=$status"
@@ -156,9 +162,8 @@ check_vpn_components() {
 
 install_vpn_components() (
     set -o pipefail
-    local ID= VERSION_ID= bundle prep_status=0 check_status=0
-    . /etc/os-release
-    if [ "$ID" != "fedora" ]; then
+    local bundle prep_status=0 check_status=0
+    if [[ "$DISTRO_ID" != fedora && "$PM_NAME" != pacman ]]; then
         # Keep the pre-existing service and optional local bundle on other distros.
         # The payload shipped in a Git checkout is for Fedora.
         install_vpn_service || true
@@ -171,13 +176,21 @@ install_vpn_components() (
         fi
         return 0
     fi
+    if [ "$PM_NAME" = pacman ]; then
+        local missing missing_packages=()
+        missing="$(pm_missing_pkgs polkit python-yaml iproute2 nftables)" || return 1
+        if [ -n "$missing" ]; then
+            mapfile -t missing_packages <<< "$missing"
+            pm_install_batch "${missing_packages[@]}" || return 1
+        fi
+    fi
 
     local state="${SERP_VPN_STATE_DIR:-${QS_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/serpantinum}/vpn}"
     umask 077
     mkdir -p "$state" || return 1
     echo "VPN setup log: $state/components-install.log"
     trap 'echo "VPN setup cancelled. Retry with bash install/install.sh --vpn-only." | tee -a "$state/components-install.log" >&2; exit 130' INT TERM
-    vpn_prepare_fedora 2>&1 | tee -a "$state/components-install.log" || prep_status=$?
+    vpn_prepare_linux 2>&1 | tee -a "$state/components-install.log" || prep_status=$?
     timeout 65s python3 "$PROJECT_ROOT/src/scripts/system/serp_vpn.py" verify-install \
         "--prepare-status=$prep_status" 2>&1 | tee -a "$state/components-install.log" || check_status=$?
     if [ "$prep_status" -ne 0 ] || [ "$check_status" -ne 0 ]; then

@@ -248,8 +248,8 @@ MESSAGES = {
                  "JSON в подписке повреждён: {detail}"),
     "bad_yaml": ("The Clash YAML in the subscription is damaged: {detail}",
                  "Clash YAML в подписке повреждён: {detail}"),
-    "need_yaml": ("This Clash subscription needs python3-pyyaml. Run " + INSTALL_HINT,
-                  "Для этой подписки Clash нужен python3-pyyaml. Запустите " + INSTALL_HINT),
+    "need_yaml": ("This Clash subscription needs PyYAML. Run " + INSTALL_HINT,
+                  "Для этой подписки Clash нужен PyYAML. Запустите " + INSTALL_HINT),
     "happ_encrypted": ("happ:// links are encrypted by the Happ app. Paste the original https:// subscription link instead.",
                        "Ссылки happ:// зашифрованы приложением Happ. Вставьте исходную https://-ссылку подписки."),
     "no_source": ("No subscription yet. Paste a link.", "Нет подписки. Вставьте ссылку."),
@@ -278,8 +278,8 @@ MESSAGES = {
                          "Не удалось применить системную конфигурацию VPN: {detail}"),
     "no_singbox_root": ("TUN mode needs sing-box in /usr/bin or /usr/local/bin. Install it: " + INSTALL_HINT,
                         "Для режима TUN нужен sing-box в /usr/bin или /usr/local/bin. Установите: " + INSTALL_HINT),
-    "old_singbox": ("TUN mode needs sing-box {detail} or newer. Update sing-box: sudo dnf upgrade sing-box",
-                    "Для режима TUN нужен sing-box {detail} или новее. Обновите: sudo dnf upgrade sing-box"),
+    "old_singbox": ("TUN mode needs sing-box {detail} or newer. Run " + INSTALL_HINT,
+                    "Для режима TUN нужен sing-box {detail} или новее. Запустите " + INSTALL_HINT),
     "service_failed": ("The serpantinum-vpn service did not start: {detail}",
                        "Служба serpantinum-vpn не запустилась: {detail}"),
     "stop_timeout": ("The serpantinum-vpn service does not stop. Use Force off (serpantinum vpn force-off).",
@@ -312,8 +312,8 @@ MESSAGES = {
     # sing-box download / choice (serp_vpn_singbox.py)
     "sb_offline": ("No internet connection: github.com could not be resolved. The VPN panel keeps working; try again later or choose an installed sing-box.",
                    "Нет подключения к интернету: адрес github.com не определяется. Панель VPN продолжает работать; повторите позже или выберите установленный sing-box."),
-    "sb_timeout": ("GitHub stopped answering (no data for 30 s, four attempts). Press Retry, or install sing-box with dnf.",
-                   "GitHub перестал отвечать (30 с без данных, четыре попытки). Нажмите «Повторить» или установите sing-box через dnf."),
+    "sb_timeout": ("GitHub stopped answering (no data for 30 s, four attempts). Retry or use the local bundle.",
+                   "GitHub перестал отвечать (30 с без данных, четыре попытки). Повторите или используйте локальный комплект."),
     "sb_tls": ("The secure connection to GitHub failed ({detail}). Check the system date and time.",
                "Не удалось установить защищённое соединение с GitHub ({detail}). Проверьте системные дату и время."),
     "sb_unreachable": ("GitHub could not be reached: {detail}", "Не удалось связаться с GitHub: {detail}"),
@@ -342,10 +342,10 @@ MESSAGES = {
                        "Для установки sing-box в режиме TUN нужны права администратора."),
     "sb_bundle_timeout": ("The local system installation timed out after 90 seconds.",
                           "Локальная системная установка превысила лимит 90 секунд."),
-    "sb_bundle_deps": ("Missing Fedora packages: {detail}. Run install-vpn-bundle.sh --system from the offline kit.",
-                       "Не хватает пакетов Fedora: {detail}. Запустите install-vpn-bundle.sh --system из офлайн-комплекта."),
-    "sb_bundle_yaml": ("Clash YAML requires python3-pyyaml. Run install-vpn-bundle.sh --yaml from the offline kit.",
-                       "Для Clash YAML нужен python3-pyyaml. Запустите install-vpn-bundle.sh --yaml из офлайн-комплекта."),
+    "sb_bundle_deps": ("Missing VPN packages: {detail}. Run " + INSTALL_HINT,
+                       "Не хватает пакетов VPN: {detail}. Запустите " + INSTALL_HINT),
+    "sb_bundle_yaml": ("Clash YAML requires PyYAML. Run " + INSTALL_HINT,
+                       "Для Clash YAML нужен PyYAML. Запустите " + INSTALL_HINT),
     "sb_system_offline": ("System engine installation here requires an offline bundle.",
                            "Для системной установки движка здесь нужен офлайн-комплект."),
     "setup_offline_profile": ("Offline setup requires a local profile or server links.",
@@ -361,16 +361,16 @@ MESSAGES = {
                      "На GitHub нет контрольной суммы SHA-256 для {detail}."),
     "setup_file": ("Could not read this VPN configuration file: {detail}.",
                    "Не удалось прочитать файл конфигурации VPN: {detail}."),
-    "setup_packages": ("Fedora could not install the VPN components: {detail}",
-                       "Fedora не смогла установить компоненты VPN: {detail}"),
-    "setup_admin": ("System packages require the Serpantinum package helper, DNF5 and a polkit session.",
-                    "Для системных пакетов нужны помощник установки Serpantinum, DNF5 и сеанс polkit."),
+    "setup_packages": ("The VPN package installation failed: {detail}",
+                        "Не удалось установить пакеты VPN: {detail}"),
+    "setup_admin": ("System setup requires the Serpantinum helper and polkit. Run " + INSTALL_HINT,
+                    "Для системной настройки нужны помощник Serpantinum и polkit. Запустите " + INSTALL_HINT),
     "setup_auth": ("System package authorization was denied or no graphical polkit agent is running.",
                    "Авторизация установки отклонена или графический агент polkit не запущен."),
     "setup_auth_timeout": ("No answer to the administrator password request in {detail} s. Is a polkit agent running (for example lxqt-policykit)? Nothing was installed.",
                            "Нет ответа на запрос пароля администратора за {detail} с. Запущен ли агент polkit (например, lxqt-policykit)? Ничего не установлено."),
-    "setup_packages_timeout": ("DNF5 did not finish in {detail} min and was stopped. Check the network, or use the offline VPN bundle.",
-                               "DNF5 не завершился за {detail} мин и был остановлен. Проверьте сеть или используйте офлайн-комплект VPN."),
+    "setup_packages_timeout": ("System VPN setup did not finish in {detail} min and was stopped. Run " + INSTALL_HINT,
+                               "Системная настройка VPN не завершилась за {detail} мин. Запустите " + INSTALL_HINT),
     "sb_slow": ("The download is too slow ({detail} in 15 min) and was stopped. Use the offline VPN bundle, or try again later.",
                 "Загрузка слишком медленная ({detail} за 15 мин) и остановлена. Используйте офлайн-комплект VPN или повторите позже."),
     "setup_tun": ("The TUN device (/dev/net/tun) is unavailable.", "Устройство TUN (/dev/net/tun) недоступно."),
@@ -2398,6 +2398,16 @@ TUN_DEVICE = "/dev/net/tun"
 TUN_TOOLS = {"iproute": ("/usr/sbin/ip", "/usr/bin/ip"), "nftables": ("/usr/sbin/nft", "/usr/bin/nft")}
 
 
+def arch_vpn_platform():
+    from platform import freedesktop_os_release
+
+    try:
+        release = freedesktop_os_release()
+    except OSError:
+        return False
+    return release.get("ID") in ("arch", "cachyos") or "arch" in release.get("ID_LIKE", "").split()
+
+
 def system_singbox():
     # Same precedence as the root helper.
     return next((p for p in SYSTEM_SINGBOX if _executable(p)), "")
@@ -2424,7 +2434,8 @@ def setup_status(settings, binary, running=False):
                                (not tun or version_supports_tun(checked["version"])))
     exists = bool(path) or any(os.path.lexists(p) for p in (SYSTEM_SINGBOX if tun else
                                                            (managed_singbox(), settings["singboxPath"])))
-    can_install = (_executable(PACKAGE_HELPER) and _executable("/usr/bin/dnf5") and
+    arch_packages = arch_vpn_platform()
+    can_install = (not arch_packages and _executable(PACKAGE_HELPER) and _executable("/usr/bin/dnf5") and
                    bool(_tool("SERP_VPN_PKEXEC", "pkexec")))
     deps = []
     error = ""
@@ -2436,6 +2447,8 @@ def setup_status(settings, binary, running=False):
         elif not tun_device_ready():
             error = msg("setup_tun")
         deps = [pkg for pkg, paths in TUN_TOOLS.items() if not any(_executable(p) for p in paths)]
+        if arch_packages:
+            deps = ["iproute2" if pkg == "iproute" else pkg for pkg in deps]
     return {"state": "blocked" if error else "ready" if binary_ready and not deps else
             "repair" if exists and not binary_ready else "missing",
             "error": error, "path": path, "binaryReady": binary_ready, "systemInstall": can_install,
@@ -2465,7 +2478,7 @@ def verify_installed_components(prepare_status):
         if health["state"] != "ready":
             errors.append(f"{mode.upper()}: {component_problem(health, mode)}")
     if not proxy["yaml"]:
-        errors.append("Missing python3-pyyaml for Clash profiles")
+        errors.append("Missing PyYAML for Clash profiles")
 
     fake_server = {"tag": "local-check", "protocol": "socks", "address": "127.0.0.1", "port": 1080}
     cfg = build_config([fake_server], settings)
@@ -2591,6 +2604,9 @@ def helper_result(out):
 
 
 def install_fedora_packages(packages, emit):
+    if arch_vpn_platform():
+        packages = [{"iproute": "iproute2", "python3-pyyaml": "python-yaml"}.get(pkg, pkg) for pkg in packages]
+        raise VpnError("setup_components", ", ".join(packages))
     pkexec = _tool("SERP_VPN_PKEXEC", "pkexec")
     if not pkexec or not _executable(PACKAGE_HELPER) or not _executable("/usr/bin/dnf5"):
         raise VpnError("setup_admin")

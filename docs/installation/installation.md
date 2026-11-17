@@ -8,7 +8,7 @@ slug: /installation
 # Installation
 
 :::warning[IMPORTANT]
-**Migrating from v1:** All previous configuration will be backed up and unused. Configuration of compositor settings such as monitors, keybinds, and autostart is now up to you, as the project migrated from being dotfiles to being a shell.
+**Migrating from v1:** Back up your settings first. When the installer replaces shipped compositor files, it saves a copy of the existing config tree. Review the resulting monitor, keybind, and autostart settings before entering the new session.
 :::
 
 Serpantinum installs through an automated script on Arch Linux, Fedora, Void Linux, and their derivatives. The script detects your distribution and uses the matching package manager (`pacman`, `dnf`, or `xbps`). On NixOS, use the [flake and modules](/installation/nixos) instead.
@@ -29,9 +29,33 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/ilyamiro/serpantinum/mas
 To update, run the installer script again and choose **Update**.
 :::
 
-## Fedora
+## CachyOS, Arch Linux and Fedora 45
 
-Fedora and its derivatives, such as **Nobara** and **Ultramarine**, are installed with `dnf`. Fedora does not package `gpu-screen-recorder`, so screen recording is unavailable there. SDDM is set up with its Wayland greeter, since Fedora ships no Xorg server.
+Use a checkout of the version you want to install. From the repository root, as your desktop user:
+
+```bash
+bash install/maintenance.sh check
+bash install/maintenance.sh backup
+bash install/install.sh
+```
+
+Select **Hyprland** in the installer. CachyOS and Arch use pacman and the configured binary repositories. When needed, the installer refreshes repositories as part of a full pacman upgrade. Fedora 45 uses DNF and retains its Fedora-specific packages and repositories. The supported Hyprland Lua baseline is 0.55.0 and the Quickshell baseline is 0.3.0. [Compatibility and Linux verification](../cachyos-port/TESTS.md)
+
+If you already log into KDE through SDDM or another display manager, keep the optional SDDM step off. Select the Hyprland session in your existing login screen after the installer reports success. Switch back to KDE from the same session picker. Close your session before switching compositor. Existing custom SDDM files in `/etc/sddm.conf` continue to take precedence over drop-ins.
+
+To update, update your checkout and rerun `bash install/install.sh`. Choose **Update** when offered. After a failed run, consult the `install.*.log` path printed by the installer and rerun the same command. For VPN components alone, use `bash install/install.sh --vpn-only` in an active local session.
+
+### Back up, restore or remove the shell installation
+
+Disconnect Serpantinum VPN and stop the shell before restoring or archiving. A snapshot contains configuration and state, including secrets if you have configured them. Keep it private. Wallpaper files stored outside these directories need their own backup.
+
+```bash
+bash install/maintenance.sh backup
+bash install/maintenance.sh restore /absolute/path/to/snapshot_directory
+bash install/maintenance.sh uninstall
+```
+
+Restore saves a snapshot of the current settings before replacing the paths present in the selected snapshot. Uninstall moves the user-installed program directories into the printed archive directory and removes matching launch links in `~/.local/bin`. User settings, themes, wallpaper files, dependencies, system services and login managers remain in place. Restore the compositor snapshot if you want your previous login setup. For the separately packaged Arch build, keep using pacman to update or remove that package.
 
 ## Void Linux
 

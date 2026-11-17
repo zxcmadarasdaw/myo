@@ -1,50 +1,5 @@
 #!/usr/bin/env bash
 
-SUPPORTED_DISTROS=(
-    "arch"
-    "endeavouros"
-    "manjaro"
-    "cachyos"
-    "garuda"
-    "arcolinux"
-    "archcraft"
-    "artix"
-    "blackarch"
-    "rebornos"
-    "mabox"
-    "blendos"
-    "parch"
-    "parchlinux"
-    "biglinux"
-    "archlabs"
-    "archman"
-    "alci"
-    "bluestar"
-    "archbang"
-    "archex"
-    "archstrike"
-    "athena"
-    "athenaos"
-    "chimeraos"
-    "ctlos"
-    "crystal"
-    "hefftorlinux"
-    "instantos"
-    "nyarch"
-    "obarun"
-    "hyperbola"
-    "parabola"
-    "salientos"
-    "snal"
-    "steamos"
-    "holo"
-    "stormos"
-    "tearch"
-    "xerolinux"
-    "axyl"
-    "omarchy"
-)
-
 REQUIRED_PKGS=(
     "kitty" "zbar" "tesseract" "tesseract-data-eng"
     "wl-clipboard" "qt6-multimedia" "qt6-imageformats"
@@ -64,50 +19,25 @@ suppress_tty_sleep() {
     printf '\033[9;0]' 2>/dev/null || true
 }
 
-check_supported_os() {
-    if [ "$EUID" -eq 0 ]; then
-        echo "$(t "installer.os.error_root")" >&2
-        exit 1
-    fi
-
-    if [ -f /etc/os-release ]; then
-        local DETECTED_OS
-        DETECTED_OS=$(awk -F= '/^ID=/{gsub(/"/, "", $2); print $2}' /etc/os-release)
-
-        for os in "${SUPPORTED_DISTROS[@]}"; do
-            if [ "$DETECTED_OS" = "$os" ]; then
-                return 0
-            fi
-        done
-
-        if declare -f pm_supports_os >/dev/null && pm_supports_os; then
-            return 0
-        fi
-
-        echo "$(t "installer.os.error_unsupported" "os=$DETECTED_OS")"
-        exit 1
-    else
-        echo "$(t "installer.os.error_not_found")"
-        exit 1
-    fi
-}
-
 bootstrap_installer_deps() {
     suppress_tty_sleep
-    pm_prepare_repos
+    if declare -f pm_prepare_repos >/dev/null; then pm_prepare_repos; fi
 
-    local missing=()
-    for tool in "${PM_BOOTSTRAP_TOOLS[@]}"; do
+    local missing=() pkg tool
+    for pkg in "${PM_BOOTSTRAP_TOOLS[@]}"; do
+        case "$pkg" in
+            pciutils) tool=lspci ;;
+            fontconfig) tool=fc-cache ;;
+            *) tool="$pkg" ;;
+        esac
         if ! command -v "$tool" &>/dev/null; then
-            missing+=("$tool")
+            missing+=("$pkg")
         fi
     done
 
     if [ ${#missing[@]} -gt 0 ]; then
-        pm_bootstrap_install "${missing[@]}"
+        pm_bootstrap_install "${missing[@]}" || return 1
     fi
-
-    pm_bootstrap_helper
 }
 
 install_fonts() {
@@ -121,18 +51,12 @@ install_fonts() {
                 echo -e "\e[36m[ INFO ]\e[0m Unpacking fonts..."
                 unzip -qo "$font_cache/Iosevka.zip" -d "$font_cache/" 2>/dev/null || true
                 mv "$font_cache"/*.ttf "$target_fonts_dir/" 2>/dev/null || true
-                rm -f "$target_fonts_dir/"*Mono*.ttf 2>/dev/null || true
-                sudo mkdir -p /usr/share/fonts/IosevkaNerdFont
-                sudo cp -r "$target_fonts_dir/"* /usr/share/fonts/IosevkaNerdFont/ 2>/dev/null || true
             fi
         else
             echo -e "\e[33m[ WARN ]\e[0m Failed to download fonts, skipping..."
         fi
         rm -rf "$font_cache"
     fi
-
-    find "$HOME/.local/share/fonts" -type f -exec chmod 644 {} \; 2>/dev/null || true
-    find "$HOME/.local/share/fonts" -type d -exec chmod 755 {} \; 2>/dev/null || true
 
     if command -v fc-cache &>/dev/null; then
         fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || true
@@ -147,25 +71,13 @@ configure_qt_icon_theme() {
     for qtct in qt6ct; do
         local conf="$config_home/$qtct/$qtct.conf"
         [ -d "$config_home/$qtct" ] || mkdir -p "$config_home/$qtct" 2>/dev/null || continue
-        if [ ! -f "$conf" ]; then
+        if [ ! -e "$conf" ] && [ ! -L "$conf" ]; then
             printf '[Appearance]\nicon_theme=%s\n' "$icon_theme" > "$conf"
-        elif grep -q '^icon_theme=.\+' "$conf"; then
-            continue
-        elif grep -q '^icon_theme=' "$conf"; then
-            sed -i "s|^icon_theme=.*|icon_theme=$icon_theme|" "$conf"
-        elif grep -q '^\[Appearance\]' "$conf"; then
-            sed -i "/^\[Appearance\]/a icon_theme=$icon_theme" "$conf"
-        else
-            printf '\n[Appearance]\nicon_theme=%s\n' "$icon_theme" >> "$conf"
         fi
     done
 
-    local env_dir="$config_home/environment.d"
-    local env_file="$env_dir/serpantinum-qt.conf"
-    if [ -z "${QT_QPA_PLATFORMTHEME:-}" ] && ! grep -rqs '^QT_QPA_PLATFORMTHEME=' "$env_dir" 2>/dev/null; then
-        mkdir -p "$env_dir"
-        printf 'QT_QPA_PLATFORMTHEME=qt6ct\n' > "$env_file"
-    fi
+    # The supplied compositor configurations choose their own Qt platform theme.
+    # A user-wide override would also apply to KDE and other desktop sessions.
 }
 
 compositor_package_name() {
@@ -232,8 +144,6 @@ install_dependencies() {
     shift 2 2>/dev/null || true
     local compositors=("$@")
 
-    pm_remove_conflicting_pkg "quickshell-git"
-
     local target_list=("${REQUIRED_PKGS[@]}")
     for comp in "${compositors[@]}"; do
         target_list+=("$(compositor_package_name "$comp")")
@@ -246,12 +156,13 @@ install_dependencies() {
     fi
     target_list+=("${PM_EXTRA_PKGS[@]}")
 
-    if [[ ("$install_state" == "fresh" || "$install_state" == "legacy") && "$is_reinstall" != "true" ]]; then
+    if [[ ("$install_state" == "fresh" || "$install_state" == "legacy") && "$is_reinstall" != "true" ]] &&
+        declare -f pm_full_upgrade >/dev/null; then
         pm_full_upgrade
     fi
 
     local missing_raw
-    missing_raw=$(pm_missing_pkgs "${target_list[@]}")
+    missing_raw=$(pm_missing_pkgs "${target_list[@]}") || return 1
 
     local MISSING_PKGS=()
     while IFS= read -r pkg; do
@@ -271,7 +182,7 @@ install_dependencies() {
         [[ $SAFE_JOBS -gt 4 ]] && SAFE_JOBS=4
 
         if declare -f pm_install_batch >/dev/null; then
-            pm_install_batch "${MISSING_PKGS[@]}"
+            pm_install_batch "${MISSING_PKGS[@]}" || return 1
             MISSING_PKGS=("${PM_BATCH_LEFT[@]}")
         fi
 

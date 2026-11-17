@@ -1,81 +1,72 @@
 #!/usr/bin/env bash
 
-PM_BOOTSTRAP_TOOLS=(fzf jq curl git pciutils unzip fontconfig base-devel)
+PM_BOOTSTRAP_TOOLS=(fzf jq curl git pciutils unzip fontconfig)
+PM_EXTRA_PKGS=(qt6-multimedia-ffmpeg polkit python-yaml iproute2 nftables)
 PM_AUDIO_BUILD_PKGS=(base-devel pkgconf pipewire)
+PM_PACMAN_SYNCED=false
 
-pm_prepare_repos() {
-    if [ -f /etc/pacman.conf ]; then
-        if grep -q "^#\[multilib\]" /etc/pacman.conf; then
-            sudo sed -i '/^#\[multilib\]/{s/^#//;n;s/^#//}' /etc/pacman.conf
-            sudo pacman -Sy --noconfirm >/dev/null 2>&1 || true
-        fi
+pm_pacman_install() {
+    local operation="-Syu"
+    [ "$PM_PACMAN_SYNCED" = false ] || operation="-S"
+    printf 'Pacman repository packages: %s\n' "$*"
+    if ! sudo pacman "$operation" --needed "$@"; then
+        echo "Pacman transaction failed. Check the configured repositories, package conflicts and disk space, then run the installer again. No AUR package was requested." >&2
+        return 1
     fi
+    PM_PACMAN_SYNCED=true
+    pacman -Q "$@"
 }
 
 pm_bootstrap_install() {
-    sudo pacman -Sy --noconfirm --needed "$@"
-}
-
-pm_bootstrap_helper() {
-    if ! command -v yay &>/dev/null && ! command -v paru &>/dev/null; then
-        local cache_build="${XDG_CACHE_HOME:-"$HOME/.cache"}/serpantinum-yay-bin"
-        rm -rf "$cache_build"
-        mkdir -p "$cache_build"
-        git clone https://aur.archlinux.org/yay-bin.git "$cache_build"
-        (cd "$cache_build" && makepkg -si --noconfirm)
-        rm -rf "$cache_build"
-    fi
-}
-
-pm_full_upgrade() {
-    echo -e "\n\e[36m[ INFO ]\e[0m $(t "installer.deps.syncing")"
-    sudo pacman -Syyu --noconfirm
+    pm_pacman_install "$@"
 }
 
 pm_missing_pkgs() {
-    pacman -T "$@" 2>/dev/null || true
+    local result status=0 pkg
+    local targets=()
+    for pkg in "$@"; do
+        if [[ "$pkg" == quickshell ]] && pm_is_installed quickshell-git && quickshell_is_current; then
+            continue
+        fi
+        if [[ "$pkg" == qt6-multimedia-ffmpeg ]] && pm_is_installed qt6-multimedia-gstreamer; then
+            continue
+        fi
+        targets+=("$pkg")
+    done
+    [ ${#targets[@]} -gt 0 ] || return 0
+    result="$(pacman -T "${targets[@]}")" || status=$?
+    case "$status" in
+        0) return 0 ;;
+        127) printf '%s\n' "$result" ;;
+        *) echo "Failed to check installed packages with pacman -T (exit $status)." >&2; return "$status" ;;
+    esac
 }
 
 pm_is_installed() {
     pacman -Q "$1" &>/dev/null
 }
 
-pm_install_pkg() {
-    local pkg="$1"
-    local safe_jobs="$2"
+pm_install_batch() {
+    pm_pacman_install "$@" || return 1
+    PM_BATCH_LEFT=()
+}
 
-    if pacman -Si "$pkg" &>/dev/null; then
-        sudo pacman -S --noconfirm --needed "$pkg"
-    elif command -v yay &>/dev/null; then
-        env CARGO_BUILD_JOBS="$safe_jobs" MAKEFLAGS="-j$safe_jobs" yay -S --noconfirm --needed "$pkg"
-    elif command -v paru &>/dev/null; then
-        env CARGO_BUILD_JOBS="$safe_jobs" MAKEFLAGS="-j$safe_jobs" paru -S --noconfirm --needed "$pkg"
-    else
-        sudo pacman -S --noconfirm --needed "$pkg"
-    fi
+pm_install_pkg() {
+    pm_pacman_install "$1"
 }
 
 pm_upgrade_quickshell() {
-    if sudo pacman -Syu --noconfirm --needed --ask=4 quickshell && quickshell_is_current; then
-        return 0
+    if pm_is_installed quickshell-git; then
+        echo "Update your installed quickshell-git through its original package source, then rerun the installer." >&2
+        return 1
     fi
-
-    local helper
-    for helper in yay paru; do
-        command -v "$helper" &>/dev/null || continue
-        "$helper" -S --noconfirm --needed --ask=4 quickshell-git && quickshell_is_current && return 0
-        break
-    done
-    return 0
+    pm_pacman_install quickshell
 }
 
-pm_remove_pkg() {
-    sudo pacman -Rns --noconfirm "$1" >/dev/null 2>&1 || true
-}
-
-pm_remove_conflicting_pkg() {
-    local pkg="$1"
-    if pm_is_installed "$pkg"; then
-        yay -R --noconfirm "$pkg" 2>/dev/null || sudo pacman -Rdd --noconfirm "$pkg" 2>/dev/null || true
+pm_upgrade_hyprland() {
+    if pm_is_installed hyprland-git; then
+        echo "Update your installed hyprland-git through its original package source." >&2
+        return 1
     fi
+    pm_pacman_install hyprland
 }

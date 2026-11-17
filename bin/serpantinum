@@ -48,7 +48,7 @@ terminate_and_wait() {
 }
 
 get_installed_version() {
-    local version_file="${XDG_STATE_HOME:-$HOME/.local/state}/serpantinum/version"
+    local version_file="$QS_STATE_DIR/version"
     local ver=""
     if [ -f "$version_file" ]; then
         ver=$(awk -F= '/^SERPANTINUM_VERSION=/{gsub(/["'\'' ]/, "", $2); print $2}' "$version_file")

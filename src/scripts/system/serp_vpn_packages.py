@@ -62,7 +62,7 @@ def main(args):
     env = {"PATH": "/usr/sbin:/usr/bin", "HOME": "/root", "LANG": "C.UTF-8"}
     os.chdir("/")
     if terminal:
-        argv = ["/usr/bin/timeout", "--foreground", "-k", "15s", "6m", *command(packages, action)]
+        argv = ["/usr/bin/timeout", "--foreground", "-k", "15s", "6m", *command(packages)]
         return subprocess.run(argv, stdin=subprocess.DEVNULL, env=env, check=False).returncode
     # Authorization is over once this line is out: the caller switches from the polkit
     # timeout to the transaction timeout (serp_vpn.py install_fedora_packages).

@@ -9,11 +9,12 @@ export QS_DIR="$SERPANTINUM_DIR/quickshell"
 export MAIN_QML="$QS_DIR/Shell.qml"
 export IPC_SOCKET="${XDG_RUNTIME_DIR:-/tmp}/serpantinum.sock"
 
-export QS_CACHE_DIR="$HOME/.cache/serpantinum"
-export QS_STATE_DIR="$HOME/.local/state/serpantinum"
+source "$SERPANTINUM_DIR/scripts/xdg_paths.sh"
+export QS_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/serpantinum"
+export QS_STATE_DIR="$(serpantinum_state_dir)"
 export QS_RUN_DIR="${XDG_RUNTIME_DIR:-/tmp}/serpantinum"
 export QS_LOG_DIR="$QS_RUN_DIR/logs"
-export QS_SETTINGS="$HOME/.config/serpantinum/settings.json"
+export QS_SETTINGS="$(serpantinum_settings_path)"
 
 [[ -d "$QS_LOG_DIR" && -d "$QS_CACHE_DIR" && -d "$QS_STATE_DIR" ]] || mkdir -p "$QS_CACHE_DIR" "$QS_STATE_DIR" "$QS_RUN_DIR" "$QS_LOG_DIR"
 

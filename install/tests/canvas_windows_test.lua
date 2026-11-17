@@ -18,14 +18,11 @@ pinned.pinned, tiled.floating, fullscreen.fullscreen = true, false, 1
 
 local count = 0
 local events = {}
-local version = "0.56.2"
 hl = {
-  version = function() return version end,
   get_monitors = function() return {screen, adjacent} end,
   get_windows = function() return {firefox, inactive, pinned, tiled, fullscreen, special, external} end,
   on = function(name, callback)
-    assert(name == "window.close" or name == "config.reloaded"
-      or (name == "config.unload" and version == "0.57.0"), "unknown event " .. name)
+    assert(name == "window.close" or name == "config.reloaded", "unknown event " .. name)
     events[name] = callback
   end,
   dsp = {window = {
@@ -119,13 +116,9 @@ pos(inactive, -1600, 320)
 assert(#firefox.tags == 0 and #inactive.tags == 0)
 assert(firefox.workspace == desk1 and inactive.workspace == desk2)
 
-version = "0.57.0"
-events = {}
-dofile("compositors/hyprland/config/canvas.lua")
-assert(not events["config.reloaded"])
 update(0, 0, 1)
 update(4000, 0, 1)
-events["config.unload"]()
+events["config.reloaded"]()
 pos(firefox, -1380, 520)
 events["window.close"](firefox)
 firefox.at = {x = -1100, y = 400}

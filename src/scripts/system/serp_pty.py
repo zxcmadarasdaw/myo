@@ -290,7 +290,7 @@ def main(argv):
             emit({"t": "missing", "prog": opts["require"]})
             return 127
         prog = "".join(c for c in opts["require"] if c.isalnum() or c in "-_.")
-        opts["cmd"] = "printf '%s\\n' '" + prog + " is not installed: sudo dnf install " + prog + "'"
+        opts["cmd"] = "printf '%s\\n' '" + prog + " is missing. Install it with your system package manager.'"
     if then_shell:
         # "$0" is the shell path, passed as an argument rather than spliced into the text.
         target = ["/bin/sh", "-c", opts["cmd"] + '\nexec "$0"', pick_shell(opts["shell"])]

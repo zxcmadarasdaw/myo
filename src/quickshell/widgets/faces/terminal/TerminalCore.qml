@@ -18,6 +18,8 @@ Item {
     property bool live: false
     property bool viewOnly: false
     property string mode: "interactive"       // interactive | fastfetch | cmatrix | cava | monitor
+    readonly property string installHint: typeof SystemInfo !== "undefined" && typeof SystemInfo.packageInstallHint === "function"
+        ? SystemInfo.packageInstallHint(statusDetail) : statusDetail
     property string fetchLayout: ""
     readonly property string fetchVariant: fetchLayout === "" ? "" : fetchLayout === "minimal" ? "minimal" : "full"
     property string shell: "auto"             // auto | bash | zsh
@@ -286,7 +288,7 @@ Item {
         } else if (core.mode === "fastfetch" || core.mode === "fetchShell") {
             t.write("\x1b[1;34m   .--.   \x1b[0m \x1b[1;34muser\x1b[0m@\x1b[1;34mserpantinum\x1b[0m\r\n"
                 + "\x1b[1;34m  |o_o |  \x1b[0m -----------------\r\n"
-                + "\x1b[1;34m  |:_/ |  \x1b[0m \x1b[1;34mOS\x1b[0m: Fedora Linux\r\n"
+                + "\x1b[1;34m  |:_/ |  \x1b[0m \x1b[1;34mOS\x1b[0m: Linux\r\n"
                 + "\x1b[1;34m //   \\ \\ \x1b[0m \x1b[1;34mWM\x1b[0m: Hyprland\r\n"
                 + "\x1b[1;34m(|     | )\x1b[0m \x1b[1;34mShell\x1b[0m: Serpantinum\r\n"
                 + "\x1b[1;34m/'\\_   _/`\\\x1b[0m\x1b[1;34mTerminal\x1b[0m: desktop widget\r\n"

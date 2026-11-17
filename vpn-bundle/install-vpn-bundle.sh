@@ -32,8 +32,29 @@ if [ "$VERIFY_BUNDLE" = true ]; then
     exit 0
 fi
 
+ID="" ID_LIKE="" VERSION_ID=""
+. /etc/os-release
+is_arch=false
+case " $ID $ID_LIKE " in
+    *" arch "*|*" cachyos "*) is_arch=true ;;
+esac
+
 install_dependencies() {
-    local needed=() package filename distro release machine
+    local needed=() package filename machine
+    if [ "$is_arch" = true ]; then
+        if [ "$NEED_SYSTEM" = true ]; then needed+=(iproute2 nftables polkit); fi
+        if [ "$NEED_YAML" = true ]; then needed+=(python-yaml); fi
+        local missing=()
+        for package in "${needed[@]}"; do
+            pacman -T "$package" >/dev/null || missing+=("$package")
+        done
+        if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'Missing Arch VPN packages: %s\n' "${missing[*]}" >&2
+            printf 'Install them with: sudo pacman -Syu --needed %s\n' "${missing[*]}" >&2
+            return 1
+        fi
+        return 0
+    fi
     if [ "$NEED_SYSTEM" = true ]; then
         needed+=(iproute nftables)
     fi
@@ -41,13 +62,15 @@ install_dependencies() {
         needed+=(python3-pyyaml)
     fi
     [ "${#needed[@]}" -gt 0 ] || return 0
+    if [ "$ID" != fedora ]; then
+        echo "Automatic dependency setup for this kit supports Fedora and Arch-based distributions." >&2
+        return 1
+    fi
     if rpm -q --quiet "${needed[@]}"; then
         return 0
     fi
-    distro="$(. /etc/os-release && printf '%s' "$ID")"
-    release="$(. /etc/os-release && printf '%s' "$VERSION_ID")"
     machine="$(uname -m)"
-    if [ "$distro/$release/$machine" != 'fedora/45/x86_64' ] || [ ! -r "$BUNDLE/rpms/packages.tsv" ]; then
+    if [ "$VERSION_ID/$machine" != '45/x86_64' ] || [ ! -r "$BUNDLE/rpms/packages.tsv" ]; then
         echo "Missing dependencies (${needed[*]}). This RPM kit supports Fedora 45 x86_64." >&2
         return 1
     fi
@@ -100,6 +123,7 @@ if [ "$CHECK" = true ]; then
     exit 0
 fi
 
+install_dependencies
 if [ "$NEED_SYSTEM" = false ]; then
     timeout 120s python3 "$SYSTEM_DIR/serp_vpn.py" singbox-install --offline --ensure --bundle="$BUNDLE"
 fi
@@ -116,10 +140,11 @@ if [ "$BUNDLE" != "$(realpath -m "$KEEP")" ]; then
     cp -f "$BUNDLE/SHA256SUMS" "$BUNDLE/manifest.json" "$KEEP/"
 fi
 
-install_dependencies
 if [ "$NEED_SYSTEM" = true ]; then
     [ -x "$SYSTEM_HELPER" ] || { echo 'Update Serpantinum to install its system VPN helper.' >&2; exit 1; }
-    if ! timeout 5s python3 "$SYSTEM_DIR/serp_vpn.py" system-engine-check --bundled; then
+    engine_check=(system-engine-check)
+    if [ "$is_arch" = false ]; then engine_check+=(--bundled); fi
+    if ! timeout 5s python3 "$SYSTEM_DIR/serp_vpn.py" "${engine_check[@]}"; then
         sudo "$SYSTEM_HELPER" offline-engine < "$archive"
     fi
 fi

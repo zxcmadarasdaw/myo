@@ -39,3 +39,11 @@ Fedora Live
 A Live session without persistent storage forgets everything at reboot, including
 the installed sing-box. Keep this folder on a USB stick or another drive and run
 bash install/install.sh --vpn-only from the matching Serpantinum checkout.
+
+CachyOS / Arch (x86_64)
+----------------------
+From the Serpantinum checkout, run bash install/install.sh --vpn-only.
+It installs missing polkit, iproute2, nftables and python-yaml through pacman.
+The engine comes from this local bundle or an already working system sing-box.
+RPM dependencies are used only on Fedora. With the Arch dependencies already
+installed, the bundle can prepare the engine without network access.

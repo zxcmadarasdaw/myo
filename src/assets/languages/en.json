@@ -2216,6 +2216,7 @@
       "sddm_detected_none": "Detected active/enabled display manager: None",
       "sddm_opt_install": "Install and configure SDDM (material you theme)",
       "sddm_opt_disable": "Disable and remove '{dm}'",
+      "sddm_opt_switch": "Disable '{dm}' at next boot",
       "sddm_opt_wayland": "Force wayland backend",
       "target_compositor_none": "Target compositor [required - none selected]",
       "target_compositor_selected": "Target compositor [{comps}]",

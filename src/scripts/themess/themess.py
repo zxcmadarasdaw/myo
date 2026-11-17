@@ -195,10 +195,8 @@ def video_snapshot(data, suffix, size=(1920, 1080)):
         raise ValueError("ffmpeg and ffprobe are required to validate wallpaper") from error
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as error:
         if codec in ("h264", "hevc") and isinstance(error, subprocess.CalledProcessError):
-            # Fedora's ffmpeg-free has no full H.264/HEVC decoder; Qt Multimedia uses the same
-            # libraries, so the video would not play either.
-            raise ValueError(f"this system's ffmpeg cannot decode {codec.upper()} video "
-                             "(Fedora ffmpeg-free): use a VP9/AV1 WebM, or install ffmpeg from RPM Fusion") from error
+            raise ValueError(f"ffmpeg failed to decode this {codec.upper()} video. "
+                             "Check that your ffmpeg build has the decoder, or use a VP9/AV1 WebM.") from error
         raise ValueError("wallpaper video could not be decoded within the supported limits") from error
     if not frame.stdout.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError("wallpaper contains no decodable frame")

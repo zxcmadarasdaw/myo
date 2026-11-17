@@ -59,7 +59,7 @@ get_all_children() {
 }
 
 get_installed_version() {
-    local version_file="${XDG_STATE_HOME:-$HOME/.local/state}/serpantinum/version"
+    local version_file="$QS_STATE_DIR/version"
     local ver=""
     if [ -f "$version_file" ]; then
         ver=$(awk -F= '/^SERPANTINUM_VERSION=/{gsub(/["'\'' ]/, "", $2); print $2}' "$version_file")
@@ -285,7 +285,7 @@ if [ "$COMMAND" == "start" ]; then
     # a missing module or a crash left an empty Hyprland desktop and no trace.
     # Now the output goes to a log, short-lived crashes are retried, and after
     # repeated failures the user gets a notification and a terminal.
-    SHELL_LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/serpantinum/logs"
+    SHELL_LOG_DIR="$QS_STATE_DIR/logs"
     mkdir -p "$SHELL_LOG_DIR" 2>/dev/null
     SHELL_LOG="$SHELL_LOG_DIR/shell.log"
 

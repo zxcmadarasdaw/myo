@@ -19,6 +19,7 @@ UNSUPPORTED_COMPOSITOR_DETECTED=false
 IS_REINSTALL=false
 
 OPT_SDDM=true
+if [ "$PM_NAME" = pacman ]; then OPT_SDDM=false; fi
 REPLACE_DM=false
 SDDM_WAYLAND="$PM_SDDM_WAYLAND_DEFAULT"
 
@@ -164,7 +165,7 @@ EOF
 show_package_overview() {
     local target_list=("${REQUIRED_PKGS[@]}")
     for comp in "${SELECTED_COMPOSITORS[@]}"; do
-        target_list+=("$comp")
+        target_list+=("$(compositor_package_name "$comp")")
     done
     if [ "$OPT_SDDM" = true ]; then
         local sddm_pkgs=()
@@ -174,7 +175,10 @@ show_package_overview() {
     target_list+=("${PM_EXTRA_PKGS[@]}")
 
     local missing_raw
-    missing_raw=$(pm_missing_pkgs "${target_list[@]}")
+    if ! missing_raw=$(pm_missing_pkgs "${target_list[@]}"); then
+        printf 'Cannot query the local package database.\n'
+        return 0
+    fi
 
     declare -A is_missing
     while IFS= read -r p; do
@@ -367,14 +371,8 @@ manage_sddm_menu() {
     printf "\e[?25l"
     printf "%s%s$(t "installer.ui.sddm_title")%s\n\n" "$BOLD" "$C_CYAN" "$RESET"
 
-    local current_dm=""
-    local dms=("gdm" "gdm3" "lightdm" "sddm" "lxdm" "lxdm-gtk3" "ly")
-    for dm in "${dms[@]}"; do
-        if systemctl is-enabled "$dm.service" &>/dev/null || systemctl is-active "$dm.service" &>/dev/null; then
-            current_dm="$dm"
-            break
-        fi
-    done
+    local current_dm
+    current_dm="$(active_display_manager)"
 
     if [ -n "$current_dm" ]; then
         printf "$(t "installer.ui.sddm_detected_active" "dm=${BOLD}${C_YELLOW}%s${RESET}")\n\n" "$current_dm"
@@ -397,7 +395,7 @@ manage_sddm_menu() {
         local items=()
         items+=("1. $(t "installer.ui.sddm_opt_install") $S_SDDM")
         if [ -n "$current_dm" ] && [ "$current_dm" != "sddm" ]; then
-            items+=("2. $(t "installer.ui.sddm_opt_disable" "dm=$current_dm") $S_RDM")
+            items+=("2. $(t "installer.ui.sddm_opt_switch" "dm=$current_dm") $S_RDM")
         fi
         items+=("3. $(t "installer.ui.sddm_opt_wayland") $S_WAY")
         items+=("4. ${BOLD}${C_GREEN}$(t "installer.ui.done")${RESET}")
@@ -438,9 +436,6 @@ manage_sddm_menu() {
                 case "$selected_str" in
                     *"1."*)
                         OPT_SDDM=$([ "$OPT_SDDM" = true ] && echo false || echo true)
-                        if [ "$OPT_SDDM" = true ] && [ -n "$current_dm" ] && [ "$current_dm" != "sddm" ]; then
-                            REPLACE_DM=true
-                        fi
                         ;;
                     *"2."*)
                         REPLACE_DM=$([ "$REPLACE_DM" = true ] && echo false || echo true)
@@ -704,10 +699,12 @@ EOF
     local prompt_msg
     prompt_msg="$(t "installer.ui.ask_reboot")"
 
-    if [ -t 0 ]; then
-        read -r -p "$prompt_msg" restart_choice
+    if [ "${INSTALL_INCOMPLETE:-false}" = true ]; then
+        return 0
+    elif [ -t 0 ]; then
+        read -r -p "$prompt_msg" restart_choice || true
     elif [ -e /dev/tty ]; then
-        read -r -p "$prompt_msg" restart_choice < /dev/tty
+        read -r -p "$prompt_msg" restart_choice < /dev/tty || true
     fi
 
     if [[ "$restart_choice" =~ ^[Yy]$ ]]; then

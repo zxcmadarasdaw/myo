@@ -8,7 +8,8 @@ import urllib.request
 REPO = "ilyamiro/serpantinum"
 DEFAULT_VER = "2.0.0"
 
-state_dir = os.path.expanduser("~/.local/state/serpantinum")
+state_dir = os.environ.get("QS_STATE_DIR") or os.path.join(
+    os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "serpantinum")
 if "--state-dir" in sys.argv:
     try:
         idx = sys.argv.index("--state-dir")

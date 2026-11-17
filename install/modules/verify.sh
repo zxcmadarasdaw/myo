@@ -58,13 +58,21 @@ verify_warning() {
 
 ensure_hyprland_lua_support() {
     local version
-    version="$(hyprland_version)" || return 0
+    if ! version="$(hyprland_version)"; then
+        echo "Hyprland was selected but its binary could not be found." >&2
+        return 1
+    fi
     version_at_least "$version" "$MIN_HYPRLAND_LUA_VERSION" && return 0
     echo -e "\n\e[33m[ WARN ]\e[0m Hyprland $version cannot read hyprland.lua (needs >= $MIN_HYPRLAND_LUA_VERSION). Trying to upgrade..."
     if declare -f pm_upgrade_hyprland >/dev/null; then
         pm_upgrade_hyprland || true
     fi
     hash -r
+    version="$(hyprland_version)" || return 1
+    if ! version_at_least "$version" "$MIN_HYPRLAND_LUA_VERSION"; then
+        echo "Hyprland $version still needs to be updated before deploying the Lua configuration." >&2
+        return 1
+    fi
 }
 
 verify_installation() {
@@ -77,10 +85,15 @@ verify_installation() {
     if [ "${VPN_INSTALL_FAILED:-false}" = true ]; then
         verify_error "VPN components are incomplete. Run bash install/install.sh --vpn-only to retry."
     fi
+    if [ ${#FAILED_PKGS[@]} -gt 0 ]; then
+        verify_error "Some requested dependencies or components failed: ${FAILED_PKGS[*]}"
+    fi
 
     echo -e "\n\e[36m[ INFO ]\e[0m Verifying the installed environment..."
 
-    missing="$(pm_missing_pkgs "${CRITICAL_PKGS[@]}")"
+    if ! missing="$(pm_missing_pkgs "${CRITICAL_PKGS[@]}")"; then
+        verify_error "Could not check installed packages"
+    fi
     while IFS= read -r pkg; do
         [ -n "$pkg" ] && verify_error "required package missing: $pkg"
     done <<< "$missing"
@@ -96,7 +109,7 @@ verify_installation() {
     for comp in "${SELECTED_COMPOSITORS[@]}"; do
         case "$comp" in
             hyprland)
-                hypr_config="$HOME/.config/hypr/hyprland.lua"
+                hypr_config="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprland.lua"
                 if ! version="$(hyprland_version)"; then
                     verify_error "Hyprland is not installed"
                 elif ! version_at_least "$version" "$MIN_HYPRLAND_LUA_VERSION"; then
@@ -111,7 +124,7 @@ verify_installation() {
                 # COPR, which may need newer hypr* libraries than Fedora's
                 # Hyprland, so it is reported instead of installed.
                 if ! pm_is_installed hyprland-guiutils 2>/dev/null && ! command -v hyprland-dialog >/dev/null 2>&1; then
-                    verify_warning "hyprland-guiutils missing: Hyprland warns about it and its own dialogs (app not responding, permissions) do not open; Serpantinum does not need it. Fedora: sudo dnf copr enable mineiro/hyprland && sudo dnf install hyprland-guiutils"
+                    verify_warning "hyprland-guiutils missing: Hyprland's own dialogs may be unavailable. Check for a package compatible with your installed Hyprland."
                 fi
                 ;;
             mango)
@@ -147,8 +160,14 @@ verify_installation() {
     command -v matugen >/dev/null 2>&1 || [ -x "$HOME/.local/bin/matugen" ] || verify_warning "matugen missing: colors will not follow the wallpaper"
     command -v xdg-open >/dev/null 2>&1 || verify_warning "xdg-open missing (xdg-utils): the File Dock widget cannot open files and folders"
     command -v ping >/dev/null 2>&1 || verify_warning "ping missing (iputils): the network widget's optional latency stays empty"
-    if command -v rpm >/dev/null 2>&1 && rpm -q ffmpeg-free >/dev/null 2>&1 && ! rpm -q ffmpeg >/dev/null 2>&1; then
-        verify_warning "ffmpeg-free is installed: H.264/HEVC (most .mp4/.mov) video wallpapers will not play; WebM (VP9/AV1) works. RPM Fusion 'ffmpeg' adds the codecs."
+    for pkg in pw-dump wpctl pactl ffprobe; do
+        command -v "$pkg" >/dev/null 2>&1 || verify_warning "$pkg missing: audio or media features may be unavailable"
+    done
+    if command -v ffmpeg >/dev/null 2>&1 && ! ffmpeg -hide_banner -decoders 2>/dev/null | awk '$2=="h264" {found=1} END {exit !found}'; then
+        verify_warning "The installed ffmpeg CLI does not report an H.264 decoder. Check H.264 and WebM playback separately in Qt Multimedia."
+    fi
+    if [ "${PM_NAME:-}" = pacman ] && pm_is_installed qt6-multimedia-gstreamer && ! pm_is_installed qt6-multimedia-ffmpeg; then
+        verify_warning "Qt Multimedia uses the installed GStreamer backend. Verify MP4/WebM playback and its plugins in this session."
     fi
 
     local wp_dir

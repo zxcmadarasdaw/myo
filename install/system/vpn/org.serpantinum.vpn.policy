@@ -20,8 +20,8 @@
     <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/serpantinum/serp-vpn-root</annotate>
   </action>
   <action id="org.serpantinum.vpn.packages">
-    <description>Install Fedora VPN components</description>
-    <description xml:lang="ru">Установить компоненты VPN для Fedora</description>
+    <description>Install Serpantinum VPN components</description>
+    <description xml:lang="ru">Установить компоненты VPN Serpantinum</description>
     <message>Administrator authentication is required to install VPN packages</message>
     <message xml:lang="ru">Для установки пакетов VPN требуется пароль администратора</message>
     <defaults>

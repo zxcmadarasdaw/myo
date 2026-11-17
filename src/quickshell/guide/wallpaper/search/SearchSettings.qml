@@ -313,7 +313,7 @@ Rectangle {
                     Layout.fillWidth: true
                     visible: !WallpaperSearch.ffmpegOk
                     color: ThemeBackend.red
-                    text: sheet.tr("ffmpeg/ffprobe not found: file checks, quality analysis and Wallpaper Studio are unavailable (sudo dnf install ffmpeg-free).", "ffmpeg/ffprobe не найдены: проверка файлов, анализ качества и Wallpaper Studio недоступны (sudo dnf install ffmpeg-free).")
+                    text: sheet.tr("ffmpeg/ffprobe not found. Install them with your system package manager to use file checks, quality analysis and Wallpaper Studio.", "Установите ffmpeg и ffprobe через пакетный менеджер, чтобы использовать проверку файлов, анализ качества и Wallpaper Studio.")
                 }
             }
         }

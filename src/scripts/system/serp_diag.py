@@ -17,6 +17,7 @@ import glob
 import io
 import json
 import os
+import platform
 import re
 import shutil
 import socket
@@ -27,10 +28,13 @@ import tarfile
 HOME = os.path.expanduser("~")
 SERP_DIR = os.environ.get("SERPANTINUM_DIR") or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 QS_DIR = os.path.join(SERP_DIR, "quickshell")
-STATE = os.environ.get("XDG_STATE_HOME") or os.path.join(HOME, ".local", "state")
-SHELL_LOG = os.path.join(STATE, "serpantinum", "logs", "shell.log")
+STATE = os.environ.get("QS_STATE_DIR") or os.path.join(
+    os.environ.get("XDG_STATE_HOME") or os.path.join(HOME, ".local", "state"), "serpantinum")
+SHELL_LOG = os.path.join(STATE, "logs", "shell.log")
 CRASH_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.join(HOME, ".cache"), "quickshell", "crashes")
-SETTINGS = os.environ.get("QS_SETTINGS") or os.path.join(HOME, ".config", "serpantinum", "settings.json")
+SETTINGS = os.environ.get("QS_SETTINGS") or os.path.join(
+    os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"), "serpantinum", "settings.json")
+QT_PATHS = ("qtpaths6", "qtpaths-qt6", "qtpaths")
 ERROR_RE = re.compile(r"(ERROR|error:|WARN|warning|caused by|is not a type|unavailable|Segmentation|crash|Failed to load|failed \d+ times|exited with code)", re.I)
 
 
@@ -50,14 +54,36 @@ def first_line(s):
     return (s or "").splitlines()[0].strip() if s else ""
 
 
-def qt_version():
-    for cmd in (["qtpaths6", "--qt-version"], ["qtpaths-qt6", "--qt-version"], ["qtpaths", "--qt-version"]):
+def os_release():
+    try:
+        return platform.freedesktop_os_release()
+    except OSError:
+        return {}
+
+
+def qt_path(*args):
+    for binary in QT_PATHS:
+        cmd = [binary, *args]
         code, out, _ = run(cmd)
         if code == 0 and out:
             return first_line(out), " ".join(cmd)
-    code, out, _ = run(["rpm", "-q", "--qf", "%{VERSION}", "qt6-qtbase"])
-    if code == 0 and out and "not installed" not in out:
-        return out, "rpm qt6-qtbase"
+    return "", ""
+
+
+def qt_version():
+    version, source = qt_path("--qt-version")
+    if version:
+        return version, source
+    release = os_release()
+    distro = release.get("ID")
+    if distro in ("arch", "cachyos") or "arch" in release.get("ID_LIKE", "").split():
+        code, out, _ = run(["pacman", "-Q", "qt6-base"])
+        if code == 0 and out.startswith("qt6-base "):
+            return out.split(maxsplit=1)[1], "pacman -Q qt6-base"
+    elif distro == "fedora":
+        code, out, _ = run(["rpm", "-q", "--qf", "%{VERSION}", "qt6-qtbase"])
+        if code == 0 and out:
+            return out, "rpm qt6-qtbase"
     code, out, _ = run(["quickshell", "--version"])
     m = re.search(r"Qt\s*([\d.]+)", out or "")
     if m:
@@ -66,19 +92,17 @@ def qt_version():
 
 
 def qml_module_dirs():
-    dirs = []
-    for d in ("/usr/lib64/qt6/qml", "/usr/lib/qt6/qml", "/usr/lib/x86_64-linux-gnu/qt6/qml", "/run/current-system/sw/lib/qt-6/qml"):
-        if os.path.isdir(d):
-            dirs.append(d)
-    for d in (os.environ.get("QML_IMPORT_PATH", "") + ":" + os.environ.get("QML2_IMPORT_PATH", "")).split(":"):
-        if d and os.path.isdir(d):
-            dirs.append(d)
-    return dirs
+    configured = (os.environ.get("QML_IMPORT_PATH", "") + os.pathsep
+                  + os.environ.get("QML2_IMPORT_PATH", "")).split(os.pathsep)
+    qt_dir, _ = qt_path("--query", "QT_INSTALL_QML")
+    candidates = (*configured, qt_dir, "/usr/lib64/qt6/qml", "/usr/lib/qt6/qml",
+                  "/usr/lib/x86_64-linux-gnu/qt6/qml", "/run/current-system/sw/lib/qt-6/qml")
+    return list(dict.fromkeys(d for d in candidates if d and os.path.isdir(d)))
 
 
-def check_qml_module(name):
+def check_qml_module(name, directories):
     rel = name.replace(".", "/")
-    for d in qml_module_dirs():
+    for d in directories:
         if os.path.isfile(os.path.join(d, rel, "qmldir")):
             return True, os.path.join(d, rel)
     return False, ""
@@ -88,18 +112,23 @@ def dependencies():
     cmds = [("quickshell", True, "shell runtime"), ("python3", True, "helper scripts"), ("ffmpeg", True, "video snapshots, Wallpaper Studio"),
             ("ffprobe", True, "file checks, video info"), ("pgrep", True, "process checks"), ("curl", False, "updater, weather"),
             ("hyprctl", False, "Hyprland IPC"), ("matugen", False, "colours from wallpaper"), ("wl-paste", False, "clipboard"),
-            ("grim", False, "screenshots")]
+            ("grim", False, "screenshots"), ("wpctl", False, "WirePlumber control"),
+            ("pw-dump", False, "wallpaper and Music Studio audio"), ("pactl", False, "audio recording"),
+            ("xdg-open", False, "opening applications and documents")]
     out = []
     for c, req, why in cmds:
         out.append({"name": c, "ok": bool(shutil.which(c)), "required": req, "purpose": why})
-    known = bool(qml_module_dirs())
+    qml_dirs = qml_module_dirs()
     for mod, req, why in (("QtMultimedia", True, "video wallpapers, previews"), ("QtQuick.Effects", True, "blur, MultiEffect"),
-                          ("QtQuick.Controls", True, "settings UI"), ("Quickshell", True, "shell types")):
-        ok, where = check_qml_module(mod)
-        out.append({"name": "QML " + mod, "ok": ok if known else None, "required": req, "purpose": why, "where": where})
-    code, _, _ = run(["rpm", "-q", "qt6-qtimageformats"])
-    if code != 127:
-        out.append({"name": "qt6-qtimageformats", "ok": code == 0, "required": False, "purpose": "WebP/AVIF wallpapers"})
+                          ("QtQuick.Controls", True, "settings UI"), ("Quickshell", True, "shell types"),
+                          ("Quickshell.Wayland", True, "layer-shell surfaces"),
+                          ("Quickshell.Hyprland", True, "Hyprland shortcuts and IPC"),
+                          ("Quickshell.Networking", True, "network control"),
+                          ("Quickshell.Services.Polkit", True, "privileged desktop actions"),
+                          ("Quickshell.Services.Pipewire", True, "audio devices"),
+                          ("Quickshell.Services.SystemTray", True, "tray icons")):
+        ok, where = check_qml_module(mod, qml_dirs)
+        out.append({"name": "QML " + mod, "ok": ok if qml_dirs else None, "required": req, "purpose": why, "where": where})
     return out
 
 
@@ -202,13 +231,7 @@ def summary():
             hyp = (d.get("version") or d.get("tag") or "") + (" (" + d.get("commit", "")[:8] + ")" if d.get("commit") else "")
         except ValueError:
             hyp = first_line(out)
-    osname = sys.platform
-    try:
-        with open("/etc/os-release", encoding="utf-8") as f:
-            m = re.search(r'^PRETTY_NAME="?([^"\n]+)', f.read(), re.M)
-            osname = m.group(1) if m else osname
-    except OSError:
-        pass
+    osname = os_release().get("PRETTY_NAME", sys.platform)
     live = False
     try:
         with open("/proc/cmdline", encoding="utf-8") as f:

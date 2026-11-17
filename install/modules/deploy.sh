@@ -108,13 +108,13 @@ install_wallpapers() {
 
         if [ "$total" -gt 0 ]; then
             for file in "${files[@]}"; do
-                cp "$file" "$wallpaper_dir/" 2>/dev/null || true
+                cp -n "$file" "$wallpaper_dir/" 2>/dev/null || true
                 count=$((count + 1))
                 render_wallpaper_progress "$count" "$total" "Installing wallpapers"
             done
             echo ""
         else
-            find "$src_dir" -type f ! -name "README.md" ! -name "LICENSE" ! -path "*/.git/*" -exec cp {} "$wallpaper_dir/" \; 2>/dev/null || true
+            find "$src_dir" -type f ! -name "README.md" ! -name "LICENSE" ! -path "*/.git/*" -exec cp -n {} "$wallpaper_dir/" \; 2>/dev/null || true
         fi
     else
         if [ -z "$(ls -A "$wallpaper_dir" 2>/dev/null | grep -iE '\.(jpg|jpeg|png|gif|webp)$')" ]; then
@@ -128,7 +128,7 @@ install_wallpapers() {
 
             if [ "$total" -gt 0 ]; then
                 for pic in "${random_pics[@]}"; do
-                    cp "$pic" "$wallpaper_dir/" 2>/dev/null || true
+                    cp -n "$pic" "$wallpaper_dir/" 2>/dev/null || true
                     count=$((count + 1))
                     render_wallpaper_progress "$count" "$total" "Installing wallpapers"
                 done
@@ -190,10 +190,27 @@ configure_sddm_cursor() {
     sudo sed -i -e "/^ThemeDir=/a CursorTheme=$theme" -e "/^ThemeDir=/a CursorSize=24" "$conf"
 }
 
+active_display_manager() {
+    local current
+    current="$(systemctl show --property=Id --value display-manager.service 2>/dev/null)" || return 0
+    if [[ "$current" =~ ^[a-zA-Z0-9_.@-]+\.service$ && "$current" != display-manager.service ]]; then
+        printf '%s\n' "${current%.service}"
+    fi
+}
+
+backup_system_path() {
+    local path="$1" backup
+    [ -e "$path" ] || return 0
+    backup="$(sudo mktemp -d -- "${path}.backup.XXXXXX")" || return 1
+    if ! sudo cp -a -- "$path" "$backup/"; then
+        echo "Could not back up $path. Its contents will be kept." >&2
+        return 1
+    fi
+    printf 'Backup of %s: %s\n' "$path" "$backup"
+}
+
 setup_sddm() {
     local project_root="$1"
-    local install_state="${2:-$INSTALL_STATE}"
-    local is_reinstall="${3:-$IS_REINSTALL}"
 
     if [ "$OPT_SDDM" != true ]; then
         return 0
@@ -212,61 +229,37 @@ setup_sddm() {
         read -r sddm_compositor_cmd || true
     } <<< "$backend_output"
 
-    local is_update=false
-    if [[ "$install_state" == "current" && "$is_reinstall" != "true" ]]; then
-        is_update=true
-    fi
-
-    local init_sys="generic"
-    if declare -f detect_init_system >/dev/null; then
-        init_sys=$(detect_init_system)
-    fi
-
-    echo -e "\n\e[36m[ INFO ]\e[0m $(t "installer.deploy.configuring_sddm")"
-
-    if [ "$is_update" != true ] && [ "$REPLACE_DM" = true ]; then
-        local dms=("gdm" "gdm3" "lightdm" "lxdm" "lxdm-gtk3" "ly" "greetd" "emptty")
-        for dm in "${dms[@]}"; do
-            if declare -f pm_disable_display_manager >/dev/null; then
-                pm_disable_display_manager "$dm" "$init_sys"
-            elif declare -f disable_system_service >/dev/null; then
-                disable_system_service "$dm" "$init_sys"
-            fi
-            if pm_is_installed "$dm"; then
-                echo "  $(t "installer.deploy.disabling_dm" "dm=$dm")"
-                pm_remove_pkg "$dm"
-            fi
-        done
-    fi
-
-    sudo rm -rf /usr/share/sddm/themes/matugen-minimal
-    sudo rm -rf /usr/share/sddm/themes/material-you
-    sudo rm -f /etc/sddm.conf.d/*matugen*.conf
-    sudo rm -f /etc/sddm.conf.d/*material-you*.conf
-
-    if [ "$is_update" != true ] && [ -f /etc/sddm.conf ]; then
-        sudo cp -a /etc/sddm.conf "/etc/sddm.conf.backup.$(date +%Y%m%d_%H%M%S)" 2>/dev/null || true
-        sudo rm -f /etc/sddm.conf
+    local init_sys
+    init_sys="$(detect_init_system)"
+    local current_dm=""
+    if [ "$init_sys" = systemd ]; then
+        current_dm="$(active_display_manager)"
+        if [[ -n "$current_dm" && "$current_dm" != sddm && "$REPLACE_DM" != true ]]; then
+            printf 'Leaving the current display manager (%s) in place. SDDM setup skipped.\n' "$current_dm"
+            return 0
+        fi
     fi
 
     local sddm_theme_src="$project_root/config/sddm/themes/material-you"
     local sddm_theme_dest="/usr/share/sddm/themes/material-you"
+    local sddm_config="/etc/sddm.conf.d/10-material-you.conf"
+    if [[ -L "$sddm_theme_dest" || -L "$sddm_config" ]] ||
+        { [ -d "$sddm_theme_dest" ] && [ -n "$(find "$sddm_theme_dest" -type l -print -quit)" ]; }; then
+        echo "SDDM theme or drop-in contains symbolic links. Keep it and configure SDDM from its existing files." >&2
+        return 1
+    fi
+    backup_system_path "$sddm_config" || return 1
 
-    if [ -d "$sddm_theme_src" ]; then
+    if [ -d "$sddm_theme_src" ] && ! diff -rq -- "$sddm_theme_src" "$sddm_theme_dest" >/dev/null 2>&1; then
+        backup_system_path "$sddm_theme_dest" || return 1
         sudo mkdir -p "$sddm_theme_dest"
         sudo cp -r "$sddm_theme_src/." "$sddm_theme_dest/"
-        sudo chmod -R 755 "$sddm_theme_dest"
-        if [ -d "$sddm_theme_src/font" ]; then
-            sudo mkdir -p /usr/share/fonts/TTF
-            sudo cp -r "$sddm_theme_src/font/"*.ttf /usr/share/fonts/TTF/ 2>/dev/null || true
-            fc-cache -f /usr/share/fonts >/dev/null 2>&1 || true
-        fi
     fi
 
     sudo mkdir -p /etc/sddm.conf.d
 
     if [ "$sddm_display_server" = "wayland" ]; then
-        cat <<EOF | sudo tee /etc/sddm.conf.d/10-material-you.conf > /dev/null
+        cat <<EOF | sudo tee "$sddm_config" > /dev/null
 [Theme]
 Current=material-you
 ThemeDir=/usr/share/sddm/themes
@@ -280,7 +273,7 @@ InputMethod=
 CompositorCommand=$sddm_compositor_cmd
 EOF
     else
-        cat <<EOF | sudo tee /etc/sddm.conf.d/10-material-you.conf > /dev/null
+        cat <<EOF | sudo tee "$sddm_config" > /dev/null
 [Theme]
 Current=material-you
 ThemeDir=/usr/share/sddm/themes
@@ -292,41 +285,27 @@ EOF
     fi
 
     if [ "$PM_SDDM_CURSOR_FIX" = true ]; then
-        configure_sddm_cursor /etc/sddm.conf.d/10-material-you.conf
+        configure_sddm_cursor "$sddm_config"
     fi
 
     if declare -f pm_configure_sddm_session >/dev/null; then
-        pm_configure_sddm_session /etc/sddm.conf.d/10-material-you.conf
+        pm_configure_sddm_session "$sddm_config"
     fi
 
-    if declare -f pm_enable_display_manager >/dev/null; then
+    if [ "$init_sys" = systemd ]; then
+        if [[ -n "$current_dm" && "$current_dm" != sddm ]]; then
+            sudo systemctl disable "$current_dm.service" || return 1
+            if ! sudo systemctl enable sddm.service; then
+                sudo systemctl enable "$current_dm.service" || true
+                return 1
+            fi
+        else
+            sudo systemctl enable sddm.service || return 1
+        fi
+    elif declare -f pm_enable_display_manager >/dev/null; then
         pm_enable_display_manager "sddm" "$init_sys"
-    elif declare -f enable_system_service >/dev/null; then
-        enable_system_service "sddm" "$init_sys"
     else
-        case "$init_sys" in
-            systemd)
-                sudo systemctl enable --now sddm.service 2>/dev/null || sudo systemctl enable -f sddm.service 2>/dev/null || sudo systemctl enable sddm 2>/dev/null || true
-                ;;
-            openrc)
-                sudo rc-update add sddm default 2>/dev/null || true
-                sudo rc-service sddm start 2>/dev/null || true
-                ;;
-            dinit)
-                sudo dinitctl enable sddm 2>/dev/null || sudo dinitctl start sddm 2>/dev/null || true
-                ;;
-            runit)
-                if [ -d "/etc/sv/sddm" ]; then
-                    sudo ln -sf "/etc/sv/sddm" /var/service/ 2>/dev/null || true
-                fi
-                ;;
-            s6)
-                sudo s6-rc-bundle-update -b add default sddm 2>/dev/null || true
-                ;;
-            *)
-                sudo systemctl enable sddm.service -f 2>/dev/null || true
-                ;;
-        esac
+        enable_system_service "sddm" "$init_sys"
     fi
 
     echo -e "  \e[32m$(t "installer.deploy.sddm_success")\e[0m"
@@ -355,12 +334,12 @@ setup_pam_service() {
     content+="auth        include      $base"$'\n'
     content+="account     include      $base"$'\n'
 
-    if [ -f "$target" ] && [ "$(cat "$target" 2>/dev/null)" = "${content%$'\n'}" ]; then
+    if [ -e "$target" ] || [ -L "$target" ]; then
         return 0
     fi
 
-    printf '%s' "$content" | sudo tee "$target" >/dev/null 2>&1 || true
-    sudo chmod 644 "$target" 2>/dev/null || true
+    printf '%s' "$content" | sudo tee "$target" >/dev/null
+    sudo chmod 644 "$target"
 }
 
 remove_settings_desktop_entry() {
@@ -385,6 +364,63 @@ remove_settings_desktop_entry() {
 
 # Replace <dst> with a copy of <src> (without Python caches). The copy is
 # staged first so an interrupted copy never leaves a half-written tree.
+create_config_backup_dir() {
+    local parent="$1" prefix="$2"
+    mkdir -p -- "$parent" && mktemp -d -- "$parent/${prefix}_XXXXXX"
+}
+
+confirm_config_replacement() {
+    local answer
+    printf 'Back up and replace matching configuration files in %s? [y/N] ' "$1" >&2
+    if [ -t 0 ]; then
+        read -r answer || return 1
+    elif [ -r /dev/tty ]; then
+        read -r answer < /dev/tty || return 1
+    else
+        return 1
+    fi
+    [[ "$answer" =~ ^[Yy]$ ]]
+}
+
+install_config_tree() {
+    local source="$1" target="$2" entry destination backup
+    local changed=false replaces=false
+    [ -d "$source" ] || return 1
+
+    if [ -L "$target" ] || { [ -e "$target" ] && [ ! -d "$target" ]; }; then
+        echo "Cannot deploy into $target. The existing path was kept." >&2
+        return 1
+    fi
+    while IFS= read -r -d '' entry; do
+        destination="$target/${entry#"$source/"}"
+        if [ -L "$destination" ]; then
+            echo "Cannot deploy over linked config $destination. The link was kept." >&2
+            return 1
+        fi
+        if [ -d "$entry" ]; then
+            [ -d "$destination" ] || changed=true
+        elif ! cmp -s -- "$entry" "$destination"; then
+            changed=true
+            if [ -e "$destination" ]; then replaces=true; fi
+        fi
+    done < <(find "$source" -mindepth 1 -print0)
+    [ "$changed" = true ] || return 0
+
+    if [ -d "$target" ]; then
+        if [ "$replaces" = true ] && ! confirm_config_replacement "$target"; then
+            printf 'Keeping %s. For a custom compositor configuration, add serpantinumd start to its autostart.\n' "$target"
+            return 0
+        fi
+        backup="$(create_config_backup_dir "${target}_backup" backup)" || return 1
+        if ! cp -a -- "$target/." "$backup/"; then
+            echo "Backup failed for $target. Its contents were kept." >&2
+            return 1
+        fi
+        printf 'Backup of %s: %s\n' "$target" "$backup"
+    fi
+    mkdir -p -- "$target" && cp -r --remove-destination -- "$source/." "$target/"
+}
+
 # Updates never overwrite compositor configs wholesale. A file the user has not edited
 # (identical to the version shipped by the previous commit) is replaced by the new one,
 # after a backup; an edited file is kept and only reported.
@@ -393,26 +429,32 @@ update_untouched_compositor_file() {
     shift 3
     local comp_part="${file#compositor*/}"
     local comp_name="${comp_part%%/*}" comp_file="${comp_part#*/}" comp target dest backup
+    local config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
     for comp in "$@"; do
         [[ "$comp" == "$comp_name" ]] || continue
         case "$comp" in
             hyprland) target="hypr" ;;
             *) target="$comp" ;;
         esac
-        dest="$HOME/.config/$target/$comp_file"
+        dest="$config_home/$target/$comp_file"
+        if [[ -L "$config_home/$target" || -L "$(dirname "$dest")" ]]; then
+            echo "Preserving linked compositor config: $dest"
+            continue
+        fi
         [ -f "$repo/$file" ] || continue
         cmp -s "$repo/$file" "$dest" && continue
         if [ -L "$dest" ]; then
             echo -e "\e[33m[ NOTE ]\e[0m ~/.config/$target/$comp_file is a symlink and was kept; the new version is $repo/$file"
         elif [ ! -e "$dest" ]; then
-            mkdir -p "$(dirname "$dest")"
-            cp "$repo/$file" "$dest"
+            mkdir -p "$(dirname "$dest")" && cp "$repo/$file" "$dest" || return 1
         elif [ -n "$old_commit" ] && git -C "$repo" show "$old_commit:$file" 2>/dev/null | cmp -s - "$dest"; then
-            backup="$HOME/.config/${target}_backup/update_$(date +%Y%m%d_%H%M%S)/$comp_file"
+            backup="$(create_config_backup_dir "$config_home/${target}_backup" update)" || return 1
+            backup="$backup/$comp_file"
             if mkdir -p "$(dirname "$backup")" && cp -a "$dest" "$backup" && cp "$repo/$file" "$dest"; then
                 echo -e "\e[32m[ OK ]\e[0m Updated ~/.config/$target/$comp_file (backup: $backup)"
             else
-                echo -e "\e[33m[ WARN ]\e[0m Could not back up or update ~/.config/$target/$comp_file" >&2
+                echo "Could not back up or update $dest." >&2
+                return 1
             fi
         else
             echo -e "\e[33m[ NOTE ]\e[0m ~/.config/$target/$comp_file has your own edits and was kept; the new version is $repo/$file"
@@ -421,25 +463,53 @@ update_untouched_compositor_file() {
 }
 
 sync_program_dir() {
-    local src="$1" dst="$2" stage
+    local src="$1" dst="$2" work
     [ -d "$src" ] || return 0
-    stage="$dst.new.$$"
-    rm -rf "$stage"
-    mkdir -p "$stage"
-    if ! cp -r "$src/." "$stage/"; then
-        rm -rf "$stage"
+    if [ -L "$dst" ]; then
+        echo "Cannot replace the linked program directory $dst." >&2
+        return 1
+    fi
+    work="$(mktemp -d -- "$dst.swap.XXXXXX")" || return 1
+    if ! mkdir "$work/new" || ! cp -r -- "$src/." "$work/new/"; then
+        rm -rf -- "$work"
         echo -e "\e[31m[ ERROR ]\e[0m Failed to copy $src to $dst" >&2
         return 1
     fi
-    find "$stage" -type d -name "__pycache__" -prune -exec rm -rf {} + 2>/dev/null || true
-    rm -rf "$dst"
-    mv "$stage" "$dst"
+    find "$work/new" -type d -name "__pycache__" -prune -exec rm -rf {} + 2>/dev/null || true
+    if [ -e "$dst" ] && ! mv -T -- "$dst" "$work/previous"; then
+        rm -rf -- "$work"
+        return 1
+    fi
+    if ! mv -T -- "$work/new" "$dst"; then
+        if [ -e "$work/previous" ] && ! mv -T -- "$work/previous" "$dst"; then
+            echo "Previous program files are at $work/previous." >&2
+            return 1
+        fi
+        rm -rf -- "$work"
+        return 1
+    fi
+    rm -rf -- "$work"
+}
+
+install_launcher_link() {
+    local source="$1" link="$2"
+    local global="/usr/local/bin/${link##*/}"
+    if [ -e "$link" ] || [ -L "$link" ]; then
+        if [ "$(readlink -- "$link")" != "$source" ]; then
+            echo "Launcher path $link already belongs to another installation." >&2
+            return 1
+        fi
+    else
+        ln -s -- "$source" "$link" || return 1
+    fi
+    if [ ! -e "$global" ] && [ ! -L "$global" ]; then
+        sudo ln -s -- "$source" "$global" || echo "Launcher installed in $link."
+    fi
 }
 
 deploy_package() {
     local REPO_ROOT="$1"
     local OLD_COMMIT="$2"
-    local NEW_COMMIT="$3"
     local IS_REINSTALL="$4"
     local INSTALL_STATE="$5"
     shift 5
@@ -453,196 +523,33 @@ deploy_package() {
         is_update=true
     fi
 
-    local do_full_deploy=true
+    local comp cfg src_comp
+    local config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+    mkdir -p "$TARGET_BASE" "$BIN_DIR"
 
-    if [ "$IS_REINSTALL" != "true" ] && [ -n "$OLD_COMMIT" ] && [ "$OLD_COMMIT" != "unknown" ] && [ -d "$REPO_ROOT/.git" ]; then
-        if git -C "$REPO_ROOT" cat-file -e "$OLD_COMMIT" 2>/dev/null; then
-            do_full_deploy=false
-        fi
-    fi
-
-    if [ "$do_full_deploy" = true ]; then
-        # The offline VPN bundle and per-user engine live beside the program.
-        mkdir -p "$TARGET_BASE/bin" "$TARGET_BASE/src" "$BIN_DIR"
-
-        if [ "$is_update" != "true" ]; then
-            for cfg in "${EXTRA_CONFIGS[@]}"; do
-                local src_cfg="$REPO_ROOT/config/$cfg"
-                local dest_cfg="$HOME/.config/$cfg"
-                if [ -d "$src_cfg" ]; then
-                    mkdir -p "$dest_cfg"
-                    cp -r "$src_cfg/." "$dest_cfg/"
-                elif [ -f "$src_cfg" ]; then
-                    mkdir -p "$(dirname "$dest_cfg")"
-                    cp "$src_cfg" "$dest_cfg"
-                fi
-            done
-        fi
-
-        if [ "$is_update" != "true" ]; then
-            for comp in "${COMPOSITORS[@]}"; do
-                local target_config_name
-                case "$comp" in
-                    hyprland) target_config_name="hypr" ;;
-                    niri) target_config_name="niri" ;;
-                    sway) target_config_name="sway" ;;
-                    *) target_config_name="$comp" ;;
-                esac
-
-                local TARGET_CONFIG_DIR="$HOME/.config/$target_config_name"
-                local BACKUP_BASE="$HOME/.config/${target_config_name}_backup"
-                local BACKUP_DIR="$BACKUP_BASE/backup_$(date +%Y%m%d_%H%M%S)"
-
-                local SRC_COMP_DIR=""
-                if [ -d "$REPO_ROOT/compositors/$comp" ] && [ "$(ls -A "$REPO_ROOT/compositors/$comp" 2>/dev/null)" ]; then
-                    SRC_COMP_DIR="$REPO_ROOT/compositors/$comp"
-                elif [ -d "$REPO_ROOT/compositor/$comp" ] && [ "$(ls -A "$REPO_ROOT/compositor/$comp" 2>/dev/null)" ]; then
-                    SRC_COMP_DIR="$REPO_ROOT/compositor/$comp"
-                fi
-
-                if [ -n "$SRC_COMP_DIR" ]; then
-                    if [ -d "$TARGET_CONFIG_DIR" ] && [ "$(ls -A "$TARGET_CONFIG_DIR" 2>/dev/null)" ]; then
-                        mkdir -p "$BACKUP_DIR"
-                        cp -a "$TARGET_CONFIG_DIR/." "$BACKUP_DIR/" 2>/dev/null || true
-                    fi
-
-                    mkdir -p "$TARGET_CONFIG_DIR"
-                    cp -r "$SRC_COMP_DIR/." "$TARGET_CONFIG_DIR/"
-
-                    find "$TARGET_CONFIG_DIR" -type f -o -type l | while IFS= read -r dest_file; do
-                        local rel_path="${dest_file#$TARGET_CONFIG_DIR/}"
-                        if [ ! -e "$SRC_COMP_DIR/$rel_path" ] && [ ! -L "$SRC_COMP_DIR/$rel_path" ]; then
-                            rm -f "$dest_file"
-                        fi
-                    done
-
-                    find "$TARGET_CONFIG_DIR" -depth -type d -empty ! -path "$TARGET_CONFIG_DIR" -delete 2>/dev/null || true
-                fi
-            done
-        fi
-    else
-        mkdir -p "$TARGET_BASE/bin" "$TARGET_BASE/src" "$BIN_DIR"
-
-        local changed_files=""
-        local deleted_files=""
-
-        if [ "$OLD_COMMIT" != "$NEW_COMMIT" ]; then
-            changed_files=$(git -C "$REPO_ROOT" diff --name-only --no-renames --diff-filter=AM "$OLD_COMMIT" "$NEW_COMMIT" 2>/dev/null || true)
-            deleted_files=$(git -C "$REPO_ROOT" diff --name-only --no-renames --diff-filter=D "$OLD_COMMIT" "$NEW_COMMIT" 2>/dev/null || true)
-        fi
-
-        if [ -n "$deleted_files" ]; then
-            while IFS= read -r file; do
-                [[ -z "$file" ]] && continue
-                if [[ "$file" == bin/* ]]; then
-                    rm -f "$TARGET_BASE/$file"
-                elif [[ "$file" == src/* ]]; then
-                    rm -f "$TARGET_BASE/$file"
-                elif [[ "$file" == config/* ]]; then
-                    if [ "$is_update" != "true" ]; then
-                        local rel_cfg="${file#config/}"
-                        local cfg_name="${rel_cfg%%/*}"
-                        for cfg in "${EXTRA_CONFIGS[@]}"; do
-                            if [[ "$cfg" == "$cfg_name" ]]; then
-                                rm -f "$HOME/.config/$rel_cfg"
-                            fi
-                        done
-                    fi
-                elif [[ "$file" == compositors/* || "$file" == compositor/* ]]; then
-                    if [ "$is_update" != "true" ]; then
-                        local comp_part="${file#compositor*/}"
-                        local comp_name="${comp_part%%/*}"
-                        local comp_file="${comp_part#*/}"
-                        for comp in "${COMPOSITORS[@]}"; do
-                            if [[ "$comp" == "$comp_name" ]]; then
-                                local target_config_name
-                                case "$comp" in
-                                    hyprland) target_config_name="hypr" ;;
-                                    niri) target_config_name="niri" ;;
-                                    sway) target_config_name="sway" ;;
-                                    *) target_config_name="$comp" ;;
-                                esac
-                                rm -f "$HOME/.config/$target_config_name/$comp_file"
-                            fi
-                        done
-                    fi
-                fi
-            done <<< "$deleted_files"
-        fi
-
-        if [ -n "$changed_files" ]; then
-            while IFS= read -r file; do
-                [[ -z "$file" ]] && continue
-                if [[ "$file" == bin/* ]]; then
-                    mkdir -p "$(dirname "$TARGET_BASE/$file")"
-                    cp "$REPO_ROOT/$file" "$TARGET_BASE/$file"
-                    chmod +x "$TARGET_BASE/$file" 2>/dev/null || true
-                elif [[ "$file" == src/* ]]; then
-                    mkdir -p "$(dirname "$TARGET_BASE/$file")"
-                    cp "$REPO_ROOT/$file" "$TARGET_BASE/$file"
-                    if [[ "$file" == *.sh ]]; then
-                        chmod +x "$TARGET_BASE/$file" 2>/dev/null || true
-                    fi
-                elif [[ "$file" == config/* ]]; then
-                    if [ "$is_update" != "true" ]; then
-                        local rel_cfg="${file#config/}"
-                        local cfg_name="${rel_cfg%%/*}"
-                        for cfg in "${EXTRA_CONFIGS[@]}"; do
-                            if [[ "$cfg" == "$cfg_name" ]]; then
-                                mkdir -p "$(dirname "$HOME/.config/$rel_cfg")"
-                                cp "$REPO_ROOT/$file" "$HOME/.config/$rel_cfg"
-                            fi
-                        done
-                    fi
-                elif [[ "$file" == compositors/* || "$file" == compositor/* ]]; then
-                    if [ "$is_update" != "true" ]; then
-                        local comp_part="${file#compositor*/}"
-                        local comp_name="${comp_part%%/*}"
-                        local comp_file="${comp_part#*/}"
-                        for comp in "${COMPOSITORS[@]}"; do
-                            if [[ "$comp" == "$comp_name" ]]; then
-                                local target_config_name
-                                case "$comp" in
-                                    hyprland) target_config_name="hypr" ;;
-                                    niri) target_config_name="niri" ;;
-                                    sway) target_config_name="sway" ;;
-                                    *) target_config_name="$comp" ;;
-                                esac
-                                mkdir -p "$(dirname "$HOME/.config/$target_config_name/$comp_file")"
-                                cp "$REPO_ROOT/$file" "$HOME/.config/$target_config_name/$comp_file"
-                            fi
-                        done
-                    elif [[ "$file" != compositors/hyprland/config/settings.lua && "$file" != compositors/hyprland/config/keybinds.lua ]]; then
-                        update_untouched_compositor_file "$REPO_ROOT" "$OLD_COMMIT" "$file" "${COMPOSITORS[@]}"
-                    fi
-                fi
-            done <<< "$changed_files"
-        fi
-    fi
-
-    # Apply window defaults and the canvas bridge on a local update too, even
-    # when the source tree has the same Git revision as the installed copy.
     if [ "$is_update" = true ]; then
-        local previous="$OLD_COMMIT"
-        [ "$do_full_deploy" = false ] || previous=""
-        update_untouched_compositor_file "$REPO_ROOT" "$previous" \
-            compositors/hyprland/config/settings.lua "${COMPOSITORS[@]}"
-        update_untouched_compositor_file "$REPO_ROOT" "$previous" \
-            compositors/hyprland/config/keybinds.lua "${COMPOSITORS[@]}"
-        update_untouched_compositor_file "$REPO_ROOT" "$previous" \
-            compositors/hyprland/config/canvas.lua "${COMPOSITORS[@]}"
-        update_untouched_compositor_file "$REPO_ROOT" "$previous" \
-            compositors/hyprland/hyprland.lua "${COMPOSITORS[@]}"
+        # Refresh stock Hyprland files and leave locally modified ones in place.
+        for cfg in config/settings.lua config/keybinds.lua config/canvas.lua config/autostart.lua config/env.lua hyprland.lua; do
+            update_untouched_compositor_file "$REPO_ROOT" "$OLD_COMMIT" \
+                "compositors/hyprland/$cfg" "${COMPOSITORS[@]}" || return 1
+        done
+    else
+        for cfg in "${EXTRA_CONFIGS[@]}"; do
+            install_config_tree "$REPO_ROOT/config/$cfg" "$config_home/$cfg" || return 1
+        done
+        for comp in "${COMPOSITORS[@]}"; do
+            src_comp="$REPO_ROOT/compositors/$comp"
+            [ -d "$src_comp" ] || src_comp="$REPO_ROOT/compositor/$comp"
+            cfg="$(get_compositor_config_dir_name "$comp")"
+            install_config_tree "$src_comp" "$config_home/$cfg" || return 1
+        done
     fi
 
-    # Program files are mirrored from the source tree on every run. The
-    # incremental path above only copies files changed between two *commits*,
-    # so uncommitted edits in a local checkout were never installed, and the
-    # bundled Themess packages (themess/) were not copied at all although the
-    # Themess backend looks for them next to src/.
-    sync_program_dir "$REPO_ROOT/bin" "$TARGET_BASE/bin"
-    sync_program_dir "$REPO_ROOT/src" "$TARGET_BASE/src"
-    sync_program_dir "$REPO_ROOT/themess" "$TARGET_BASE/themess"
+    # Mirror installed program directories, including local source changes.
+    # User data and the cached VPN bundle live outside these directories.
+    sync_program_dir "$REPO_ROOT/bin" "$TARGET_BASE/bin" || return 1
+    sync_program_dir "$REPO_ROOT/src" "$TARGET_BASE/src" || return 1
+    sync_program_dir "$REPO_ROOT/themess" "$TARGET_BASE/themess" || return 1
     chmod +x "$TARGET_BASE/bin/"* 2>/dev/null || true
     find "$TARGET_BASE/src" -type f \( -name "*.sh" -o -name "*.py" \) -exec chmod +x {} + 2>/dev/null || true
 
@@ -652,13 +559,11 @@ deploy_package() {
     fi
 
     if [ -f "$TARGET_BASE/bin/serpantinum" ]; then
-        ln -sf "$TARGET_BASE/bin/serpantinum" "$BIN_DIR/serpantinum"
-        sudo ln -sf "$TARGET_BASE/bin/serpantinum" /usr/local/bin/serpantinum 2>/dev/null || true
+        install_launcher_link "$TARGET_BASE/bin/serpantinum" "$BIN_DIR/serpantinum" || return 1
     fi
 
     if [ -f "$TARGET_BASE/bin/serpantinumd" ]; then
-        ln -sf "$TARGET_BASE/bin/serpantinumd" "$BIN_DIR/serpantinumd"
-        sudo ln -sf "$TARGET_BASE/bin/serpantinumd" /usr/local/bin/serpantinumd 2>/dev/null || true
+        install_launcher_link "$TARGET_BASE/bin/serpantinumd" "$BIN_DIR/serpantinumd" || return 1
     fi
 
     remove_settings_desktop_entry

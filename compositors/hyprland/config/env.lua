@@ -1,7 +1,9 @@
 hl.env("XDG_CURRENT_DESKTOP", "Hyprland")
 hl.env("XDG_SESSION_TYPE", "wayland")
 hl.env("XDG_SESSION_DESKTOP", "Hyprland")
-hl.env("QT_QPA_PLATFORMTHEME", "qt6ct")
+if not os.getenv("QT_QPA_PLATFORMTHEME") then
+  hl.env("QT_QPA_PLATFORMTHEME", "qt6ct")
+end
 
 -- Keybinds call `serpantinum ...`, which the installer links into ~/.local/bin.
 -- Sessions started from a display manager may not have it in PATH.

@@ -4,9 +4,10 @@ set -e
 main() {
     local slug="${REPO_SLUG:-ilyamiro/serpantinum}"
     local branch="${SERPANTINUM_BRANCH:-master}"
+    export SERPANTINUM_BRANCH="$branch"
     local dir
     dir="$(mktemp -d)"
-    trap 'rm -rf "$dir"' EXIT
+    trap "rm -rf -- $(printf '%q' "$dir")" EXIT
     curl -fsSL "https://raw.githubusercontent.com/${slug}/${branch}/install/install.sh" -o "$dir/install.sh"
     if [ -t 0 ]; then
         bash "$dir/install.sh" "$@"

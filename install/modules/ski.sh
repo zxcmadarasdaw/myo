@@ -107,19 +107,13 @@ ski_set_portal_preference() {
     local key="org.freedesktop.impl.portal.FileChooser"
 
     mkdir -p "$conf_dir"
-    if [ ! -f "$conf" ]; then
+    if [ ! -e "$conf" ] && [ ! -L "$conf" ]; then
         printf '[preferred]\n%s=ski\n' "$key" > "$conf"
-    elif grep -q "^$key=" "$conf"; then
-        sed -i "s|^$key=.*|$key=ski|" "$conf"
-    elif grep -q '^\[preferred\]' "$conf"; then
-        sed -i "/^\[preferred\]/a $key=ski" "$conf"
-    else
-        printf '\n[preferred]\n%s=ski\n' "$key" >> "$conf"
     fi
 }
 
 ski_set_dock_entry() {
-    local settings="${XDG_CONFIG_HOME:-$HOME/.config}/serpantinum/settings.json"
+    local settings="${QS_SETTINGS:-${XDG_CONFIG_HOME:-$HOME/.config}/serpantinum/settings.json}"
     [ -s "$settings" ] || return 0
     command -v jq >/dev/null 2>&1 || return 0
 
@@ -135,9 +129,20 @@ ski_set_dock_entry() {
 }
 
 configure_ski_defaults() {
+    local new_settings="${1:-false}"
     command -v ski >/dev/null 2>&1 || return 0
+    [ "$new_settings" = true ] || return 0
+    if [[ "${XDG_CURRENT_DESKTOP:-}" == *KDE* || -f /usr/share/wayland-sessions/plasma.desktop ||
+        -f /usr/share/wayland-sessions/plasmawayland.desktop ]]; then
+        return 0
+    fi
 
     if command -v xdg-mime >/dev/null 2>&1; then
+        local directory_default
+        directory_default="$(xdg-mime query default inode/directory 2>/dev/null || true)"
+        if [ -n "$directory_default" ] && [ "$directory_default" != ski.desktop ]; then
+            return 0
+        fi
         xdg-mime default ski.desktop inode/directory 2>/dev/null || true
     fi
 
@@ -145,7 +150,9 @@ configure_ski_defaults() {
 
     local env_dir="${XDG_CONFIG_HOME:-$HOME/.config}/environment.d"
     mkdir -p "$env_dir"
-    printf 'GTK_USE_PORTAL=1\n' > "$env_dir/serpantinum-portal.conf"
+    if [ ! -e "$env_dir/serpantinum-portal.conf" ] && [ ! -L "$env_dir/serpantinum-portal.conf" ]; then
+        printf 'GTK_USE_PORTAL=1\n' > "$env_dir/serpantinum-portal.conf"
+    fi
 
     ski_set_dock_entry
 }

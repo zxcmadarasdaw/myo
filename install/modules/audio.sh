@@ -48,8 +48,9 @@ audio_install_prebuilt() {
 
 audio_build_tools() {
     [ ${#PM_AUDIO_BUILD_PKGS[@]} -gt 0 ] || return 0
-    local missing=() pkg
-    mapfile -t missing < <(pm_missing_pkgs "${PM_AUDIO_BUILD_PKGS[@]}")
+    local missing=() pkg result
+    result="$(pm_missing_pkgs "${PM_AUDIO_BUILD_PKGS[@]}")" || return 1
+    mapfile -t missing <<< "$result"
     for pkg in "${missing[@]}"; do
         [ -n "$pkg" ] || continue
         pm_install_pkg "$pkg" 1 || return 1

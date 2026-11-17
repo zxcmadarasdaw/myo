@@ -301,7 +301,7 @@ Item {
                     font.family: root.fontFamily
                     font.pixelSize: Scaler.s(11)
                     color: messageBox.kind === "missing" ? ThemeBackend.green : ThemeBackend.peach
-                    text: messageBox.kind === "missing" ? "sudo dnf install " + core.statusDetail : core.pendingCommand
+                    text: messageBox.kind === "missing" ? core.installHint : core.pendingCommand
                 }
 
                 Row {

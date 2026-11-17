@@ -2,7 +2,7 @@
 
 PM_BOOTSTRAP_TOOLS=(fzf jq curl git pciutils unzip fontconfig)
 
-PM_EXTRA_PKGS=(jetbrains-mono-fonts fontawesome-6-free-fonts xdg-user-dirs xwayland-satellite pipewire-utils)
+PM_EXTRA_PKGS=(jetbrains-mono-fonts fontawesome-6-free-fonts xdg-user-dirs xwayland-satellite pipewire-utils pulseaudio-utils)
 PM_SDDM_EXTRA_PKGS=(sddm-wayland-generic adwaita-cursor-theme)
 PM_SDDM_WAYLAND_DEFAULT=true
 PM_SDDM_CURSOR_FIX=true

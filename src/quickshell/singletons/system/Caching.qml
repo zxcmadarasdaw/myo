@@ -33,8 +33,8 @@ QtObject {
     readonly property string home: Quickshell.env("HOME")
     readonly property string xdgRuntimeDir: Quickshell.env("XDG_RUNTIME_DIR")
 
-    readonly property string cacheDir: Quickshell.env("QS_CACHE_DIR") ? Quickshell.env("QS_CACHE_DIR") : (home + "/.cache/serpantinum")
-    readonly property string stateDir: Quickshell.env("QS_STATE_DIR") ? Quickshell.env("QS_STATE_DIR") : (home + "/.local/state/serpantinum")
+    readonly property string cacheDir: Quickshell.env("QS_CACHE_DIR") || ((Quickshell.env("XDG_CACHE_HOME") || home + "/.cache") + "/serpantinum")
+    readonly property string stateDir: Quickshell.env("QS_STATE_DIR") || ((Quickshell.env("XDG_STATE_HOME") || home + "/.local/state") + "/serpantinum")
     readonly property string runDir: Quickshell.env("QS_RUN_DIR") ? Quickshell.env("QS_RUN_DIR") : ((xdgRuntimeDir !== "" ? xdgRuntimeDir : "/tmp") + "/serpantinum")
     readonly property string logDir: Quickshell.env("QS_LOG_DIR") ? Quickshell.env("QS_LOG_DIR") : (runDir + "/logs")
 

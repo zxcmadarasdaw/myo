@@ -359,12 +359,207 @@ EOF
     rm -rf "$home"
 }
 
+test_platform_selection() (
+    local home
+    home="$(new_home)"
+    source "$ROOT/install/install.sh"
+    pacman() { return 0; }
+    dnf() { return 0; }
+    printf 'ID=fedora\nVERSION_ID="45"\n' > "$home/release"
+    detect_install_platform "$home/release" x86_64 && [ "$PM_NAME" = dnf ] && [ "$DISTRO_VERSION" = 45 ] || return 1
+    printf 'ID=cachyos\nID_LIKE=arch\n' > "$home/release"
+    detect_install_platform "$home/release" x86_64 && [ "$PM_NAME" = pacman ] || return 1
+    printf 'ID=arch\n' > "$home/release"
+    detect_install_platform "$home/release" x86_64 && [ "$PM_NAME" = pacman ] || return 1
+    if detect_install_platform "$home/release" aarch64 2>/dev/null; then return 1; fi
+    unset -f pacman
+    if PATH="$home/stub-bin" detect_install_platform "$home/release" x86_64 2>/dev/null; then return 1; fi
+    printf 'ID=debian\n' > "$home/release"
+    if detect_install_platform "$home/release" x86_64 2>/dev/null; then return 1; fi
+    df() { printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\ntest 100 92 8 92%% /\n'; }
+    check_install_space "$home" 8 && ! check_install_space "$home" 9 2>/dev/null || return 1
+    rm -rf "$home"
+)
+
+test_pacman_provider() (
+    local home
+    home="$(new_home)"
+    export HOME="$home"
+    PM_NAME=pacman
+    source "$ROOT/install/modules/pm.sh"
+    source "$ROOT/install/modules/deps.sh"
+    OPT_SDDM=false
+    REQUIRED_PKGS=(quickshell kitty)
+    PM_EXTRA_PKGS=()
+    quickshell_is_current() { return 0; }
+    install_fonts() { :; }
+    configure_qt_icon_theme() { :; }
+    t() { printf '%s' "$1"; }
+    sudo() { "$@"; }
+    pacman() {
+        local operation="$1"
+        shift
+        case "$operation" in
+            -T)
+                [ "$*" = 'kitty hyprland' ] || return 2
+                if [ ! -f "$home/installed" ]; then printf 'kitty\nhyprland\n'; return 127; fi
+                ;;
+            -Q) return 0 ;;
+            -Syu|-S)
+                printf '%s %s\n' "$operation" "$*" >> "$home/transactions"
+                [ ! -f "$home/fail" ] || return 1
+                touch "$home/installed"
+                ;;
+            *) return 3 ;;
+        esac
+    }
+    touch "$home/fail"
+    if install_dependencies fresh false hyprland >/dev/null 2>&1; then return 1; fi
+    [ ! -f "$home/installed" ] && [ "$PM_PACMAN_SYNCED" = false ] || return 1
+    rm "$home/fail"
+    install_dependencies fresh false hyprland >/dev/null || return 1
+    install_dependencies current false hyprland >/dev/null || return 1
+    [ "$(cat "$home/transactions")" = "$(printf '%s\n' '-Syu --needed kitty hyprland' '-Syu --needed kitty hyprland')" ] || return 1
+    pm_bootstrap_install jq >/dev/null && grep -Fxq -- '-S --needed jq' "$home/transactions" || return 1
+    rm -rf "$home"
+)
+
+test_config_backup() (
+    local home
+    home="$(new_home)"
+    export HOME="$home" XDG_CONFIG_HOME="$home/xdg"
+    source "$ROOT/install/modules/deploy.sh"
+    source "$ROOT/install/modules/config.sh"
+    local incoming="$home/incoming" target="$XDG_CONFIG_HOME/hypr"
+    mkdir -p "$incoming" "$target" "$CONFIG_DIR"
+    printf 'new\n' > "$incoming/hyprland.lua"
+    printf 'old\n' > "$target/hyprland.lua"
+    printf 'personal\n' > "$target/personal.lua"
+    printf '{"wallpaperDir":"/my pictures","userSetting":true}\n' > "$CONFIG_FILE"
+    confirm_config_replacement() { return 1; }
+    install_config_tree "$incoming" "$target" >/dev/null || return 1
+    [ "$(cat "$target/hyprland.lua")" = old ] || return 1
+    confirm_config_replacement() { return 0; }
+    cp() {
+        [ "$1" != -a ] || return 1
+        command cp "$@"
+    }
+    if install_config_tree "$incoming" "$target" >/dev/null 2>&1; then return 1; fi
+    [ "$(cat "$target/hyprland.lua")" = old ] || return 1
+    unset -f cp
+    install_config_tree "$incoming" "$target" >/dev/null || return 1
+    grep -qFx old "$target"_backup/backup_*/hyprland.lua || return 1
+    [ "$(cat "$target/hyprland.lua")" = new ] && [ "$(cat "$target/personal.lua")" = personal ] || return 1
+    install_config_tree "$incoming" "$target" >/dev/null || return 1
+    [ "$(find "$target"_backup -type f -name hyprland.lua | wc -l)" -eq 1 ] || return 1
+    init_serpantinum_config "$ROOT" "$home/Pictures" || return 1
+    [ "$SERP_NEW_SETTINGS" = false ] && grep -qF '"/my pictures"' "$CONFIG_FILE" || return 1
+    rm -rf "$home"
+)
+
+test_sddm_keeps_display_manager() (
+    source "$ROOT/install/modules/deploy.sh"
+    OPT_SDDM=true
+    SDDM_WAYLAND=false
+    REPLACE_DM=false
+    detect_init_system() { echo systemd; }
+    resolve_sddm_backend() { echo x11; }
+    systemctl() { echo plasmalogin.service; }
+    sudo() { echo 'unexpected privileged action' >&2; exit 42; }
+    setup_sddm "$ROOT"
+)
+
+test_arch_vpn_provider() (
+    local home result
+    home="$(new_home)"
+    export HOME="$home" XDG_STATE_HOME="$home/state"
+    PM_NAME=pacman
+    DISTRO_ID=cachyos
+    DISTRO_VERSION=""
+    PROJECT_ROOT="$ROOT"
+    source "$ROOT/install/modules/vpn.sh"
+    pm_missing_pkgs() {
+        [ "$*" = "polkit python-yaml iproute2 nftables" ] || return 1
+        printf 'python-yaml\niproute2\n'
+    }
+    pm_install_batch() {
+        [ "$*" = "python-yaml iproute2" ] || return 1
+        printf 'dependencies\n' >> "$home/log"
+    }
+    vpn_prepare_linux() { printf 'local bundle\n' >> "$home/log"; }
+    timeout() {
+        [[ "$*" == *'verify-install --prepare-status=0' ]] || return 1
+        printf 'verification\n' >> "$home/log"
+    }
+    result="$(install_vpn_components)" || return 1
+    [ "$(cat "$home/log")" = "$(printf 'dependencies\nlocal bundle\nverification')" ] || return 1
+    [[ "$result" == *'VPN components: READY' ]] || return 1
+    timeout() { return 1; }
+    if install_vpn_components >/dev/null 2>&1; then return 1; fi
+    rm -rf "$home"
+)
+
+test_xdg_paths() (
+    local home
+    home="$(new_home)"
+    export HOME="$home" XDG_CONFIG_HOME="$home/xdg/config" XDG_STATE_HOME="$home/xdg/state"
+    source "$ROOT/src/scripts/xdg_paths.sh"
+    [ "$(serpantinum_settings_path)" = "$XDG_CONFIG_HOME/serpantinum/settings.json" ] || return 1
+    [ "$(serpantinum_state_dir)" = "$XDG_STATE_HOME/serpantinum" ] || return 1
+    mkdir -p "$HOME/.config/serpantinum" "$HOME/.local/state/serpantinum"
+    touch "$HOME/.config/serpantinum/settings.json" "$HOME/.local/state/serpantinum/version"
+    [ "$(serpantinum_settings_path)" = "$HOME/.config/serpantinum/settings.json" ] || return 1
+    [ "$(serpantinum_state_dir)" = "$HOME/.local/state/serpantinum" ] || return 1
+    rm -rf "$home"
+)
+
+test_maintenance_round_trip() (
+    local home snapshot output
+    home="$(new_home)"
+    export HOME="$home" XDG_CONFIG_HOME="$home/xdg/config" XDG_STATE_HOME="$home/xdg/state"
+    export XDG_DATA_HOME="$home/xdg/data"
+    # Git Bash lacks the Linux flock executable. The snapshot test uses a private HOME.
+    if ! command -v flock >/dev/null; then
+        printf '#!/usr/bin/env bash\nexit 0\n' > "$home/stub-bin/flock"
+        chmod +x "$home/stub-bin/flock"
+        export PATH="$home/stub-bin:$PATH"
+    fi
+    local settings="$XDG_CONFIG_HOME/serpantinum/settings.json" dir="$HOME/.local/share/serpantinum"
+    mkdir -p "${settings%/*}" "$XDG_STATE_HOME/serpantinum" "$dir/src" "$dir/bin" "$dir/themess"
+    printf 'original\n' > "$settings"
+    printf 'library\n' > "$XDG_STATE_HOME/serpantinum/favorites"
+    printf 'bundled or user theme\n' > "$dir/themess/keep"
+    printf 'source files\n' > "$dir/src/keep"
+    printf 'launcher files\n' > "$dir/bin/keep"
+    snapshot="$(bash "$ROOT/install/maintenance.sh" backup)" || return 1
+    [ -f "$snapshot/.format" ] || return 1
+    printf 'edited\n' > "$settings"
+    if bash "$ROOT/install/maintenance.sh" restore "$home" >/dev/null 2>&1; then return 1; fi
+    [ "$(cat "$settings")" = edited ] || return 1
+    output="$(bash "$ROOT/install/maintenance.sh" restore "$snapshot")" || return 1
+    [ "$(cat "$settings")" = original ] || return 1
+    [ "$(cat "${output#Backup before restore: }/settings/settings.json")" = edited ] || return 1
+    output="$(bash "$ROOT/install/maintenance.sh" uninstall)" || return 1
+    [ ! -e "$dir/src" ] && [ ! -e "$dir/bin" ] || return 1
+    [ -f "$dir/themess/keep" ] && [ -f "$settings" ] && [ -f "$XDG_STATE_HOME/serpantinum/favorites" ] || return 1
+    local archives=("$XDG_DATA_HOME"/serpantinum-backups/program_*)
+    [ -f "${archives[0]}/src/keep" ] && [ -f "${archives[0]}/bin/keep" ] || return 1
+    rm -rf "$home"
+)
+
 test_first_launch
 test_deploy_sync
 test_window_config_update
 test_verify
 test_supervisor
 test_fedora_terra
+test_platform_selection && ok "os-release selects the correct provider before bootstrap and checks space" || bad "platform selection or space check"
+test_pacman_provider && ok "pacman failure can be retried, preserves quickshell-git and skips installed packages" || bad "pacman transaction and retry"
+test_config_backup && ok "backup failure preserves configs and a successful retry retains user files" || bad "config backup and retry"
+test_sddm_keeps_display_manager >/dev/null && ok "SDDM leaves the existing display manager in place" || bad "display manager preservation"
+test_arch_vpn_provider && ok "Arch VPN setup uses native dependencies and requires successful verification" || bad "Arch VPN provider and verification"
+test_xdg_paths && ok "XDG paths are used for new installs and preserve legacy data" || bad "XDG path selection"
+test_maintenance_round_trip && ok "maintenance backs up, restores and archives a shell install without deleting user data" || bad "backup, restore and uninstall"
 
 echo
 echo "passed=$PASS failed=$FAIL skipped=$SKIP"

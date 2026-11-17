@@ -3,8 +3,6 @@
 -- camera move without polling or taking over Hyprland's pointer grabs.
 local windows = {}
 local cameras = {}
-local major, minor = hl.version():match("^(%d+)%.(%d+)")
-local hasUnload = major and (tonumber(major) > 0 or tonumber(minor) >= 57)
 
 local function eligible(window)
   return window.mapped and not window.hidden and window.floating and not window.pinned
@@ -111,9 +109,9 @@ end
 hl.on("window.close", function(window)
   if window.address then windows[window.address] = nil end
 end)
--- Hyprland added its pre-reload hook in 0.57. Older versions recover from
--- the window tags when the new config has registered its callbacks.
-hl.on(hasUnload and "config.unload" or "config.reloaded", function()
+-- Window tags retain the restore coordinates across Lua state replacement.
+-- The post-reload event is available from Hyprland 0.55 onward.
+hl.on("config.reloaded", function()
   for _, window in ipairs(hl.get_windows()) do
     for _, value in ipairs(window.tags) do
       local x, y, visibleX, visibleY, output = value:match(

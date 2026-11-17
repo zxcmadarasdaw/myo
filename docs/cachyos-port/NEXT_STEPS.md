@@ -1,0 +1,12 @@
+# Приёмка на CachyOS и Fedora 45
+
+По уточнению пользователя от 17 ноября 2026 года этапы выполняются подряд. Изменения этапов 2–7 и доступные проверки этапа 8 записаны в [PROGRESS.md](PROGRESS.md) и [TESTS.md](TESTS.md). Следующий оставшийся шаг — ручная приёмка в двух Linux-сеансах.
+
+1. В каждой системе зафиксировать `cat /etc/os-release`, `uname -m`, версию Hyprland и Quickshell, драйвер и выбранный Qt Multimedia backend. Выполнить команды диагностики из [TESTS.md](TESTS.md). В CachyOS проверить пакеты из реально настроенных репозиториев, в Fedora — версии системных RPM и выбранных COPR.
+2. В чистом тестовом окружении запустить `bash install/install.sh` обычным пользователем и выбрать Hyprland. Проверить повтор, установку из локального checkout, ошибку загрузки или транзакции и удаление через архивирование пользовательской программы. В отдельном окружении с KDE и существующим Hyprland проверить отказ от перезаписи, backup/restore и выбор KDE после reboot.
+3. Проверить Canvas, мышь, смену рабочих пространств на двух мониторах, Super+H/N/M, подтверждение действий polkit, реальную видимость окон и отсутствие новых `hyprctl configerrors`. Повторить после перезапуска. Если конфиг пользовательский, добавить `serpantinumd start` к его автозапуску.
+4. Проверить аудио и видео на Linux, включая MP4, WebM, GIF, Gallery, Cinema, MPV/браузер через MPRIS, Smart Wallpaper Audio и эффекты Music Studio. В сеансе AMD проверить доступ к DRM render-node и фактическое декодирование.
+5. Выполнить `bash install/install.sh --vpn-check`. С доверенным профилем проверить Proxy и TUN, журнал systemd, IP и DNS до, во время и после отключения. При отказе проверить `components-install.log` и `components.json`, затем запустить `--vpn-only` из активной локальной сессии. Для проверки без интернета заранее обеспечить установленные нативные зависимости или RPM-комплект Fedora.
+6. Проверить остальные модули по ручной матрице, включая PTY, живой Ollama, уведомления, NetworkManager, Bluetooth, FileChooser, коллекции и тему после повторного запуска. Прогнать Linux-only тесты `apptheme_test.py`, `terminal_pty_test.py`, `migrate_easyeffects_test.sh` и supervisor. Результаты добавить отдельно для каждой системы.
+
+Руководство по установке и восстановлению находится в [installation.md](../installation/installation.md). История аудита остаётся в [ARCHITECTURE.md](ARCHITECTURE.md) и [DEPENDENCIES.md](DEPENDENCIES.md).

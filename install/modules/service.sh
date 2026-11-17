@@ -103,8 +103,9 @@ setup_services() {
     fi
 
     if [[ "$init_sys" == "systemd" ]]; then
-        systemctl --user enable pipewire.socket pipewire-pulse.socket wireplumber.service 2>/dev/null || true
-        systemctl --user start pipewire.socket pipewire-pulse.socket wireplumber.service 2>/dev/null || true
+        if ! systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service; then
+            echo "Could not enable the PipeWire user services in this session. Check them after logging into the desktop." >&2
+        fi
     fi
 
     enable_system_service "NetworkManager" "$init_sys"

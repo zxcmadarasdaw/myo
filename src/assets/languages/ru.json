@@ -2274,6 +2274,7 @@
       "sddm_detected_none": "Обнаружен активный/включённый дисплейный менеджер: Нет",
       "sddm_opt_install": "Установить и настроить SDDM (тема material you)",
       "sddm_opt_disable": "Отключить и удалить '{dm}'",
+      "sddm_opt_switch": "Отключить '{dm}' при следующей загрузке",
       "sddm_opt_wayland": "Принудительно использовать wayland",
       "target_compositor_none": "Целевой композитор [обязательно — не выбран]",
       "target_compositor_selected": "Целевой композитор [{comps}]",
