@@ -47,9 +47,17 @@
           <details class="settings" open id="settings">
             <summary>Configuration and optional components</summary>
             <fieldset id="options" aria-label="Installation options"></fieldset>
+            <label for="download-mode">Package download mode</label>
+            <select id="download-mode">
+              <option value="stable">Stable · 1</option>
+              <option value="balanced" selected>Balanced · 4</option>
+              <option value="fast">Fast · 8</option>
+              <option value="adaptive">Adaptive · 1–8</option>
+            </select>
           </details>
           <div class="buttons">
             <button id="review" class="primary">Review changes</button>
+            <button id="review-saved" hidden>Review saved plan</button>
           </div>
         </section>
 
@@ -77,8 +85,9 @@
           </div>
           <p id="metrics" class="muted"></p>
           <section id="download-queue" hidden aria-label="Download queue">
-            <h3>Sequential Download · 1 package at a time</h3>
+            <h3>Package downloads</h3>
             <p id="queue-current"></p>
+            <div id="queue-active"></div>
             <progress id="queue-overall" aria-label="Overall package download progress"></progress>
             <p id="queue-counts" class="muted"></p>
             <p id="queue-storage" class="muted"></p>
@@ -93,6 +102,7 @@
             </details>
           </section>
           <p id="activity" class="muted"></p>
+          <p id="integration" class="muted" hidden></p>
           <div id="question" class="question" hidden>
             <label for="answer" id="prompt"></label>
             <div class="answer-row">

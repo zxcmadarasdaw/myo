@@ -426,6 +426,15 @@ manager_services() {
     if [ "$OPT_CONFIG" = true ] && [ "$OPT_SERVICES" = true ]; then hand_over_from_easyeffects; fi
 }
 
+manager_verify() {
+    if verify_installation; then
+        manager_record '@@integration' SUCCESS 'Installed configuration and selected sessions passed verification.'
+    else
+        manager_record '@@integration' FAILED 'Installed environment failed verification. See the specific checks in the journal.'
+        return 1
+    fi
+}
+
 manager_backup() (
     if [ "$OPT_BACKUP" = true ]; then
         source "$INSTALL_DIR/maintenance.sh"
@@ -444,6 +453,20 @@ manager_step() {
     manager_record '@@done' "$number"
 }
 
+manager_run_exit() {
+    local version
+    if [[ " ${SELECTED_COMPOSITORS[*]} " == *" hyprland "* ]]; then
+        if version="$(hyprland_version)" && [ -n "$version" ]; then
+            manager_record '@@component' Hyprland Installed "$version"
+        elif hyprland_binary >/dev/null; then
+            manager_record '@@component' Hyprland Failed 'Hyprland executable could not report its version.'
+        else
+            manager_record '@@component' Hyprland Missing 'Hyprland executable is unavailable after this run.'
+        fi
+    fi
+    rm -rf -- "$MANAGER_TMP"
+}
+
 manager_run() {
     local lock="${STATE_DIR%/*}/.serpantinum-install.lock"
     if [ "$PACKAGED_INSTALL" = true ]; then
@@ -456,7 +479,7 @@ manager_run() {
             flock -sn 9 || { echo 'An installation is in progress. Verify after it finishes.'; return 1; }
         fi
         manager_record '@@phase' 1 1 Verifying 'Installed environment'
-        verify_installation
+        manager_verify
         manager_record '@@done' 1
         return
     fi
@@ -471,7 +494,7 @@ manager_run() {
     exec 9>"$lock"
     flock -n 9 || { echo 'Another installer or maintenance operation is running.'; return 1; }
     MANAGER_TMP="$(mktemp -d)"
-    trap 'rm -rf -- "$MANAGER_TMP"' EXIT
+    trap manager_run_exit EXIT
     trap 'exit 130' INT
     trap 'exit 143' HUP TERM
     export SUDO_PROMPT=$'\n[Serpantinum sudo] Password for %u: '
@@ -482,7 +505,7 @@ manager_run() {
     manager_step 3 Installing 'Optional desktop engines' manager_engines
     manager_step 4 Configuring 'Shell and configuration' manager_deploy
     manager_step 5 Configuring 'Services and VPN' manager_services
-    manager_step 6 Verifying 'Installed environment' verify_installation
+    manager_step 6 Verifying 'Installed environment' manager_verify
 
     if [ "$MANAGER_ACTION" != missing ] || [ "$INSTALL_STATE" != current ]; then
         local telemetry_id saved_sddm="$OPT_SDDM" saved_wayland="$SDDM_WAYLAND" saved_wallpapers="$INSTALL_FULL_WALLPAPERS"
@@ -513,6 +536,8 @@ installer_manager() {
     MANAGED_INSTALL=true
     MANAGER_ACTION="$2"
     MANAGER_RESUME="${5:-1}"
+    export SERP_DOWNLOAD_MODE="${6:-${SERP_DOWNLOAD_MODE:-balanced}}"
+    case "$SERP_DOWNLOAD_MODE" in stable|balanced|fast|adaptive) ;; *) return 2 ;; esac
     case "$MANAGER_ACTION" in inspect|install|verify|repair|update|missing) ;; *) return 2 ;; esac
     [[ "$MANAGER_RESUME" =~ ^[1-6]$ ]] || return 2
     source "$PROJECT_ROOT/src/scripts/xdg_paths.sh"

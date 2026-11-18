@@ -37,11 +37,15 @@ hyprland_version() {
     "$bin" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1
 }
 
-check_hyprland_config() {
-    local config="$1" bin
+check_hyprland_config() (
+    local config="$1" bin runtime
     bin="$(hyprland_binary)" || return 1
+    runtime="$(mktemp -d /tmp/serpantinum-hyprland.XXXXXX)" || return 1
+    trap 'rm -rf -- "$runtime"' EXIT
+    export XDG_RUNTIME_DIR="$runtime"
+    unset HYPRLAND_INSTANCE_SIGNATURE WAYLAND_DISPLAY WAYLAND_SOCKET DISPLAY
     "$bin" --verify-config --config "$config"
-}
+)
 
 version_at_least() {
     [ -n "$1" ] && [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n 1)" = "$2" ]
@@ -83,6 +87,20 @@ installed_program_matches() {
             return 1
         fi
     done
+}
+
+verify_hyprland_session() {
+    local directory entry
+    local data_roots=()
+    IFS=: read -r -a data_roots <<< "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+    for directory in "${data_roots[@]}" /usr/share; do
+        [ -n "$directory" ] || continue
+        for entry in "$directory"/wayland-sessions/[Hh]yprland*.desktop; do
+            [ -r "$entry" ] || continue
+            grep -Eq '^Exec=.+' "$entry" && ! grep -Eq '^(Hidden|NoDisplay)=true' "$entry" && return 0
+        done
+    done
+    verify_error 'Hyprland is present without a Wayland session entry. Check the installed Hyprland package and display manager.'
 }
 
 verify_installation() {
@@ -133,6 +151,9 @@ verify_installation() {
                     fi
                 elif ! hypr_report="$(check_hyprland_config "$hypr_config" 2>&1)"; then
                     verify_error "Hyprland $version could not validate $hypr_config:"$'\n'"${hypr_report:-No diagnostic output}"
+                fi
+                if [ "${MANAGED_INSTALL:-false}" = true ] && [ -n "${version:-}" ]; then
+                    verify_hyprland_session
                 fi
                 # Hyprland's own dialogs (app not responding, permission
                 # prompts). Not used by Serpantinum; Fedora ships it only in

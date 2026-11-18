@@ -114,13 +114,22 @@ set -e
 
 case "${1:-}" in
     -h|--help)
-        echo 'Usage: bash install.sh [--tui | --check | --vpn-check | --vpn-only | --legacy-tui]'
+        echo 'Usage: bash install.sh [--tui | --check | --vpn-check | --vpn-only | --legacy-tui | --session-check | --return-session ID]'
         exit 0 ;;
 esac
 
 if [ "$EUID" -eq 0 ]; then
     echo "Run the installer as your desktop user. It calls sudo when required." >&2
     exit 1
+fi
+if [[ "${1:-}" == --session-check || "${1:-}" == --return-session ]]; then
+    source "$(dirname -- "${BASH_SOURCE[0]}")/modules/service.sh"
+    if [ "$1" = --session-check ]; then
+        installer_session_check
+    else
+        installer_return_session "${2:-}"
+    fi
+    exit
 fi
 detect_install_platform /etc/os-release "$(uname -m)"
 

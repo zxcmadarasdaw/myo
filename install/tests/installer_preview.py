@@ -20,6 +20,7 @@ def state():
     for name, status in [("hyprland", "VERIFIED"), ("quickshell", "FAILED"), ("mesa", "VERIFIED")]:
         p = Package(name, "fixture-1", "fixture-repository", 30 * 1048576, name + ".pkg", "fixture")
         p.state, p.received, p.percent = status, p.size, 100
+        p.checksum_verified = status == "VERIFIED"
         if name == "quickshell":
             p.attempts, p.mirror = 3, "fixture.invalid"
             if mode == "failed":
@@ -27,12 +28,17 @@ def state():
             else:
                 p.state, p.percent, p.received = "DOWNLOADING", 47, int(p.size * .47)
                 p.rate, p.average, p.eta = 1.6 * 1048576, 1.8 * 1048576, 10
+        if mode == "downloading" and name == "mesa":
+            p.state, p.percent, p.received = "DOWNLOADING", 62, int(p.size * .62)
+            p.checksum_verified = False
+            p.rate, p.average, p.eta = 2.8 * 1048576, 2.7 * 1048576, 4
         rows.append(p.public())
     run = dict(status="Failed" if mode == "failed" else "Downloading", code=1 if mode == "failed" else None,
                component="Distribution packages", phase=2, total=6, completed=1, elapsed=42, active=0, idle=0,
                metrics={}, network="Fixture only", processes=[], latest="VISUAL TEST — synthetic package data",
                path="fixture.log", lines=[], prompt="", partial="", secret=False, diagnostic="",
-               queue={"stage": "BLOCKED" if mode == "failed" else "DOWNLOAD", "total": 3}, downloads=rows, reports=[])
+               queue={"stage": "BLOCKED" if mode == "failed" else "DOWNLOAD", "total": 3, "limit": 4,
+                      "rate": sum(p["rate"] or 0 for p in rows), "download": "FAILED" if mode == "failed" else "RUNNING"}, downloads=rows, reports=[])
     return {"run": run, "launchError": ""}
 
 

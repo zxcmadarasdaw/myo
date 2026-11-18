@@ -20,6 +20,9 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
+from download_queue import DOWNLOAD_MODES
+
+
 HERE = Path(__file__).resolve().parent
 INSTALLER = HERE / "install.sh"
 ACTIONS = {
@@ -89,6 +92,9 @@ def normalize_plan(data):
         not isinstance(name, str) or name not in OPTIONS for name in options
     ):
         raise ValueError("Unknown component or option.")
+    download_mode = data.get("download_mode", "balanced")
+    if not isinstance(download_mode, str) or download_mode not in DOWNLOAD_MODES:
+        raise ValueError("Unknown package download mode.")
     chosen = set(options) if action != "verify" else set()
     if {"wayland", "display-manager"} & chosen and "sddm" not in chosen:
         raise ValueError("Select SDDM before changing its greeter or switching display managers.")
@@ -98,6 +104,7 @@ def normalize_plan(data):
         "action": action,
         "compositors": [name for name in COMPOSITORS if name in compositors],
         "options": [name for name in OPTIONS if name in chosen],
+        "download_mode": download_mode,
     }
 
 
@@ -106,7 +113,7 @@ def backend_args(mode, plan=None, resume=1):
         return ["bash", str(INSTALLER), mode, "inspect", "auto"]
     return [
         "bash", str(INSTALLER), mode, plan["action"],
-        ",".join(plan["compositors"]), ",".join(plan["options"]), str(resume),
+        ",".join(plan["compositors"]), ",".join(plan["options"]), str(resume), plan.get("download_mode", "balanced"),
     ]
 
 
@@ -127,12 +134,27 @@ def probe(plan=None):
     return records
 
 
-def log_file():
+def installer_state_dir():
     home = Path.home()
     state = Path(os.environ.get("XDG_STATE_HOME") or home / ".local/state") / "serpantinum"
     legacy = home / ".local/state/serpantinum"
     if not (state / "version").exists() and (legacy / "version").is_file():
         state = legacy
+    return state
+
+
+def atomic_text(path, contents):
+    fd, temporary = tempfile.mkstemp(prefix=".install-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as target:
+            target.write(contents)
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def log_file():
+    state = installer_state_dir()
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
     fd, path = tempfile.mkstemp(prefix="install.", suffix=".log", dir=state, text=True)
     return os.fdopen(fd, "w", encoding="utf-8", buffering=1), path
@@ -182,6 +204,9 @@ class Run:
         self.downloads = {}
         self.queue = {}
         self.reports = []
+        self.integration = "PENDING"
+        self.integration_detail = ""
+        self.components = {}
         self.children = []
         self.next_sample = 0
         self.decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
@@ -225,8 +250,12 @@ class Run:
                 event["packages"] = list(self.downloads.values())
                 self.reports.append(event)
                 self.save_reports()
-                self.append(f"Download report: {event.get('downloaded', 0)}/{event.get('total', 0)} checksum verified; "
-                            f"failed {event.get('failed', 0)}; {event.get('stage', '')}")
+                self.append(f"Download: {event.get('download', 'PENDING')} · "
+                            f"{event.get('downloaded', 0)}/{event.get('total', 0)} checksums verified · "
+                            f"Verification: {event.get('verification', 'PENDING')} · "
+                            f"Installation: {event.get('installation', 'PENDING')}")
+                if event.get("error"):
+                    self.append(event["error"])
                 for pkg in event["packages"]:
                     if pkg.get("error"):
                         self.append(f"{pkg['name']}: {pkg['error']} · attempts {pkg['attempts']} · {pkg['mirror']}")
@@ -245,6 +274,15 @@ class Run:
             self.status = {"DOWNLOAD": "Downloading", "VERIFYING": "Verifying", "INSTALLING": "Installing",
                            "BLOCKED": "Failed", "READY": "Verifying", "INSTALLED": "Installing"}.get(event.get("stage"), "Downloading")
             self.network = "Measured package file bytes"
+            return
+        if len(fields) == 4 and fields[0] == "@@component":
+            name, state, detail = fields[1:]
+            self.components[name] = dict(state=state, detail=detail)
+            self.append(f"{name} · {state} · {detail}")
+            return
+        if len(fields) == 3 and fields[0] == "@@integration":
+            self.integration, self.integration_detail = fields[1:]
+            self.append(self.integration_detail)
             return
         if len(fields) == 5 and fields[0] == "@@phase" and all(v.isdigit() for v in fields[1:3]):
             self.phase, self.total = map(int, fields[1:3])
@@ -346,8 +384,11 @@ class Run:
         self.status = ("Cancelled" if self.cancelled else
                        "Completed" if self.exit_code == 0 else "Failed")
         self.pending = self.prompt = ""
+        if self.exit_code and self.total == 6 and self.phase in {4, 5, 6} and self.integration == "PENDING":
+            self.integration = "CANCELLED" if self.cancelled else "FAILED"
+            self.integration_detail = f"Phase {self.phase} · {self.latest}"
         self.append(f"{self.status} · exit {self.exit_code}")
-        if self.reports:
+        if self.reports or self.queue or self.components or self.integration != "PENDING":
             self.save_reports()
         self.log.close()
 
@@ -389,11 +430,13 @@ class Run:
             active=int(now - self.last_activity), processes=sorted({row[2] for row in self.children}),
             network=self.network, metrics=self.metrics, diagnostic=self.diagnostic, path=self.path, code=self.exit_code,
             queue=self.queue, downloads=list(self.downloads.values()), reports=self.reports,
+            integration=self.integration, integration_detail=self.integration_detail, components=self.components,
             lines=[(idx, line) for idx, line in self.lines if idx > after],
         )
 
     def report(self):
         return {"status": self.status, "exit_code": self.exit_code,
+                "integration": self.integration, "integration_detail": self.integration_detail, "components": self.components,
                 "transactions": self.reports,
                 "current": dict(self.queue, packages=list(self.downloads.values()))}
 
@@ -404,13 +447,7 @@ class Run:
         try:
             for suffix, contents in (("json", json.dumps(report, ensure_ascii=False, indent=2)),
                                      ("txt", report_text(report))):
-                fd, temporary = tempfile.mkstemp(prefix=".install-report-", dir=Path(self.path).parent)
-                try:
-                    with os.fdopen(fd, "w", encoding="utf-8") as target:
-                        target.write(contents)
-                    os.replace(temporary, self.path + ".report." + suffix)
-                finally:
-                    Path(temporary).unlink(missing_ok=True)
+                atomic_text(Path(self.path + ".report." + suffix), contents)
         except OSError:
             self.append("Could not save report on disk. Use Export Installation Report while this window is open.")
 
@@ -424,13 +461,59 @@ class Manager:
         self.run = None
         self.launch_error = ""
         self.launch_checked = False
+        self.resume_phase = self.review_resume = 1
+        self.saved_phase = None
+        self.last_snapshot = 0
+        self.checkpoint = installer_state_dir() / "install.resume.json"
+        try:
+            self.boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        except OSError:
+            self.boot = None
 
-    def review(self, data):
-        plan = normalize_plan(data)
+    def saved(self):
+        try:
+            saved = json.loads(self.checkpoint.read_text())
+            if saved["distro"] != self.inventory["meta"][0][1] or saved["commit"] != self.inventory["meta"][0][4]:
+                return None
+            plan = normalize_plan(saved["plan"])
+            phase = saved["phase"] if saved["boot"] == self.boot else 1
+            if type(phase) is not int or phase not in range(1, 7) or plan["action"] == "verify":
+                return None
+            backend = self.inventory["meta"][0][2]
+            cache = Path(os.getenv("XDG_CACHE_HOME") or Path.home() / ".cache") / "serpantinum-installer/packages" / backend
+            return dict(plan=plan, phase=phase, cache_available=cache.is_dir())
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return None
+
+    def persist(self):
+        if self.active_plan["action"] == "verify" or not self.run.phase:
+            return
+        try:
+            phase = min(6, max(self.resume_phase, self.run.completed + 1))
+            if self.run.exit_code == 0 and not self.run.cancelled:
+                self.checkpoint.unlink(missing_ok=True)
+            elif phase != self.saved_phase:
+                atomic_text(self.checkpoint, json.dumps(dict(plan=self.active_plan, phase=phase, boot=self.boot,
+                    distro=self.inventory["meta"][0][1], commit=self.inventory["meta"][0][4], log=self.run.path)))
+                self.saved_phase = phase
+        except OSError as exc:
+            self.run.append(f"Could not save installation checkpoint. {exc}")
+
+    def review(self, data, saved=False):
+        resume = self.saved() if saved else None
+        if saved and not resume:
+            raise ValueError("The saved installation plan is unavailable.")
+        plan = resume["plan"] if resume else normalize_plan(data)
+        self.review_resume = resume["phase"] if resume else 1
         pm = self.inventory["meta"][0][2]
         if pm != "pacman" and set(plan["options"]) & {"sync", "aur"}:
             raise ValueError("AUR and synchronization options apply to pacman.")
         records = probe(plan)
+        if resume:
+            cache = "Existing archives will be rechecked." if resume["cache_available"] else "Previous package cache is unavailable."
+            records["change"].append([f"Resume at phase {self.review_resume}. {cache}"])
+        if plan["action"] != "verify":
+            records["change"].append([f"Package download mode: {plan['download_mode'].title()}."])
         if "launch" in plan["options"]:
             records["change"].append(["Start Serpantinum in this session after successful verification."])
         self.plan = plan if not records["error"] else None
@@ -441,12 +524,11 @@ class Manager:
     def start(self, mode="start", approval=None):
         if self.run and self.run.exit_code is None:
             raise ValueError("An installation is already running.")
-        resume = 1
+        resume = self.review_resume
         if mode in {"retry", "restart"}:
             if not self.run or (self.run.exit_code == 0 and not self.run.cancelled):
                 raise ValueError("There is no failed or cancelled operation to recover.")
-            if mode == "retry":
-                resume = self.run.phase or 1
+            resume = (self.run.phase or self.resume_phase) if mode == "retry" else 1
             plan = self.active_plan
         else:
             if not self.plan or approval != self.review_key:
@@ -455,6 +537,10 @@ class Manager:
             self.plan = self.review_key = None
         self.run = Run(backend_args("--manager-run", plan, resume))
         self.active_plan = plan
+        self.resume_phase = resume
+        self.saved_phase = None
+        self.last_snapshot = time.monotonic()
+        self.persist()
         self.launch_checked = False
         self.launch_error = ""
 
@@ -476,6 +562,12 @@ class Manager:
         if not self.run:
             return
         self.run.update()
+        if not self.launch_checked:
+            self.persist()
+        now = time.monotonic()
+        if self.run.exit_code is None and self.run.queue and now - self.last_snapshot >= 5:
+            self.run.save_reports()
+            self.last_snapshot = now
         if self.run.exit_code is not None and not self.launch_checked:
             self.launch_checked = True
             if self.run.exit_code == 0 and not self.run.cancelled and "launch" in self.active_plan["options"]:
@@ -494,12 +586,17 @@ class Manager:
 
 def report_text(report):
     from download_queue import redact
-    lines = ["SERPANTINUM INSTALLATION REPORT", f"Status: {report['status']}"]
+    lines = ["SERPANTINUM INSTALLATION REPORT", f"Status: {report['status']}",
+             f"System integration: {report.get('integration', 'PENDING')}", report.get("integration_detail", "")]
+    for name, component in report.get("components", {}).items():
+        lines.append(f"{name}: {component['state']} · {component['detail']}")
     transactions = report["transactions"] or [report["current"]]
     for number, transaction in enumerate(transactions, 1):
         packages = transaction.get("packages", [])
         lines.extend([f"Transaction {number}: {transaction.get('stage', 'unknown')}",
                       f"Total: {len(packages)}", transaction.get("error", "")])
+        for label in ("download", "verification", "installation"):
+            lines.append(f"{label.title()}: {transaction.get(label, 'PENDING')}")
         for pkg in packages:
             lines.append(f"{pkg['name']} {pkg['version']} [{pkg['repository']}] {pkg['state']} | "
                          f"{pkg['received']} / {pkg['size']} bytes | Attempts: {pkg['attempts']} | "
@@ -535,12 +632,25 @@ def terminal_run(manager):
     cursor = 0
     run = manager.run
     last_status = None
+    last_transfer = 0
     while run.exit_code is None:
         try:
             manager.update()
             state = run.state(cursor)
             for cursor, line in state["lines"]:
                 print(line, flush=True)
+            queue = state["queue"]
+            if queue.get("stage") == "DOWNLOAD" and state["elapsed"] > last_transfer:
+                last_transfer = state["elapsed"]
+                print(f"Downloads {queue.get('active', 0)}/{queue.get('limit', 0)} · "
+                      f"{(queue.get('rate') or 0) / 1048576:.2f} MiB/s · "
+                      f"Completed {queue.get('completed', 0)}/{queue.get('total', 0)} · "
+                      f"Failed {queue.get('failed', 0)} · Deferred {queue.get('deferred', 0)}")
+                for pkg in state["downloads"]:
+                    if pkg["state"] == "DOWNLOADING":
+                        progress = f"{pkg['percent']:.1f}%" if pkg["percent"] is not None else f"{pkg['received']} bytes"
+                        rate = f"{pkg['rate'] / 1048576:.2f} MiB/s" if pkg["rate"] is not None else "measuring"
+                        print(f"  {pkg['name']} {pkg['version']} · {progress} · {rate}")
             prompt = state["prompt"]
             if prompt and prompt != last_status:
                 print(f"Waiting for Input · {prompt}", flush=True)
@@ -581,29 +691,19 @@ def terminal(manager):
     summary(manager.inventory, packages=True)
     print("\nCtrl+C requests cancellation during a run. Enter opens manual input for an unrecognized prompt.")
     while True:
-        print("\n" + "   ".join(f"{i}. {label}" for i, label in enumerate(ACTIONS.values(), 1)) + "   Q. Quit")
+        saved = manager.saved()
+        print("\n" + "   ".join(f"{i}. {label}" for i, label in enumerate(ACTIONS.values(), 1)) +
+              ("   R. Review saved plan" if saved else "") + "   Q. Quit")
         value = input("Action: ").strip().lower()
         if value == "q":
             return
-        if value not in {"1", "2", "3", "4", "5"}:
-            continue
-        action = list(ACTIONS)[int(value) - 1]
-        defaults = manager.inventory["selected"][0][0].split() or ["hyprland"]
-        compositors = input(f"Compositor(s) [{' '.join(defaults)}]: ").lower().split() or defaults
-        options = []
-        if action != "verify":
-            available = [name for name in OPTIONS if name not in {"aur", "sync"} or manager.inventory["meta"][0][2] == "pacman"]
-            for i, name in enumerate(available, 1):
-                print(f"  {i:2}. {OPTIONS[name]}")
-            suggested = [str(available.index(name) + 1) for name in ("config", "backup")]
-            print(f"  Suggested first install: configuration and a private snapshot ({' '.join(suggested)}).")
-            try:
-                options = [available[int(n) - 1] for n in input("Option numbers [none]: ").split()
-                           if n.isdecimal() and 1 <= int(n) <= len(available)]
-            except ValueError:
-                continue
         try:
-            records = manager.review(dict(action=action, compositors=compositors, options=options))
+            if value == "r" and saved:
+                records = manager.review({}, saved=True)
+            elif value in {"1", "2", "3", "4", "5"}:
+                records = manager.review(terminal_plan(manager, list(ACTIONS)[int(value) - 1]))
+            else:
+                continue
             print_plan(records)
             if not manager.plan or input("Approve this plan? [y/N] ").strip().lower() != "y":
                 continue
@@ -621,6 +721,23 @@ def terminal(manager):
             manager.inventory = probe()
         except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
             print(exc, file=sys.stderr)
+
+
+def terminal_plan(manager, action):
+    defaults = manager.inventory["selected"][0][0].split() or ["hyprland"]
+    compositors = input(f"Compositor(s) [{' '.join(defaults)}]: ").lower().split() or defaults
+    options = []
+    download_mode = "balanced"
+    if action != "verify":
+        available = [name for name in OPTIONS if name not in {"aur", "sync"} or manager.inventory["meta"][0][2] == "pacman"]
+        for i, name in enumerate(available, 1):
+            print(f"  {i:2}. {OPTIONS[name]}")
+        suggested = [str(available.index(name) + 1) for name in ("config", "backup")]
+        print(f"  Suggested first install: configuration and a private snapshot ({' '.join(suggested)}).")
+        options = [available[int(n) - 1] for n in input("Option numbers [none]: ").split()
+                   if n.isdecimal() and 1 <= int(n) <= len(available)]
+        download_mode = input("Download mode (Stable 1, Balanced 4, Fast 8, Adaptive 1–8) [Balanced]: ").strip().lower() or "balanced"
+    return dict(action=action, compositors=compositors, options=options, download_mode=download_mode)
 
 
 class LocalServer(HTTPServer):
@@ -677,7 +794,7 @@ class Handler(BaseHTTPRequestHandler):
         manager = self.server.manager
         if path == "/inventory":
             self.server.connected = True
-            self.send(200, dict(inventory=manager.inventory, actions=ACTIONS, options=OPTIONS, compositors=COMPOSITORS))
+            self.send(200, dict(inventory=manager.inventory, actions=ACTIONS, options=OPTIONS, compositors=COMPOSITORS, saved=manager.saved()))
         elif path == "/status":
             after = int(query) if query.isdecimal() and len(query) < 12 else 0
             self.send(200, dict(run=manager.run.state(after) if manager.run else None, launchError=manager.launch_error))
@@ -705,10 +822,10 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(body)
             if not isinstance(data, dict):
                 raise ValueError("Expected an installation request.")
-            if self.path in {"/review", "/refresh"} and manager.run and manager.run.exit_code is None:
+            if self.path in {"/review", "/review-saved", "/refresh"} and manager.run and manager.run.exit_code is None:
                 raise ValueError("Wait for the current operation to finish.")
-            if self.path == "/review":
-                self.send(200, manager.review(data))
+            if self.path in {"/review", "/review-saved"}:
+                self.send(200, manager.review(data, saved=self.path == "/review-saved"))
                 return
             if self.path == "/refresh":
                 manager.inventory = probe()

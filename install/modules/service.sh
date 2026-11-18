@@ -111,3 +111,31 @@ setup_services() {
     enable_system_service "NetworkManager" "$init_sys"
     enable_system_service "power-profiles-daemon" "$init_sys"
 }
+
+installer_session_check() {
+    local session uid
+    command -v loginctl >/dev/null || { echo 'Session diagnostics require loginctl.' >&2; return 1; }
+    printf 'Current environment: session=%s type=%s desktop=%s\n' "${XDG_SESSION_ID:-unknown}" "${XDG_SESSION_TYPE:-unknown}" "${XDG_CURRENT_DESKTOP:-unknown}"
+    printf 'Display manager: '
+    systemctl show display-manager.service --value -p ActiveState -p Id 2>/dev/null | paste -sd ' ' || true
+    while read -r session uid _; do
+        if [[ "$uid" == "$UID" ]]; then
+            printf '\nSession %s\n' "$session"
+            loginctl show-session "$session" -p Type -p State -p Active -p Seat -p VTNr -p Remote || true
+        fi
+    done < <(loginctl list-sessions --no-legend --no-pager)
+}
+
+installer_return_session() {
+    local session="$1" owner type remote seat
+    [[ "$session" =~ ^[A-Za-z0-9_-]+$ && "$session" != -* ]] || { echo 'Provide the ID of your graphical session.' >&2; return 2; }
+    owner="$(loginctl show-session "$session" -p User --value)" || return 1
+    type="$(loginctl show-session "$session" -p Type --value)" || return 1
+    remote="$(loginctl show-session "$session" -p Remote --value)" || return 1
+    seat="$(loginctl show-session "$session" -p Seat --value)" || return 1
+    if [[ "$owner" != "$UID" || "$remote" != no || -z "$seat" || ( "$type" != wayland && "$type" != x11 ) ]]; then
+        echo 'Select one of your own local Wayland or X11 sessions.' >&2
+        return 1
+    fi
+    loginctl activate "$session"
+}

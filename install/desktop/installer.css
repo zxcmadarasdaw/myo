@@ -64,10 +64,10 @@ legend { margin-bottom: 8px; font-weight: 650; }
 label { cursor: pointer; }
 input { accent-color: var(--accent); }
 input[type="checkbox"] { width: 1rem; height: 1rem; margin: 0 6px 0 0; vertical-align: middle; }
-button, .answer-row input { border: 1px solid var(--border); background: var(--raised); color: var(--text); border-radius: 8px; padding: 9px 13px; font: inherit; }
+button, select, .answer-row input { border: 1px solid var(--border); background: var(--raised); color: var(--text); border-radius: 8px; padding: 9px 13px; font: inherit; }
 button { cursor: pointer; font-size: .88rem; font-weight: 650; }
 button:hover { background: var(--surface); }
-button:disabled, fieldset:disabled { opacity: .52; cursor: default; }
+button:disabled, select:disabled, fieldset:disabled { opacity: .52; cursor: default; }
 button.primary { background: var(--accent); color: #102320; border-color: transparent; }
 button.primary:hover { background: #90e2d6; }
 button.quiet { background: transparent; color: var(--muted); }
@@ -108,3 +108,8 @@ progress { display: block; width: 100%; margin: 6px 0 12px; height: 10px; accent
 #queue-packages { max-height: 320px; overflow: auto; }
 .queue-package { padding: 7px 0; border-bottom: 1px solid var(--border); }
 #queue-summary { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+#queue-active { display: grid; gap: 10px; margin-bottom: 10px; }
+#queue-active:empty { display: none; }
+.queue-active-row { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--border); border-radius: 7px; }
+.queue-active-row p { margin: 0; }

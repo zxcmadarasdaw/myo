@@ -28,8 +28,39 @@ def inventory():
 
 
 class ManagerTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        state = Path(temporary.name)
+        patcher = patch.object(installer, "installer_state_dir", return_value=state)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_saved_plan_keeps_mode_and_rechecks_boot_and_cache(self):
+        with patch.object(installer, "probe", side_effect=lambda *args: inventory()), patch.object(installer, "Run") as run:
+            run.return_value.phase = 1
+            run.return_value.completed = 0
+            run.return_value.path = "fixture.log"
+            run.return_value.exit_code = None
+            manager = installer.Manager()
+            plan = {"action": "install", "compositors": ["hyprland"], "options": [], "download_mode": "fast"}
+            manager.start(approval=manager.review(plan)["approval"])
+            manager.run.completed = 2
+            manager.persist()
+            reopened = installer.Manager()
+            self.assertEqual(reopened.saved()["phase"], 3)
+            self.assertEqual(reopened.saved()["plan"]["download_mode"], "fast")
+            approved = reopened.review({}, saved=True)["approval"]
+            reopened.start(approval=approved)
+            run.assert_called_with(installer.backend_args("--manager-run", plan, 3))
+            reopened.boot = "a-different-boot"
+            self.assertEqual(reopened.saved()["phase"], 1)
+
     def test_plan_requires_approval_and_retries_the_same_step(self):
         with patch.object(installer, "probe", side_effect=lambda *args: inventory()), patch.object(installer, "Run") as run:
+            run.return_value.phase = 1
+            run.return_value.completed = 0
+            run.return_value.path = "fixture.log"
             manager = installer.Manager()
             plan = {"action": "repair", "compositors": ["hyprland"], "options": ["backup"]}
             approval = manager.review(plan)["approval"]

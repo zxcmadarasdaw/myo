@@ -16,6 +16,7 @@ let shownLog = "";
 let generation = 0;
 let approval = null;
 let lastQueueEnd = "";
+let savedPlan = null;
 
 function element(tag, label, className) {
   const node = document.createElement(tag);
@@ -86,6 +87,8 @@ function renderPackages(packages) {
 
 function openPreparation(state) {
   renderInventory(state.inventory);
+  savedPlan = state.saved?.plan;
+  $("review-saved").hidden = !savedPlan;
   const selected = state.inventory.selected[0][0].split(" ");
   if (!selected[0]) selected[0] = "hyprland";
   const maintenance = state.inventory.meta[0][5] === "current";
@@ -106,7 +109,7 @@ function openPreparation(state) {
 
 function selection() {
   const checked = (name) => Array.from(document.querySelectorAll(`input[name="${name}"]:checked`), (node) => node.value);
-  return { action: checked("action")[0], compositors: checked("compositor"), options: checked("option") };
+  return { action: checked("action")[0], compositors: checked("compositor"), options: checked("option"), download_mode: $("download-mode").value };
 }
 
 function changeSelection() {
@@ -127,10 +130,10 @@ function diskRows(disks) {
     element("div", `${path} · ${mib(needed)} preflight minimum · ${mib(free)} free`));
 }
 
-async function review() {
+async function review(saved = false) {
   const revision = generation;
   const data = selection();
-  const records = await request("/review", data);
+  const records = await request(saved ? "/review-saved" : "/review", data);
   if (revision !== generation) return;
   approval = records.approval;
   renderPackages(records.package || []);
@@ -150,7 +153,7 @@ async function review() {
 
 function flags(inProgress) {
   running = inProgress;
-  for (const id of ["review", "refresh", "close", "compositors", "options"]) $(id).disabled = running;
+  for (const id of ["review", "review-saved", "refresh", "close", "compositors", "options", "download-mode"]) $(id).disabled = running;
   for (const input of $("actions").querySelectorAll("input")) input.disabled = running;
 }
 
@@ -233,6 +236,12 @@ function renderRun(run, launchError) {
   $("retry").hidden = running || ok;
   $("restart").hidden = running || ok;
   $("launch").hidden = !ok;
+  const integration = run.integration && run.integration !== "PENDING"
+    ? ["System integration", run.integration, run.integration_detail].filter(Boolean).join(" · ")
+    : "";
+  const components = Object.entries(run.components || {}).map(([name, info]) => `${name} · ${info.state} · ${info.detail}`);
+  $("integration").hidden = !integration && !components.length;
+  $("integration").textContent = [integration, ...components].filter(Boolean).join("\n");
   $("recovery").hidden = !launchError && (running || ok);
   $("recovery").textContent = launchError || run.diagnostic ||
     "Review the last operation and journal. After resolving the cause, retry the failed step or restart the approved plan.";
@@ -249,36 +258,46 @@ function renderQueue(run) {
   const packages = run.downloads || [];
   $("download-queue").hidden = !run.queue?.stage;
   if (!run.queue?.stage) return;
-  const good = packages.filter(p => ["VERIFIED", "INSTALLED"].includes(p.state)).length;
+  const good = packages.filter(p => p.checksum_verified ?? ["VERIFIED", "INSTALLED"].includes(p.state)).length;
   const failed = packages.filter(p => p.state === "FAILED").length;
-  const deferred = packages.filter(p => p.state === "DEFERRED").length;
+  const deferred = run.queue.deferred ?? packages.filter(p => p.state === "DEFERRED").length;
   const total = run.queue.total ?? packages.length;
-  const current = packages.find(p => ["DOWNLOADING", "RETRYING", "VERIFYING", "CHECKING"].includes(p.state));
+  const active = packages.filter(p => p.state === "DOWNLOADING");
   const known = packages.length === total && packages.every(p => Number.isFinite(p.size));
   const totalBytes = known ? packages.reduce((n, p) => n + p.size, 0) : null;
   const received = packages.reduce((n, p) => n + (p.received || 0), 0);
   updateProgress($("queue-overall"), totalBytes ? received : good, totalBytes || total);
-  $("queue-counts").textContent = `Completed: ${good} · Failed: ${failed} · Deferred: ${deferred} · Remaining: ${Math.max(0, total - good - failed - deferred)} · Total: ${total}`;
+  $("queue-counts").textContent = `Completed: ${good} · Failed: ${failed} · Deferred: ${deferred} · Remaining: ${Math.max(0, total - good - (run.queue.deferred !== undefined ? deferred : failed + deferred))} · Total: ${total}`;
   const storage = run.queue.storage;
   $("queue-storage").textContent = storage ? `Cache: ${storage.cache} · Required: ${bytes(storage.cache_required)} · Free: ${bytes(storage.cache_free)}\nTemporary: ${storage.temporary_directory} · Free: ${bytes(storage.temporary_free)}${storage.memory_available ? " · Available RAM: " + bytes(storage.memory_available) : ""}\n${storage.warning || ""}` : "";
-  if (current) {
-    const text = `${current.name} ${current.version} · ${current.repository} · Package ${packages.indexOf(current) + 1}/${total}\n` +
-      `${bytes(current.received)} / ${bytes(current.size)} · ${Number.isFinite(current.percent) ? current.percent.toFixed(1) + "%" : "size unknown"}\n` +
-      `Current: ${bytes(current.rate)}/s · Average: ${bytes(current.average)}/s · ETA: ${Number.isFinite(current.eta) ? Math.ceil(current.eta) + "s" : "unknown"}\n` +
-      `Mirror: ${current.mirror || "pending"} · ${current.warning || current.state}`;
-    $("queue-current").textContent = text;
-    $("transfer").hidden = current.state !== "DOWNLOADING";
-    updateProgress($("download"), current.percent, 100);
-  } else {
-    $("queue-current").textContent = `${run.queue.stage} · ${run.queue.error || ""}`;
-    $("transfer").hidden = true;
-  }
+  $("queue-current").textContent = run.queue.stage === "DOWNLOAD"
+    ? `Active downloads: ${active.length} / ${run.queue.limit ?? 1} · Total speed: ${bytes(run.queue.rate ?? 0)}/s`
+    : [run.queue.stage, run.queue.error].filter(Boolean).join(" · ");
+  $("transfer").hidden = true;
+  $("queue-active").replaceChildren(...active.map(pkg => {
+    const row = element("div", "", "queue-active-row");
+    const percent = Number.isFinite(pkg.percent) ? ` · ${pkg.percent.toFixed(1)}%` : "";
+    const rate = Number.isFinite(pkg.rate) ? ` · ${bytes(pkg.rate)}/s` : "";
+    const label = element("div",
+      `${pkg.name} ${pkg.version} · ${bytes(pkg.received)} / ${bytes(pkg.size)}${percent}${rate}`);
+    const progress = element("progress");
+    progress.setAttribute("aria-label", `${pkg.name} download`);
+    updateProgress(progress, pkg.percent, 100);
+    row.append(label, progress);
+    const meta = [pkg.mirror,
+      Number.isFinite(pkg.average) ? `Average ${bytes(pkg.average)}/s` : "",
+      Number.isFinite(pkg.eta) ? `ETA ${Math.ceil(pkg.eta)}s` : "",
+      pkg.warning].filter(Boolean);
+    if (meta.length) row.append(element("p", meta.join(" · "), "muted"));
+    return row;
+  }));
   // Reuse details nodes so expanded rows stay open through progress updates.
   const container = $("queue-packages");
   const names = new Set(packages.map(p => p.name));
   for (const node of [...container.children]) if (!names.has(node.dataset.name)) node.remove();
+  const rows = new Map([...container.children].map(node => [node.dataset.name, node]));
   for (const pkg of packages) {
-    let row = [...container.children].find(node => node.dataset.name === pkg.name);
+    let row = rows.get(pkg.name);
     if (!row) {
       row = element("details", "", "queue-package");
       row.dataset.name = pkg.name;
@@ -293,9 +312,9 @@ function renderQueue(run) {
   const endKey = `${run.path}:${run.phase}:${run.queue.stage}`;
   if (ended && lastQueueEnd !== endKey) $("queue-report").open = true;
   lastQueueEnd = ended ? endKey : "";
-  $("queue-summary").textContent = `${run.queue.stage === "BLOCKED" && !total ? "DOWNLOAD PLAN FAILED" : failed ? "DOWNLOAD COMPLETED WITH ERRORS" : good === total ? "DOWNLOAD COMPLETED" : "DOWNLOAD INTERRUPTED"}\nTotal: ${total}\nChecksum verified: ${good}\nFailed: ${failed}\n` +
-    packages.filter(p => p.error).map(p => `${p.name}: ${p.error} · Attempts: ${p.attempts} · Mirror: ${p.mirror}`).join("\n") +
-    `\nInstallation status: ${run.queue.stage}\n${run.queue.error || ""}`;
+  $("queue-summary").textContent = `Download: ${run.queue.download || "PENDING"}\nVerification: ${run.queue.verification || "PENDING"}\nInstallation: ${run.queue.installation || "PENDING"}\nChecksum verified: ${good} / ${total}\nFailed: ${failed}\n` +
+    packages.filter(p => p.error).map(p => `${p.name}: ${p.error} · Attempts: ${p.attempts} · Mirror: ${p.mirror}\n${p.detail || ""}`).join("\n") +
+    `\n${run.queue.error || ""}`;
   $("retry-downloads").hidden = running || !(failed || run.queue.stage === "BLOCKED");
 }
 
@@ -327,7 +346,15 @@ async function answer() {
   $("question").hidden = true;
 }
 
-click("review", review);
+click("review", () => review());
+click("review-saved", () => {
+  for (const input of $("preparation").querySelectorAll("input")) {
+    input.checked = { action: [savedPlan.action], compositor: savedPlan.compositors, option: savedPlan.options }[input.name].includes(input.value);
+  }
+  $("download-mode").value = savedPlan.download_mode;
+  changeSelection();
+  return review(true);
+});
 click("start", () => start("/start"));
 click("retry", () => start("/retry"));
 click("retry-downloads", () => start("/retry"));
