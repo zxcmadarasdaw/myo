@@ -52,7 +52,7 @@ class QueueTests(unittest.TestCase):
             active.append(args[0].name)
             self.transfer(*args)
             active.pop()
-        q = self.queue(packages, transfer)
+        q = self.queue(packages, transfer, mode="stable")
         self.assertTrue(q.run())
         self.assertEqual([p.name for p in packages], [name for name, _ in self.calls])
         self.assertEqual({p.state for p in packages}, {"VERIFIED"})
@@ -60,6 +60,64 @@ class QueueTests(unittest.TestCase):
         downloading = [e["package"] for e in self.events if (e.get("package") or {}).get("state") == "DOWNLOADING"]
         self.assertEqual(downloading[0]["name"], "pkg0")
         self.assertEqual(downloading[0]["version"], "1.2-1")
+
+    def test_fixed_modes_schedule_real_concurrent_workers(self):
+        for mode, count in (("stable", 1), ("balanced", 4), ("fast", 8)):
+            with self.subTest(mode=mode):
+                barrier = threading.Barrier(count, timeout=5)
+                pkgs = [package(f"{mode}-{i}") for i in range(count * 2)]
+
+                def transfer(*args):
+                    barrier.wait()
+                    self.transfer(*args)
+
+                self.events.clear()
+                self.assertTrue(self.queue(pkgs, transfer, mode=mode).run())
+                self.assertEqual(max(e.get("active", 0) for e in self.events), count)
+
+    def test_adaptive_increases_gradually_and_recovers_from_slowdown(self):
+        controller = dq.Parallelism("adaptive")
+        self.assertEqual(controller.limit, 4)
+        for limit in range(4, 8):
+            for _ in range(3):
+                controller.sample(100, limit, True)
+            self.assertEqual(controller.limit, limit + 1)
+        controller.sample(100, 8, True)
+        for _ in range(3):
+            controller.sample(20, 8, True)
+        self.assertEqual(controller.limit, 4)
+        controller.reduce()
+        controller.reduce()
+        self.assertEqual(controller.limit, 1)
+        for _ in range(3):
+            controller.sample(100, 1, True)
+        self.assertEqual(controller.limit, 2)
+
+    def test_651_archives_and_partial_files_recover_after_interruption(self):
+        pkgs = [package(f"queue-{i}") for i in range(651)]
+        cache = Path(self.temp.name)
+        for pkg in pkgs[:-2]:
+            (cache / pkg.filename).write_bytes(DATA)
+        (cache / (pkgs[-2].filename + ".part")).write_bytes(DATA[:1024])
+        (cache / pkgs[-1].filename).write_bytes(b"corrupt")
+        q = self.queue(pkgs, mode="fast")
+        self.assertTrue(q.run())
+        self.assertEqual(set(name for name, _ in self.calls), {p.name for p in pkgs[-2:]})
+        self.assertEqual(q.report()["downloaded"], 651)
+        q.transfer = Mock(side_effect=AssertionError("cache should be reused"))
+        self.assertTrue(q.run())
+        q.transfer.assert_not_called()
+
+    def test_permission_error_is_per_file_and_keeps_other_archives(self):
+        def transfer(pkg, *args):
+            if pkg.name == "denied":
+                raise PermissionError("Permission denied")
+            self.transfer(pkg, *args)
+        q = self.queue([package("denied"), package("good")], transfer)
+        self.assertFalse(q.run())
+        self.assertEqual(q.packages[0].attempts, 1)
+        self.assertEqual(q.packages[0].error, "Permission denied")
+        self.assertEqual(q.packages[1].state, "VERIFIED")
 
     def test_percentage_current_average_and_eta_use_received_bytes(self):
         p = package()
@@ -151,6 +209,20 @@ class QueueTests(unittest.TestCase):
         backend.install.assert_not_called()
         self.assertEqual(q.packages[0].error, "Invalid package signature")
         self.assertEqual(q.stage, "BLOCKED")
+        self.assertEqual(q.report()["download"], "SUCCESS")
+        self.assertEqual(q.report()["verification"], "FAILED")
+        self.assertEqual(q.report()["installation"], "PENDING")
+
+    def test_install_failure_keeps_checksum_and_verification_success(self):
+        q = self.queue([package()])
+        backend = Mock()
+        backend.resolve.return_value = q.packages
+        backend.install.side_effect = dq.TransferError("could not satisfy dependencies")
+        self.assertEqual(dq.run_transaction(backend, q, ["quickshell"]), 1)
+        self.assertEqual(q.report()["downloaded"], 1)
+        self.assertEqual(q.report()["verification"], "SUCCESS")
+        self.assertEqual(q.report()["installation"], "FAILED")
+        self.assertIn("could not satisfy dependencies", q.error)
 
     def test_metadata_drift_blocks_commit(self):
         q = self.queue([package()])
@@ -175,12 +247,12 @@ class QueueTests(unittest.TestCase):
         def cancelled(pkg, url, path, *args):
             path.write_bytes(b"part")
             raise KeyboardInterrupt
-        q = self.queue([package(), package("second")], cancelled)
+        q = self.queue([package(), package("second")], cancelled, mode="stable")
         with self.assertRaises(KeyboardInterrupt):
             q.run()
         self.assertEqual(q.stage, "CANCELLED")
         self.assertEqual(q.packages[0].error, "Cancelled by user")
-        self.assertFalse(list(q.cache.glob("*.part")))
+        self.assertFalse(list(q.cache.rglob("*.part")))
 
     def test_reports_are_structured_and_do_not_include_repository_secrets(self):
         p = package(urls=["https://user:password@mirror/path-secret?token=secret"])
@@ -208,14 +280,16 @@ class QueueTests(unittest.TestCase):
 
 class NativeAdapterTests(unittest.TestCase):
     def test_full_arch_upgrade_keeps_one_complete_transaction(self):
-        with tempfile.TemporaryDirectory() as temp, patch.object(dq, "command") as command:
+        with tempfile.TemporaryDirectory() as temp, patch.object(dq, "command") as command, \
+             patch.object(dq.tempfile, "mkdtemp", side_effect=lambda **kwargs: str(Path(temp) / "native")), \
+             patch.object(dq.Path, "chmod"), patch.object(dq.Path, "rmdir"):
             command.side_effect = lambda args: "[options]\n[core]\nServer = https://mirror\n" if args == ["pacman-conf"] else ""
             backend = dq.Pacman(temp, temp, upgrade=True)
             backend.resolve(["app"])
             self.assertIn("-Spu", command.call_args.args[0])
-            backend.verify(Mock(), ["app"])
+            backend.verify(Mock(packages=[]), ["app"])
             self.assertIn("-Suw", command.call_args.args[0])
-            with patch.object(dq.subprocess, "call", return_value=0) as install:
+            with patch.object(dq, "install_command", return_value=0) as install:
                 backend.install(Mock(), ["app"])
             self.assertIn("-Su", install.call_args.args[0])
             self.assertNotIn("-Sy", install.call_args.args[0])
@@ -284,11 +358,14 @@ class NativeAdapterTests(unittest.TestCase):
                 if args == ["pacman-conf", "CacheDir"]:
                     return temp
                 if "--print-format" in args:
-                    return "SPQ:quickshell\t1.2\tcachyos-v3\t100\tquickshell.pkg.tar.zst\t" + "a" * 64 + "\thttps://cachy/quickshell.pkg.tar.zst\n"
+                    return "SPQ:quickshell\t1.2\tcachyos-v3\t100\tquickshell.pkg.tar.zst\t" + "a" * 64 + "\thttps://cachy/quickshell.pkg.tar.zst\tQUJD\n"
                 return "https://cachy\nhttps://second\n"
             command.side_effect = output
             backend = dq.Pacman(temp, temp)
-            self.assertIn("ParallelDownloads = 1", backend.config.read_text())
+            self.assertIn("ParallelDownloads = 4", backend.config.read_text())
+            self.assertIn("Server = file:///dev/null", backend.offline.read_text())
+            self.assertNotIn("https://", backend.offline.read_text())
+            self.assertNotIn("XferCommand", backend.offline.read_text())
             self.assertNotIn("ParallelDownloads = 5", backend.config.read_text())
             self.assertIn("SigLevel = Required", backend.config.read_text())
             self.assertIn("[cachyos-v3]", backend.config.read_text())
@@ -296,11 +373,18 @@ class NativeAdapterTests(unittest.TestCase):
             self.assertEqual(packages[0].repository, "cachyos-v3")
             self.assertEqual(packages[0].urls[-1], "https://second/quickshell.pkg.tar.zst")
             q = dq.Queue(packages, temp, emit=lambda e: None)
-            backend.verify(q, ["quickshell"])
+            with patch.object(dq.Path, "symlink_to") as link, patch.object(backend, "native"):
+                backend.verify(q, ["quickshell"])
+            self.assertEqual((q.cache / "quickshell.pkg.tar.zst.sig").read_bytes(), b"ABC")
+            self.assertEqual(link.call_args_list[0].args, (q.cache / "quickshell.pkg.tar.zst",))
+            self.assertEqual(link.call_args_list[1].args, (q.cache / "quickshell.pkg.tar.zst.sig",))
+            with patch.object(dq.tempfile, "mkdtemp", return_value=temp), patch.object(dq.Path, "rmdir"):
+                backend.native(["quickshell"], download_only=True)
             args = command.call_args.args[0]
             self.assertIn("-Sw", args)
             self.assertNotIn("--nodeps", args)
-            with patch.object(dq.subprocess, "call", return_value=0) as install:
+            with patch.object(dq, "install_command", return_value=0) as install, \
+                 patch.object(dq.tempfile, "mkdtemp", return_value=temp), patch.object(dq.Path, "rmdir"):
                 backend.install(q, ["quickshell"])
             self.assertIn("-S", install.call_args.args[0])
 
@@ -312,7 +396,7 @@ class NativeAdapterTests(unittest.TestCase):
             backend.native_paths[p.filename] = Path(temp) / "repo/packages/quickshell.rpm"
             q = dq.Queue([p], temp, emit=lambda e: None)
             (q.cache / p.filename).write_bytes(DATA)
-            with patch.object(dq.subprocess, "call", return_value=0) as install:
+            with patch.object(dq, "install_command", return_value=0) as install:
                 self.assertEqual(backend.install(q, ["quickshell"]), 0)
             args = install.call_args.args[0]
             self.assertIn("--cacheonly", args)
@@ -397,7 +481,19 @@ class LocalHttpTests(unittest.TestCase):
         self.assertLess(time.monotonic() - start, 4)
         self.assertEqual(p.error, "Connection timeout")
         self.assertTrue(any(e.get("package", {}).get("warning") for e in events if e.get("package")))
-        self.assertIn("Probe", p.detail)
+        self.assertIn("no byte progress", p.detail)
+
+    def test_stalled_transfer_reduces_adaptive_slots_without_stopping_other_downloads(self):
+        pkgs = [package("stalled", [self.url + "/stall", self.url + "/ok"])]
+        pkgs += [package(f"healthy-{i}", [self.url + "/ok"]) for i in range(8)]
+        events = []
+        q = dq.Queue(pkgs, self.temp.name, dq.Settings(mode="adaptive", warning=.2, timeout=.5, backoff=0), events.append)
+        self.assertTrue(q.run())
+        self.assertEqual(pkgs[0].attempts, 2)
+        self.assertEqual(pkgs[0].history[0]["reason"], "Connection timeout")
+        self.assertTrue(all(p.attempts == 1 for p in pkgs[1:]))
+        self.assertEqual(max(e.get("active", 0) for e in events), 4)
+        self.assertTrue(any(e.get("limit") == 2 for e in events))
 
     def test_http404_fallback_to_next_mirror(self):
         p = package(urls=[self.url + "/404", self.url + "/ok"])
