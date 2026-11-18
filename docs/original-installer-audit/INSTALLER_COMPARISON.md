@@ -1,0 +1,26 @@
+# Сравнение установщиков
+
+Оригинал — [57ab121b80358b4bd51bc0d49ecef40a6003d6db][original]. База нашей ветки — `36461bb`. Правая колонка фиксирует решение по результатам аудита.
+
+| Механизм | Оригинал и его преимущества | Наша версия и её преимущества | Решение и ограничения |
+| --- | --- | --- | --- |
+| Подготовка | Простой Bash TUI, вход через bootstrap. Часть системных изменений делается до выбора в мастере. [Код][bootstrap] | Браузерный и терминальный мастера, инвентарь, план, подтверждение, Live-проверки до транзакции. [Код](../../install/manager.py) | Сохранить обе точки входа. Bash остаётся отдельным маршрутом Void. |
+| Репозитории pacman | Один конфиг, нативные зеркала и CacheDir. Может включить multilib, выполнить `-Sy` и автоматически обновить хост. [Код][pacman] | Читает эффективные настройки через `pacman-conf`. Применяет полный upgrade по выбору. Нативные проверки подписей и зависимостей. [Код](../../install/modules/pm/pacman.sh) | Учитывать нативный порядок `CacheServer`/зеркал при загрузке. Системную конфигурацию и автоматическое включение multilib из оригинала не переносить. |
+| Транзакции и AUR | Отдельные установки целей, AUR распространяется на отсутствующие пакеты. Может принудительно удалить `quickshell-git`. [Код][pacman] | Официальные цели идут одной транзакцией, обновление системы явно подтверждается, AUR Quickshell имеет отдельный просмотр рецепта. [Код](../../install/modules/manager.sh#L291) · [AUR](../../install/modules/pm/aur.sh) | Сохранить подход. Проверить отдельные сценарии альтернативных провайдеров на согласованных базах. |
+| Скачивание и прогресс | Скачиванием управляет пакетный менеджер. Краткий штатный прогресс с развитой обработкой зеркал. [Код][pacman] | 1/4/8/Adaptive, прогресс по байтам, смена зеркал, ограниченные повторы, атомарный кэш. [Код](../../install/download_queue.py#L175) | Сохранить измеренный прогресс и Retry Failed. Ошибки нативной стадии показывать как ошибки соответствующей фазы. |
+| Fedora | Алиасы RPM, пакетные группы, COPR, Terra и fallback на релизы. Удобна автоматическая подготовка репо. [Код][dnf] | Сохранены алиасы и источники. DNF5/4 разрешают RPM, пакетная стадия проверяет подписи и использует cache-only. [Код](../../install/modules/pm/dnf.sh) · [Очередь](../../install/download_queue.py#L570) | Сохранить Terra для MangoWC как предварительно доверенный репозиторий во всех режимах. Закрыть загрузку release RPM без подписи в старом TUI. |
+| Hyprland и Quickshell | Цели формируются из выбранного композитора, проверяется минимальная версия Quickshell. [Код][deps] | Отдельная проверка версии Hyprland, Lua без переменных текущей сессии, запись Wayland и итоговый статус компонентов. [Код](../../install/modules/verify.sh#L40) · [Итог](../../install/modules/manager.sh#L456) | Сохранить план и проверку Quickshell. Показывать его реальный статус и после неудачной транзакции. |
+| SDDM и службы | Резервная копия файла, выбор X11/Wayland, несколько init и запуск службы в одной из веток. [Код][deploy] | Выбор дисплейного менеджера отдельно согласуется, systemd SDDM включается на следующий запуск. Есть диагностика и возврат к локальной сессии владельца. [Код](../../install/modules/deploy.sh#L226) · [Сессии](../../install/modules/service.sh#L115) | Сохранить действующие ветки init. Расширить диагностику logind. Причину исходного зависания по одному коду установить нельзя. |
+| Состояние и восстановление | Копии конфигураций и сведения о версии. Недостающие пакеты остаются в списке ошибок. [Код][state] · [Завершение][completion] | Снимок настроек, частный журнал, повтор фазы, сохранённый план, независимые статусы загрузки/проверки/установки. [Снимки](../../install/maintenance.sh#L42) · [Восстановление](../../install/manager.py#L455) | Фиксировать ошибки нативных хуков даже при коде 0. Готовность desktop проверять отдельно. |
+| Альтернативная упаковка | AUR и Nix дают полноценные отдельные пути, включая Home Manager и systemd user unit. [PKGBUILD][aur] · [Nix][nix] | Соответствующие пакеты и модули присутствуют в ветке. [AUR](../../packaging/aur) · [Nix](../../nix) | Сохранять эти точки входа. Нативное тестирование Nix, Void и AUR — отдельные сценарии. |
+
+[original]: https://github.com/ilyamiro/serpantinum/tree/57ab121b80358b4bd51bc0d49ecef40a6003d6db
+[bootstrap]: https://github.com/ilyamiro/serpantinum/blob/57ab121b80358b4bd51bc0d49ecef40a6003d6db/install/install.sh
+[pacman]: https://github.com/ilyamiro/serpantinum/blob/57ab121b80358b4bd51bc0d49ecef40a6003d6db/install/modules/pm/pacman.sh
+[dnf]: https://github.com/ilyamiro/serpantinum/blob/57ab121b80358b4bd51bc0d49ecef40a6003d6db/install/modules/pm/dnf.sh
+[deps]: https://github.com/ilyamiro/serpantinum/blob/57ab121b80358b4bd51bc0d49ecef40a6003d6db/install/modules/deps.sh#L206
+[deploy]: https://github.com/ilyamiro/serpantinum/blob/57ab121b80358b4bd51bc0d49ecef40a6003d6db/install/modules/deploy.sh#L176
+[state]: https://github.com/ilyamiro/serpantinum/blob/57ab121b80358b4bd51bc0d49ecef40a6003d6db/install/modules/state.sh
+[completion]: https://github.com/ilyamiro/serpantinum/blob/57ab121b80358b4bd51bc0d49ecef40a6003d6db/install/modules/ui.sh#L667
+[aur]: https://github.com/ilyamiro/serpantinum/blob/57ab121b80358b4bd51bc0d49ecef40a6003d6db/packaging/aur/serpantinum/PKGBUILD
+[nix]: https://github.com/ilyamiro/serpantinum/tree/57ab121b80358b4bd51bc0d49ecef40a6003d6db/nix
