@@ -173,6 +173,12 @@ case "$1" in
             echo 'hl.on: unknown event "config.unload"'
             exit 1
         fi
+        if [ "${STUB_HYPR_VERIFY_CRASHES:-0}" -gt 0 ]; then
+            printf '%s\n' "$XDG_RUNTIME_DIR" >> "$HOME/hypr-attempts"
+            if [ "$(wc -l < "$HOME/hypr-attempts")" -le "$STUB_HYPR_VERIFY_CRASHES" ]; then
+                exit 139
+            fi
+        fi
         ;;
     *) exit 2 ;;
 esac
@@ -206,6 +212,20 @@ EOF
     result="$(STUB_MISSING="" run_verify 0.56.2)"
     [ "$result" = "true" ] && ok "unknown Lua event marks install incomplete" || bad "Hyprland config error detection (got $result)"
     : > "$home/.config/hypr/hyprland.lua"
+
+    result="$(STUB_MISSING="" STUB_HYPR_VERIFY_CRASHES=1 run_verify 0.57.1)"
+    if [ "$result" = "false" ] && [ "$(sort -u "$home/hypr-attempts" | wc -l)" -eq 2 ]; then
+        ok "Hyprland validator recovers after one crash in a fresh runtime directory"
+    else
+        bad "Hyprland validator retry (got $result)"
+    fi
+    : > "$home/hypr-attempts"
+    result="$(STUB_MISSING="" STUB_HYPR_VERIFY_CRASHES=2 run_verify 0.57.1)"
+    if [ "$result" = "true" ] && [ "$(wc -l < "$home/hypr-attempts")" -eq 2 ]; then
+        ok "Repeated Hyprland validator crash still blocks verification"
+    else
+        bad "repeated Hyprland validator crash (got $result)"
+    fi
 
     # The real shell tree passes the Quickshell QML check; a sibling type that
     # Quickshell cannot see (the WallpaperGif crash, exit 255) fails verify.
@@ -366,8 +386,9 @@ EOF
     #    is reported (not masked); Hyprland and the shell still install.
     rm -f "$home/repos/"*
     result="$(STUB_TERRA_UNREACHABLE=1 run_deps hyprland mango)"
-    if [ "$result" = "mangowm" ] && grep -q 'terra-release' "$log" && grep -q 'dnf install -y hyprland' "$log"; then
-        ok "Terra failure fails only mangowm and is reported"
+    if [ "$result" = "mangowm" ] && ! grep -Eq -- 'terra-release|--nogpgcheck' "$log" \
+        && grep -q 'dnf install -y hyprland' "$log"; then
+        ok "Unconfigured Terra blocks only MangoWC and preserves signature checking"
     else
         bad "Terra failure handling for MangoWC (failed: '$result')"
     fi

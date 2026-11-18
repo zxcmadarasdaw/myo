@@ -47,7 +47,7 @@ def reason(message, code=None):
         ("could not resolve|name or service|dns", "DNS resolution failure"),
         ("reset by peer|connection reset", "Connection reset"),
         ("404", "HTTP 404"), ("403", "HTTP 403"),
-        ("ssl|tls|certificate", "SSL/TLS error"),
+        (r"\b(?:ssl|tls|certificate)\b", "SSL/TLS error"),
         ("timeout|timed out|too slow", "Connection timeout"),
         ("conflict|unsatisfied|nothing provides|dependencies", "Dependency conflict"),
         ("target not found|no match|package not found", "Package not found"),
@@ -58,7 +58,7 @@ def reason(message, code=None):
             return label
     return {5: "DNS resolution failure", 6: "DNS resolution failure", 7: "Mirror unavailable",
             23: "Insufficient disk space", 28: "Connection timeout", 35: "SSL/TLS error",
-            56: "Connection reset", 60: "SSL/TLS error", 63: "Archive exceeds its declared size"}.get(code, "Unknown error")
+            37: "Mirror file unavailable", 56: "Connection reset", 60: "SSL/TLS error", 63: "Archive exceeds its declared size"}.get(code, "Unknown error")
 
 
 @dataclass
@@ -220,6 +220,7 @@ class Queue:
         self.parallelism = Parallelism(self.settings.mode)
         self.events = threading.Lock()
         self.stop = threading.Event()
+        self.native_errors = []
         self.outcomes = dict(download="PENDING", verification="PENDING", installation="PENDING")
 
     def notify(self, package=None):
@@ -233,7 +234,7 @@ class Queue:
                        "deferred": sum(p.state in {"DEFERRED", "FAILED"} for p in self.packages),
                        "mode": self.settings.mode, "limit": self.parallelism.limit, "active": len(active),
                        "rate": sum(p.rate or 0 for p in active),
-                       "error": self.error, "storage": self.storage, **self.outcomes})
+                       "error": self.error, "storage": self.storage, "native_errors": self.native_errors, **self.outcomes})
 
     def state(self, package, state):
         package.state = state
@@ -398,7 +399,7 @@ class Queue:
         return {"stage": self.stage, "error": self.error, "total": len(self.packages),
                 "downloaded": sum(p.checksum_verified for p in self.packages),
                 "failed": sum(p.state == "FAILED" for p in self.packages),
-                **self.outcomes,
+                **self.outcomes, "native_errors": self.native_errors,
                 "mode": self.settings.mode,
                 "packages": [p.public() for p in self.packages]}
 
@@ -411,17 +412,27 @@ def command(args):
     return result.stdout
 
 
-def install_command(args):
-    with subprocess.Popen(args, stderr=subprocess.PIPE) as process:
+def install_command(args, queue):
+    with subprocess.Popen(args, stderr=subprocess.PIPE, env=dict(os.environ, LC_ALL="C.UTF-8")) as process:
         tail = b""
+        pending = b""
+        diagnostics = deque(maxlen=8)
         while chunk := process.stderr.read1(4096):
             sys.stderr.buffer.write(chunk)
             sys.stderr.buffer.flush()
             tail = (tail + chunk)[-4096:]
+            lines = (pending + chunk).split(b"\n")
+            pending = lines.pop()[:4096]
+            for line in lines:
+                if re.match(rb"^error:", line, re.IGNORECASE):
+                    diagnostics.append(redact(line.decode(errors="replace"))[:256])
         status = process.wait()
     if status:
         raise TransferError(tail.decode(errors="replace").strip()[-1024:] or
                             f"Native transaction exited with status {status}")
+    if re.match(rb"^error:", pending, re.IGNORECASE):
+        diagnostics.append(redact(pending.decode(errors="replace"))[:256])
+    queue.native_errors.extend(dict.fromkeys(diagnostics))
     return status
 
 
@@ -450,6 +461,7 @@ class Pacman:
         self.upgrade = upgrade
         self.system_caches = command(["pacman-conf", "CacheDir"]).splitlines()
         self.mirrors = {}
+        self.has_cache_servers = re.search(r"(?m)^[ \t]*CacheServer[ \t]*=", content) is not None
 
     def resolve(self, targets):
         # %s is bytes left to download, so resolve against an empty cache to
@@ -463,8 +475,14 @@ class Pacman:
                 continue
             name, version, repo, size, filename, checksum, url, signature = line[4:].split("\t")
             if repo not in self.mirrors:
-                self.mirrors[repo] = command(["pacman-conf", "--config", str(self.config), "--repo", repo, "Server"]).splitlines()
-            urls = list(dict.fromkeys([url] + [s.rstrip("/") + "/" + filename for s in self.mirrors[repo]]))
+                config_args = ["pacman-conf", "--config", str(self.config), "--repo", repo]
+                cache_servers = command([*config_args, "CacheServer"]).splitlines() if self.has_cache_servers else []
+                self.mirrors[repo] = cache_servers, command([*config_args, "Server"]).splitlines()
+            cache_servers, mirrors = self.mirrors[repo]
+            urls = [server.rstrip("/") + "/" + filename for server in cache_servers]
+            urls.append(url)
+            urls.extend(server.rstrip("/") + "/" + filename for server in mirrors)
+            urls = list(dict.fromkeys(urls))
             packages.append(Package(name, version, repo, int(size) if size.isdigit() else None,
                                     filename, checksum, urls, signature=signature))
         return packages
@@ -512,7 +530,7 @@ class Pacman:
                         return
             os.replace(part, path)
 
-    def native(self, targets, download_only):
+    def native(self, queue, targets, download_only):
         # libalpm creates its sandbox download directory under the first CacheDir.
         # Use an accessible, per-operation scratch directory, then read the private
         # archive cache as root. No archive is copied into the scratch directory.
@@ -523,7 +541,7 @@ class Pacman:
             scratch.chmod(0o711)
             args = ["sudo", "pacman", "--config", str(self.offline), "--cachedir", str(scratch),
                     "--cachedir", str(self.staged), *flags, "--needed", "--", *targets]
-            return command(args) if download_only else install_command(args)
+            return command(args) if download_only else install_command(args, queue)
         finally:
             # libalpm 16 may leave an empty 0700 directory owned by DownloadUser.
             # rmdir needs access to its parent only. Recursive cleanup tries to
@@ -543,10 +561,10 @@ class Pacman:
             signature = self.cache / (package.filename + ".sig")
             if signature.is_file() and not signature.is_symlink():
                 (self.staged / signature.name).symlink_to(signature)
-        self.native(targets, download_only=True)
+        self.native(queue, targets, download_only=True)
 
     def install(self, queue, targets):
-        return self.native(targets, download_only=False)
+        return self.native(queue, targets, download_only=False)
 
 
 class Dnf:
@@ -674,7 +692,7 @@ class Dnf:
             queue.copy_verified(pkg, queue.cache / pkg.filename, target)
         return install_command(["sudo", "dnf", *self.repo_options, "--cacheonly",
                                 "--setopt=cachedir=" + str(self.metadata), "--setopt=keepcache=True",
-                                "--setopt=max_parallel_downloads=1", self.operation, *targets])
+                                "--setopt=max_parallel_downloads=1", self.operation, *targets], queue)
 
 
 def identity(packages):
@@ -725,7 +743,10 @@ def run_transaction(backend, queue, targets):
     except (TransferError, OSError) as exc:
         code = 1
         queue.error = str(exc)
-    queue.outcomes["installation"] = "FAILED" if code else "SUCCESS"
+    if code:
+        queue.outcomes["installation"] = "FAILED"
+    else:
+        queue.outcomes["installation"] = "SUCCESS_WITH_WARNINGS" if queue.native_errors else "SUCCESS"
     queue.stage = "INSTALLED" if code == 0 else "BLOCKED"
     if code:
         queue.error = queue.error or "Native transaction failed or was declined; review the package manager journal."

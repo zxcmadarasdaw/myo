@@ -250,12 +250,8 @@ pm_enable_copr() {
 
 pm_enable_terra() {
     rpm -q terra-release &>/dev/null && return 0
-    echo -e "\e[36m[ INFO ]\e[0m $(t "installer.deps.enabling_terra")"
-    if [ "${MANAGED_INSTALL:-false}" = true ]; then
-        echo "MangoWC needs a configured and trusted Terra repository. Configure Terra with its signing keys before retrying." >&2
-        return 1
-    fi
-    pm_dnf install -y --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release
+    echo "MangoWC needs a configured and trusted Terra repository. Configure Terra with its signing keys before retrying." >&2
+    return 1
 }
 
 pm_install_release_binary() {

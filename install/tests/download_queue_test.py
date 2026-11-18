@@ -233,6 +233,28 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(dq.run_transaction(backend, q, ["app"]), 1)
         backend.install.assert_not_called()
 
+    def test_native_hook_error_is_reported_when_install_exits_zero(self):
+        q = self.queue([package()])
+        backend = Mock()
+        backend.resolve.return_value = q.packages
+        process = Mock()
+        process.stderr.read1.side_effect = [
+            b"err", b"or: post-transaction hook failed\n", b"another line\n", b"",
+        ]
+        process.wait.return_value = 0
+        backend.install.side_effect = lambda queue, targets: dq.install_command(["pacman"], queue)
+        with patch.object(dq.subprocess, "Popen") as popen, patch.object(dq.sys, "stderr") as stderr:
+            popen.return_value.__enter__.return_value = process
+            self.assertEqual(dq.run_transaction(backend, q, ["quickshell"]), 0)
+        self.assertEqual(q.report()["installation"], "SUCCESS_WITH_WARNINGS")
+        self.assertEqual(q.report()["native_errors"], ["error: post-transaction hook failed"])
+        self.assertEqual(q.packages[0].state, "INSTALLED")
+        self.assertEqual(stderr.buffer.write.call_count, 3)
+
+    def test_cache_server_error_does_not_treat_openssl_as_a_tls_failure(self):
+        self.assertEqual(dq.reason("Could not open file /cache/openssl-4.1.0.pkg.tar.zst", 37),
+                         "Mirror file unavailable")
+
     def test_native_install_runs_once_after_verification(self):
         q = self.queue([package("app"), package("lib")])
         backend = Mock()
@@ -350,7 +372,7 @@ class NativeAdapterTests(unittest.TestCase):
         self.assertEqual(len(packages[0].urls), 2)
 
     def test_cachyos_repositories_signatures_and_parallel_policy_preserved(self):
-        config = "[options]\nParallelDownloads = 5\nSigLevel = Required DatabaseOptional\n[core]\nServer = https://core\n[cachyos-v3]\nSigLevel = Required\nServer = https://cachy\n"
+        config = "[options]\nParallelDownloads = 5\nSigLevel = Required DatabaseOptional\n[core]\nServer = https://core\n[cachyos-v3]\nSigLevel = Required\nServer = https://cachy\nCacheServer = https://configured-cache\n"
         with tempfile.TemporaryDirectory() as temp, patch.object(dq, "command") as command:
             def output(args):
                 if args == ["pacman-conf"]:
@@ -359,6 +381,8 @@ class NativeAdapterTests(unittest.TestCase):
                     return temp
                 if "--print-format" in args:
                     return "SPQ:quickshell\t1.2\tcachyos-v3\t100\tquickshell.pkg.tar.zst\t" + "a" * 64 + "\thttps://cachy/quickshell.pkg.tar.zst\tQUJD\n"
+                if args[-1] == "CacheServer":
+                    return "https://configured-cache\n"
                 return "https://cachy\nhttps://second\n"
             command.side_effect = output
             backend = dq.Pacman(temp, temp)
@@ -371,7 +395,11 @@ class NativeAdapterTests(unittest.TestCase):
             self.assertIn("[cachyos-v3]", backend.config.read_text())
             packages = backend.resolve(["quickshell"])
             self.assertEqual(packages[0].repository, "cachyos-v3")
-            self.assertEqual(packages[0].urls[-1], "https://second/quickshell.pkg.tar.zst")
+            self.assertEqual(packages[0].urls, [
+                "https://configured-cache/quickshell.pkg.tar.zst",
+                "https://cachy/quickshell.pkg.tar.zst",
+                "https://second/quickshell.pkg.tar.zst",
+            ])
             q = dq.Queue(packages, temp, emit=lambda e: None)
             with patch.object(dq.Path, "symlink_to") as link, patch.object(backend, "native"):
                 backend.verify(q, ["quickshell"])
@@ -379,7 +407,7 @@ class NativeAdapterTests(unittest.TestCase):
             self.assertEqual(link.call_args_list[0].args, (q.cache / "quickshell.pkg.tar.zst",))
             self.assertEqual(link.call_args_list[1].args, (q.cache / "quickshell.pkg.tar.zst.sig",))
             with patch.object(dq.tempfile, "mkdtemp", return_value=temp), patch.object(dq.Path, "rmdir"):
-                backend.native(["quickshell"], download_only=True)
+                backend.native(q, ["quickshell"], download_only=True)
             args = command.call_args.args[0]
             self.assertIn("-Sw", args)
             self.assertNotIn("--nodeps", args)

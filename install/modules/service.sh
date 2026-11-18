@@ -113,17 +113,18 @@ setup_services() {
 }
 
 installer_session_check() {
-    local session uid
+    local session uid sessions
     command -v loginctl >/dev/null || { echo 'Session diagnostics require loginctl.' >&2; return 1; }
+    sessions="$(loginctl list-sessions --no-legend --no-pager)" || return 1
     printf 'Current environment: session=%s type=%s desktop=%s\n' "${XDG_SESSION_ID:-unknown}" "${XDG_SESSION_TYPE:-unknown}" "${XDG_CURRENT_DESKTOP:-unknown}"
     printf 'Display manager: '
-    systemctl show display-manager.service --value -p ActiveState -p Id 2>/dev/null | paste -sd ' ' || true
+    systemctl show display-manager.service --value -p Id -p ActiveState -p SubState -p Result 2>/dev/null | paste -sd ' ' || true
     while read -r session uid _; do
         if [[ "$uid" == "$UID" ]]; then
             printf '\nSession %s\n' "$session"
-            loginctl show-session "$session" -p Type -p State -p Active -p Seat -p VTNr -p Remote || true
+            loginctl show-session "$session" -p Type -p Desktop -p Service -p State -p Active -p Seat -p VTNr -p Remote || true
         fi
-    done < <(loginctl list-sessions --no-legend --no-pager)
+    done <<< "$sessions"
 }
 
 installer_return_session() {

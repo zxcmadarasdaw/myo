@@ -464,6 +464,13 @@ manager_run_exit() {
             manager_record '@@component' Hyprland Missing 'Hyprland executable is unavailable after this run.'
         fi
     fi
+    if quickshell_is_current; then
+        manager_record '@@component' Quickshell Installed "$(quickshell_version)"
+    elif command -v quickshell >/dev/null; then
+        manager_record '@@component' Quickshell 'Update required' "Requires Quickshell $MIN_QUICKSHELL_VERSION or newer."
+    else
+        manager_record '@@component' Quickshell Missing 'Quickshell executable is unavailable after this run.'
+    fi
     rm -rf -- "$MANAGER_TMP"
 }
 

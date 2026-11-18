@@ -191,7 +191,9 @@ function renderRun(run, launchError) {
   flags(run.code === null);
   $("operation").hidden = false;
   const ok = run.code === 0 && run.status === "Completed";
-  $("status").textContent = ok ? (run.total === 1 ? "VERIFICATION COMPLETED" : "INSTALLATION COMPLETED") : run.status;
+  const nativeErrors = (run.reports || []).flatMap(report => report.native_errors || []);
+  const completed = nativeErrors.length ? "INSTALLATION COMPLETED WITH WARNINGS" : "INSTALLATION COMPLETED";
+  $("status").textContent = ok ? (run.total === 1 ? "VERIFICATION COMPLETED" : completed) : run.status;
   $("status").dataset.state = run.status;
   $("current").textContent = run.phase ? `Phase ${run.phase} of ${run.total} · ${run.component}` : run.component;
   $("elapsed").textContent = `${Math.floor(run.elapsed / 60)}m ${run.elapsed % 60}s`;
@@ -240,8 +242,8 @@ function renderRun(run, launchError) {
     ? ["System integration", run.integration, run.integration_detail].filter(Boolean).join(" · ")
     : "";
   const components = Object.entries(run.components || {}).map(([name, info]) => `${name} · ${info.state} · ${info.detail}`);
-  $("integration").hidden = !integration && !components.length;
-  $("integration").textContent = [integration, ...components].filter(Boolean).join("\n");
+  $("integration").hidden = !integration && !components.length && !nativeErrors.length;
+  $("integration").textContent = [integration, ...components, ...new Set(nativeErrors)].filter(Boolean).join("\n");
   $("recovery").hidden = !launchError && (running || ok);
   $("recovery").textContent = launchError || run.diagnostic ||
     "Review the last operation and journal. After resolving the cause, retry the failed step or restart the approved plan.";
@@ -314,8 +316,8 @@ function renderQueue(run) {
   lastQueueEnd = ended ? endKey : "";
   $("queue-summary").textContent = `Download: ${run.queue.download || "PENDING"}\nVerification: ${run.queue.verification || "PENDING"}\nInstallation: ${run.queue.installation || "PENDING"}\nChecksum verified: ${good} / ${total}\nFailed: ${failed}\n` +
     packages.filter(p => p.error).map(p => `${p.name}: ${p.error} · Attempts: ${p.attempts} · Mirror: ${p.mirror}\n${p.detail || ""}`).join("\n") +
-    `\n${run.queue.error || ""}`;
-  $("retry-downloads").hidden = running || !(failed || run.queue.stage === "BLOCKED");
+    `\n${[run.queue.error, ...(run.queue.native_errors || [])].filter(Boolean).join("\n")}`;
+  $("retry-downloads").hidden = running || run.queue.download !== "FAILED";
 }
 
 async function poll() {

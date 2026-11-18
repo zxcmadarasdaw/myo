@@ -597,6 +597,7 @@ def report_text(report):
                       f"Total: {len(packages)}", transaction.get("error", "")])
         for label in ("download", "verification", "installation"):
             lines.append(f"{label.title()}: {transaction.get(label, 'PENDING')}")
+        lines.extend(transaction.get("native_errors", []))
         for pkg in packages:
             lines.append(f"{pkg['name']} {pkg['version']} [{pkg['repository']}] {pkg['state']} | "
                          f"{pkg['received']} / {pkg['size']} bytes | Attempts: {pkg['attempts']} | "
@@ -679,8 +680,12 @@ def terminal_run(manager):
             print(exc, file=sys.stderr)
         if run.exit_code is None:
             time.sleep(0.05)
-    print(f"{'INSTALLATION COMPLETED' if run.exit_code == 0 and not run.cancelled and manager.active_plan['action'] != 'verify' else run.status}"
-          f" · Log {run.path}")
+    status = run.status
+    if run.exit_code == 0 and not run.cancelled and manager.active_plan["action"] != "verify":
+        status = "INSTALLATION COMPLETED"
+        if any(report.get("native_errors") for report in run.reports):
+            status += " WITH WARNINGS"
+    print(f"{status} · Log {run.path}")
     if run.exit_code != 0 and run.diagnostic:
         print(run.diagnostic)
     if manager.launch_error:

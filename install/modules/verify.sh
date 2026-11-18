@@ -38,13 +38,17 @@ hyprland_version() {
 }
 
 check_hyprland_config() (
-    local config="$1" bin runtime
+    local config="$1" bin runtime status
     bin="$(hyprland_binary)" || return 1
     runtime="$(mktemp -d /tmp/serpantinum-hyprland.XXXXXX)" || return 1
     trap 'rm -rf -- "$runtime"' EXIT
     export XDG_RUNTIME_DIR="$runtime"
     unset HYPRLAND_INSTANCE_SIGNATURE WAYLAND_DISPLAY WAYLAND_SOCKET DISPLAY
-    "$bin" --verify-config --config "$config"
+    if "$bin" --verify-config --config "$config"; then return 0; else status=$?; fi
+    [ "$status" -eq 139 ] || return "$status"
+    printf 'Hyprland config validator crashed (SIGSEGV). Retrying once with a fresh runtime directory.\n' >&2
+    mkdir -m 700 "$runtime/retry" || return 1
+    XDG_RUNTIME_DIR="$runtime/retry" "$bin" --verify-config --config "$config"
 )
 
 version_at_least() {
