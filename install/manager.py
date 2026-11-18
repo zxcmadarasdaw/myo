@@ -179,6 +179,9 @@ class Run:
         self.network = "No transfer reported"
         self.diagnostic = ""
         self.metrics = {}
+        self.downloads = {}
+        self.queue = {}
+        self.reports = []
         self.children = []
         self.next_sample = 0
         self.decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
@@ -211,6 +214,38 @@ class Run:
         if not line:
             return
         fields = line.split("\t")
+        if fields[0] in {"@@queue", "@@report"} and len(fields) == 2:
+            try:
+                event = json.loads(fields[1])
+            except (ValueError, TypeError):
+                return
+            if not isinstance(event, dict):
+                return
+            if fields[0] == "@@report":
+                event["packages"] = list(self.downloads.values())
+                self.reports.append(event)
+                self.save_reports()
+                self.append(f"Download report: {event.get('downloaded', 0)}/{event.get('total', 0)} checksum verified; "
+                            f"failed {event.get('failed', 0)}; {event.get('stage', '')}")
+                for pkg in event["packages"]:
+                    if pkg.get("error"):
+                        self.append(f"{pkg['name']}: {pkg['error']} · attempts {pkg['attempts']} · {pkg['mirror']}")
+                return
+            if event.get("reset"):
+                self.downloads = {}
+            self.queue = event
+            package = event.get("package")
+            if isinstance(package, dict) and package.get("name"):
+                previous = self.downloads.get(package["name"], {})
+                self.downloads[package["name"]] = package
+                if previous.get("state") != package.get("state"):
+                    self.append(f"{package['name']} {package['version']} · {package['state']} · {package.get('error', '')}")
+                self.component = package["name"]
+                self.metrics = {"package": package["name"], "percent": package.get("percent")}
+            self.status = {"DOWNLOAD": "Downloading", "VERIFYING": "Verifying", "INSTALLING": "Installing",
+                           "BLOCKED": "Failed", "READY": "Verifying", "INSTALLED": "Installing"}.get(event.get("stage"), "Downloading")
+            self.network = "Measured package file bytes"
+            return
         if len(fields) == 5 and fields[0] == "@@phase" and all(v.isdigit() for v in fields[1:3]):
             self.phase, self.total = map(int, fields[1:3])
             self.status, self.component = fields[3:]
@@ -312,6 +347,8 @@ class Run:
                        "Completed" if self.exit_code == 0 else "Failed")
         self.pending = self.prompt = ""
         self.append(f"{self.status} · exit {self.exit_code}")
+        if self.reports:
+            self.save_reports()
         self.log.close()
 
     def echo_disabled(self):
@@ -351,8 +388,31 @@ class Run:
             elapsed=int(now - self.started), idle=int(now - self.last_event),
             active=int(now - self.last_activity), processes=sorted({row[2] for row in self.children}),
             network=self.network, metrics=self.metrics, diagnostic=self.diagnostic, path=self.path, code=self.exit_code,
+            queue=self.queue, downloads=list(self.downloads.values()), reports=self.reports,
             lines=[(idx, line) for idx, line in self.lines if idx > after],
         )
+
+    def report(self):
+        return {"status": self.status, "exit_code": self.exit_code,
+                "transactions": self.reports,
+                "current": dict(self.queue, packages=list(self.downloads.values()))}
+
+    def save_reports(self):
+        if not getattr(self, "path", None):
+            return
+        report = self.report()
+        try:
+            for suffix, contents in (("json", json.dumps(report, ensure_ascii=False, indent=2)),
+                                     ("txt", report_text(report))):
+                fd, temporary = tempfile.mkstemp(prefix=".install-report-", dir=Path(self.path).parent)
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as target:
+                        target.write(contents)
+                    os.replace(temporary, self.path + ".report." + suffix)
+                finally:
+                    Path(temporary).unlink(missing_ok=True)
+        except OSError:
+            self.append("Could not save report on disk. Use Export Installation Report while this window is open.")
 
 
 class Manager:
@@ -430,6 +490,21 @@ class Manager:
             while self.run.exit_code is None:
                 self.update()
                 time.sleep(0.1)
+
+
+def report_text(report):
+    from download_queue import redact
+    lines = ["SERPANTINUM INSTALLATION REPORT", f"Status: {report['status']}"]
+    transactions = report["transactions"] or [report["current"]]
+    for number, transaction in enumerate(transactions, 1):
+        packages = transaction.get("packages", [])
+        lines.extend([f"Transaction {number}: {transaction.get('stage', 'unknown')}",
+                      f"Total: {len(packages)}", transaction.get("error", "")])
+        for pkg in packages:
+            lines.append(f"{pkg['name']} {pkg['version']} [{pkg['repository']}] {pkg['state']} | "
+                         f"{pkg['received']} / {pkg['size']} bytes | Attempts: {pkg['attempts']} | "
+                         f"Mirror: {pkg['mirror']} | {pkg['error']} {pkg['detail']}")
+    return redact("\n".join(lines))
 
 
 def summary(inventory, packages=False):
@@ -608,6 +683,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, dict(run=manager.run.state(after) if manager.run else None, launchError=manager.launch_error))
         elif path == "/journal" and manager.run:
             self.send(200, Path(manager.run.path).read_bytes(), "text/plain; charset=utf-8")
+        elif path in {"/report.json", "/report.txt"} and manager.run:
+            report = manager.run.report()
+            if path.endswith(".json"):
+                self.send(200, report)
+            else:
+                self.send(200, report_text(report), "text/plain; charset=utf-8")
         else:
             self.send(404, {"error": "Unknown installer route."})
 

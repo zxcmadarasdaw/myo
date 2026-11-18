@@ -15,6 +15,7 @@ let lastPrompt = "";
 let shownLog = "";
 let generation = 0;
 let approval = null;
+let lastQueueEnd = "";
 
 function element(tag, label, className) {
   const node = document.createElement(tag);
@@ -195,6 +196,7 @@ function renderRun(run, launchError) {
   $("transfer").hidden = run.status !== "Downloading";
   updateProgress($("download"), run.metrics.percent, 100);
   $("metrics").textContent = [run.metrics.package, run.metrics.count, run.metrics.size, run.metrics.rate, run.network].filter(Boolean).join(" · ");
+  renderQueue(run);
   const activity = run.active < 20 ? "Worker activity detected" : `No observable process activity for ${run.active}s`;
   $("activity").textContent = [running ? `${activity} · last output ${run.idle}s ago` : "", run.latest].filter(Boolean).join(" · ");
   if (running && run.idle >= 20 && run.processes.length) {
@@ -236,6 +238,67 @@ function renderRun(run, launchError) {
     "Review the last operation and journal. After resolving the cause, retry the failed step or restart the approved plan.";
 }
 
+function bytes(value) {
+  if (!Number.isFinite(value)) return "unknown";
+  const unit = value >= 1048576 ? "MiB" : value >= 1024 ? "KiB" : "B";
+  const divisor = unit === "MiB" ? 1048576 : unit === "KiB" ? 1024 : 1;
+  return `${(value / divisor).toFixed(unit === "B" ? 0 : 1)} ${unit}`;
+}
+
+function renderQueue(run) {
+  const packages = run.downloads || [];
+  $("download-queue").hidden = !run.queue?.stage;
+  if (!run.queue?.stage) return;
+  const good = packages.filter(p => ["VERIFIED", "INSTALLED"].includes(p.state)).length;
+  const failed = packages.filter(p => p.state === "FAILED").length;
+  const deferred = packages.filter(p => p.state === "DEFERRED").length;
+  const total = run.queue.total ?? packages.length;
+  const current = packages.find(p => ["DOWNLOADING", "RETRYING", "VERIFYING", "CHECKING"].includes(p.state));
+  const known = packages.length === total && packages.every(p => Number.isFinite(p.size));
+  const totalBytes = known ? packages.reduce((n, p) => n + p.size, 0) : null;
+  const received = packages.reduce((n, p) => n + (p.received || 0), 0);
+  updateProgress($("queue-overall"), totalBytes ? received : good, totalBytes || total);
+  $("queue-counts").textContent = `Completed: ${good} · Failed: ${failed} · Deferred: ${deferred} · Remaining: ${Math.max(0, total - good - failed - deferred)} · Total: ${total}`;
+  const storage = run.queue.storage;
+  $("queue-storage").textContent = storage ? `Cache: ${storage.cache} · Required: ${bytes(storage.cache_required)} · Free: ${bytes(storage.cache_free)}\nTemporary: ${storage.temporary_directory} · Free: ${bytes(storage.temporary_free)}${storage.memory_available ? " · Available RAM: " + bytes(storage.memory_available) : ""}\n${storage.warning || ""}` : "";
+  if (current) {
+    const text = `${current.name} ${current.version} · ${current.repository} · Package ${packages.indexOf(current) + 1}/${total}\n` +
+      `${bytes(current.received)} / ${bytes(current.size)} · ${Number.isFinite(current.percent) ? current.percent.toFixed(1) + "%" : "size unknown"}\n` +
+      `Current: ${bytes(current.rate)}/s · Average: ${bytes(current.average)}/s · ETA: ${Number.isFinite(current.eta) ? Math.ceil(current.eta) + "s" : "unknown"}\n` +
+      `Mirror: ${current.mirror || "pending"} · ${current.warning || current.state}`;
+    $("queue-current").textContent = text;
+    $("transfer").hidden = current.state !== "DOWNLOADING";
+    updateProgress($("download"), current.percent, 100);
+  } else {
+    $("queue-current").textContent = `${run.queue.stage} · ${run.queue.error || ""}`;
+    $("transfer").hidden = true;
+  }
+  // Reuse details nodes so expanded rows stay open through progress updates.
+  const container = $("queue-packages");
+  const names = new Set(packages.map(p => p.name));
+  for (const node of [...container.children]) if (!names.has(node.dataset.name)) node.remove();
+  for (const pkg of packages) {
+    let row = [...container.children].find(node => node.dataset.name === pkg.name);
+    if (!row) {
+      row = element("details", "", "queue-package");
+      row.dataset.name = pkg.name;
+      row.append(element("summary"), element("p"));
+      container.append(row);
+    }
+    row.firstChild.textContent = `${pkg.name} · ${pkg.state}${Number.isFinite(pkg.percent) && pkg.state === "DOWNLOADING" ? " · " + pkg.percent.toFixed(1) + "%" : ""}`;
+    row.lastChild.textContent = `${pkg.version} · ${pkg.repository} · ${bytes(pkg.received)} / ${bytes(pkg.size)}\nAttempts: ${pkg.attempts} · Mirror: ${pkg.mirror || "pending"}\n${pkg.error || ""} ${pkg.detail || ""}\n${(pkg.history || []).map(h => `${h.attempt}: ${h.reason} · ${h.mirror}`).join("\n")}`;
+  }
+  const ended = ["DOWNLOAD_COMPLETED", "BLOCKED", "READY", "INSTALLING", "INSTALLED", "CANCELLED"].includes(run.queue.stage) || run.code !== null;
+  $("queue-report").hidden = !ended;
+  const endKey = `${run.path}:${run.phase}:${run.queue.stage}`;
+  if (ended && lastQueueEnd !== endKey) $("queue-report").open = true;
+  lastQueueEnd = ended ? endKey : "";
+  $("queue-summary").textContent = `${run.queue.stage === "BLOCKED" && !total ? "DOWNLOAD PLAN FAILED" : failed ? "DOWNLOAD COMPLETED WITH ERRORS" : good === total ? "DOWNLOAD COMPLETED" : "DOWNLOAD INTERRUPTED"}\nTotal: ${total}\nChecksum verified: ${good}\nFailed: ${failed}\n` +
+    packages.filter(p => p.error).map(p => `${p.name}: ${p.error} · Attempts: ${p.attempts} · Mirror: ${p.mirror}`).join("\n") +
+    `\nInstallation status: ${run.queue.stage}\n${run.queue.error || ""}`;
+  $("retry-downloads").hidden = running || !(failed || run.queue.stage === "BLOCKED");
+}
+
 async function poll() {
   if (closed) return;
   try {
@@ -267,6 +330,19 @@ async function answer() {
 click("review", review);
 click("start", () => start("/start"));
 click("retry", () => start("/retry"));
+click("retry-downloads", () => start("/retry"));
+click("export-report", async () => {
+  for (const extension of ["txt", "json"]) {
+    const data = await request(`/report.${extension}`);
+    const url = URL.createObjectURL(new Blob([extension === "json" ? JSON.stringify(data, null, 2) : data],
+      { type: extension === "json" ? "application/json" : "text/plain" }));
+    const link = element("a");
+    link.href = url;
+    link.download = `serpantinum-installation-report.${extension}`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+});
 click("restart", () => start("/restart"));
 click("cancel", () => request("/cancel", {}));
 click("send", answer);

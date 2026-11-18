@@ -74,7 +74,7 @@ install_live_session() {
 }
 
 bootstrap_tool() {
-    local package="$1" reason="$2" answer updates db
+    local package="$1" reason="$2" answer updates db config result
     printf '%s Install %s with %s using its configured repositories? [y/N] ' "$reason" "$package" "$PM_COMMAND" >&2
     read -r answer </dev/tty || return 1
     [[ "$answer" =~ ^[yY]$ ]] || return 1
@@ -91,8 +91,16 @@ bootstrap_tool() {
                 echo 'Pending system upgrades in the package databases. Use a current Live image or review a full upgrade of the installed system first.' >&2
                 return 1
             fi
-            sudo pacman -S --needed "$package" </dev/tty ;;
-        dnf) sudo dnf --disablerepo='terra*' --setopt=assumeyes=False install "$package" </dev/tty ;;
+            config="$(mktemp)" || return 1
+            if ! pacman-conf | awk '/^[[:space:]]*ParallelDownloads[[:space:]]*=/ {next} {print} /^\[options\]$/ {print "ParallelDownloads = 1"}' > "$config"; then
+                rm -f -- "$config"
+                return 1
+            fi
+            result=0
+            sudo pacman --config "$config" -S --needed "$package" </dev/tty || result=$?
+            rm -f -- "$config"
+            return "$result" ;;
+        dnf) sudo dnf --disablerepo='terra*' --setopt=assumeyes=False --setopt=max_parallel_downloads=1 install "$package" </dev/tty ;;
         void) sudo xbps-install -Suy xbps && sudo xbps-install -Sy "$package" </dev/tty ;;
     esac
 }

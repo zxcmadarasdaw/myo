@@ -92,6 +92,11 @@ source "$repo/install/modules/pm/dnf.sh"
 PM_YUM_REPOS_DIR="$work/repos"
 mkdir -p "$PM_YUM_REPOS_DIR"
 printf '[terra]\n' > "$PM_YUM_REPOS_DIR/terra.repo"
+python3() {
+    [ "$1" != -c ] || return 0
+    [ "$2" = dnf ] || return 2
+    printf '%s\n' "$*" > "$work/queue-call"
+}
 pm_dnf install -y --assumeyes hyprland
-grep -Fxq 'dnf --disablerepo=terra --setopt=assumeyes=False install hyprland' "$work/transactions"
+grep -q -- 'dnf --operation install --repo-option=--disablerepo=terra -- hyprland' "$work/queue-call"
 printf 'PASS: the managed DNF path retains the Terra exclusion and native confirmation\n'

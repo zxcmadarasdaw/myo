@@ -319,6 +319,21 @@ EOF
             sleep() { :; }
             # shellcheck source=/dev/null
             source "$ROOT/install/modules/pm/dnf.sh"
+            python3() {
+                [ "$1" != -c ] || return 0
+                [[ "$1" == */download_queue.py ]] || return 2
+                shift 2
+                local operation=install opts=() targets=()
+                while (( $# )); do
+                    case "$1" in
+                        --operation) operation="$2"; shift 2 ;;
+                        --repo-option=*) opts+=("${1#--repo-option=}"); shift ;;
+                        --) shift; targets=("$@"); break ;;
+                        *) return 2 ;;
+                    esac
+                done
+                sudo dnf "${opts[@]}" "$operation" -y "${targets[@]}"
+            }
             # shellcheck source=/dev/null
             source "$ROOT/install/modules/deps.sh"
             OPT_SDDM=false
@@ -404,7 +419,8 @@ test_pacman_provider() (
                 [ "$*" = 'kitty hyprland' ] || return 2
                 if [ ! -f "$home/installed" ]; then printf 'kitty\nhyprland\n'; return 127; fi
                 ;;
-            -Q) return 0 ;;
+            -Q|-Sl) return 0 ;;
+            -Qu) return 1 ;;
             -Syu|-S)
                 printf '%s %s\n' "$operation" "$*" >> "$home/transactions"
                 [ ! -f "$home/fail" ] || return 1
@@ -413,13 +429,20 @@ test_pacman_provider() (
             *) return 3 ;;
         esac
     }
+    pacman-conf() { [ "$1" = DBPath ] && echo "$home/db"; }
+    mkdir -p "$home/db"
+    python3() {
+        [[ "$1" == */download_queue.py && "$2" == pacman && "$3" == -- ]] || return 2
+        shift 3
+        sudo pacman -S --needed "$@"
+    }
     touch "$home/fail"
     if install_dependencies fresh false hyprland >/dev/null 2>&1; then return 1; fi
     [ ! -f "$home/installed" ] && [ "$PM_PACMAN_SYNCED" = false ] || return 1
     rm "$home/fail"
     install_dependencies fresh false hyprland >/dev/null || return 1
     install_dependencies current false hyprland >/dev/null || return 1
-    [ "$(cat "$home/transactions")" = "$(printf '%s\n' '-Syu --needed kitty hyprland' '-Syu --needed kitty hyprland')" ] || return 1
+    [ "$(cat "$home/transactions")" = "$(printf '%s\n' '-S --needed kitty hyprland' '-S --needed kitty hyprland')" ] || return 1
     pm_bootstrap_install jq >/dev/null && grep -Fxq -- '-S --needed jq' "$home/transactions" || return 1
     rm -rf "$home"
 )

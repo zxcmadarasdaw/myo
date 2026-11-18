@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 PM_BOOTSTRAP_TOOLS=(fzf jq curl git pciutils unzip fontconfig)
+PM_QUEUE_WORKER="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../download_queue.py"
+source "$(dirname "$PM_QUEUE_WORKER")/modules/download_queue.sh"
 
 PM_EXTRA_PKGS=(jetbrains-mono-fonts fontawesome-6-free-fonts xdg-user-dirs xwayland-satellite pipewire-utils pulseaudio-utils)
 PM_SDDM_EXTRA_PKGS=(sddm-wayland-generic adwaita-cursor-theme)
@@ -95,6 +97,22 @@ pm_dnf_repo_opts() {
 pm_dnf() {
     local PM_DNF_OPTS
     pm_dnf_repo_opts
+    local operation="" item queue_targets=() queue_options=()
+    for item in "$@"; do
+        case "$item" in
+            install|upgrade) operation="$item" ;;
+            -y|--assumeyes) ;;
+            --refresh) ;;
+            -*) queue_options+=("$item") ;;
+            *) queue_targets+=("$item") ;;
+        esac
+    done
+    if [ -n "$operation" ] && [ ${#queue_options[@]} -eq 0 ]; then
+        local repo_args=()
+        for item in "${PM_DNF_OPTS[@]}"; do repo_args+=("--repo-option=$item"); done
+        pm_queue_run dnf --operation "$operation" "${repo_args[@]}" -- "${queue_targets[@]}"
+        return
+    fi
     if [ "${MANAGED_INSTALL:-false}" = true ]; then
         local arg args=()
         for arg in "$@"; do

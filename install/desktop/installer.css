@@ -103,3 +103,8 @@ progress { display: block; width: 100%; margin: 6px 0 12px; height: 10px; accent
   .answer-row { flex-wrap: wrap; }
   #options { grid-template-columns: 1fr; }
 }
+
+#queue-current, #queue-storage, .queue-package p { white-space: pre-wrap; overflow-wrap: anywhere; }
+#queue-packages { max-height: 320px; overflow: auto; }
+.queue-package { padding: 7px 0; border-bottom: 1px solid var(--border); }
+#queue-summary { white-space: pre-wrap; overflow-wrap: anywhere; }

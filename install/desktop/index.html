@@ -76,6 +76,22 @@
             <progress id="download" max="100" aria-label="Download progress"></progress>
           </div>
           <p id="metrics" class="muted"></p>
+          <section id="download-queue" hidden aria-label="Download queue">
+            <h3>Sequential Download · 1 package at a time</h3>
+            <p id="queue-current"></p>
+            <progress id="queue-overall" aria-label="Overall package download progress"></progress>
+            <p id="queue-counts" class="muted"></p>
+            <p id="queue-storage" class="muted"></p>
+            <div id="queue-packages"></div>
+            <details id="queue-report" hidden open>
+              <summary>Download report</summary>
+              <pre id="queue-summary"></pre>
+              <div class="buttons">
+                <button id="retry-downloads" class="primary" hidden>Retry Failed Downloads</button>
+                <button id="export-report">Export Installation Report</button>
+              </div>
+            </details>
+          </section>
           <p id="activity" class="muted"></p>
           <div id="question" class="question" hidden>
             <label for="answer" id="prompt"></label>

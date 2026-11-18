@@ -4,6 +4,8 @@ PM_BOOTSTRAP_TOOLS=(fzf jq curl git pciutils unzip fontconfig)
 PM_EXTRA_PKGS=(qt6-multimedia-ffmpeg polkit python-yaml iproute2 nftables)
 PM_AUDIO_BUILD_PKGS=(base-devel pkgconf pipewire)
 PM_PACMAN_SYNCED=false
+PM_QUEUE_WORKER="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../download_queue.py"
+source "$(dirname "$PM_QUEUE_WORKER")/modules/download_queue.sh"
 
 pm_pacman_ready() {
     local updates status=0 db
@@ -26,17 +28,8 @@ pm_pacman_ready() {
 }
 
 pm_pacman_install() {
-    local operation="-Syu"
-    [ "$PM_PACMAN_SYNCED" = false ] || operation="-S"
-    if [ "${MANAGED_INSTALL:-false}" = true ] || [ "${PM_ARCH_EXISTING_DB_ONLY:-false}" = true ]; then
-        pm_pacman_ready || return 1
-        operation=-S
-    fi
-    printf 'Pacman repository packages: %s\n' "$*"
-    if ! sudo pacman "$operation" --needed "$@"; then
-        echo "Pacman transaction failed. Check the configured repositories, package conflicts and disk space, then run the installer again. No AUR package was requested." >&2
-        return 1
-    fi
+    pm_pacman_ready || return 1
+    pm_queue_run pacman -- "$@" || return 1
     PM_PACMAN_SYNCED=true
     if [ "${MANAGED_INSTALL:-false}" = true ]; then
         pacman -T "$@"

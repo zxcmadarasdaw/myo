@@ -1,5 +1,18 @@
 # Проверка установщика
 
+## Очередь загрузок — 18 ноября 2026
+
+Новый путь описан в [DOWNLOAD_QUEUE.md](DOWNLOAD_QUEUE.md). Старые Linux-результаты ниже не подтверждают нативную работу нового исполнителя.
+
+- `python3 install/tests/download_queue_test.py`: 26 успешных тестов. Последовательность 10 файлов, имя/версия/репозиторий, проценты/скорость/ETA и неизвестный размер, нулевая скорость, настоящий HTTP timeout с предупреждением и диагностикой, три попытки, HTTP 404 и зеркало, deferred и продолжение, недостающая обязательная зависимость, подпись, checksum, место, отмена, повтор только неудачных файлов, кэш, отчёт, дрейф metadata, целая установка, отдельный полный upgrade Arch, CachyOS config, DNF4/5 solver metadata и cache-only установка.
+- `python3 install/tests/installer_manager_test.py`: 3 успешных, 2 PTY-теста пропущены на Windows.
+- `bash install/tests/installer_manager_test.sh`: 5 успешных групп проверок с mock-командами.
+- `bash install/tests/install_runtime_test.sh`: 27 успешных, 1 Linux-тест пропущен на Windows.
+- `python3 -m py_compile install/download_queue.py install/manager.py install/tests/installer_preview.py`, `node --check install/desktop/installer.js`, `bash -n` изменённых shell-файлов.
+- Browser fixture: ошибка пакета, раскрытие подробностей, автоматически видимый отчёт, Retry Failed Downloads и переход к текущему прогрессу. Только синтетические данные, без операций с системой. Для повторения: `python3 install/tests/installer_preview.py`, открыть `http://127.0.0.1:8765`.
+
+Не выполнены для новой очереди: нативные установки в CachyOS/Fedora, реальные ключи и подписи, native cache-only DNF4/5, полное обновление Arch, сеть и overlay CachyOS Live. Проверить также, что отказ файла оставляет остальные загрузки в кэше, ни один отсутствующий файл не скачивается при commit, зависимости не устанавливаются неполным набором, глобальные конфигурации/зеркала и lock-файлы остаются нетронутыми.
+
 ## Локальные проверки
 
 - `bash install/tests/install_runtime_test.sh` проверяет определение Fedora, CachyOS и Arch, адаптеры пакетов с заглушками, развёртывание и сохранение пользовательских настроек.

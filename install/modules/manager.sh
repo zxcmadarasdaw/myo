@@ -92,7 +92,7 @@ manager_pacman_preflight() {
     if files="$(pacman -Sp --needed --print-format 'SP-SIZE:%s' "${official[@]}" </dev/null 2>/dev/null)"; then
         bytes="$(awk -F: '/^SP-SIZE:[0-9]+$/ { sum += $2 } END { printf "%.0f", sum }' <<< "$files")"
         if (( bytes > 0 )); then
-            cache="$(pacman-conf CacheDir | head -n 1)" || return 1
+            cache="${XDG_CACHE_HOME:-$HOME/.cache}/serpantinum-installer/packages/pacman"
             manager_record change "Pacman estimates $(( (bytes + 1048575) / 1048576 )) MiB of package downloads from current databases."
             if ! manager_disk "$cache" "$(( (bytes + 1023) / 1024 ))"; then
                 manager_record error "The pacman cache at $cache has insufficient free space for the estimated downloads."
@@ -304,7 +304,7 @@ manager_pacman_packages() {
             sync_targets+=("$pkg")
         done
         printf '@@activity\tDownloading\tPacman databases and system packages\n'
-        sudo pacman -Syu --needed "${sync_targets[@]}" </dev/tty || return 1
+        pm_queue_run pacman --upgrade -- "${sync_targets[@]}" </dev/tty || return 1
         pm_pacman_ready || return 1
         manager_dependency_plan || return 1
         [ ${#MANAGER_MISSING[@]} -gt 0 ] || return 0
