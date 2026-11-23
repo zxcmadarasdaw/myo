@@ -122,7 +122,7 @@ Rectangle {
             property: "progress"
             from: 0.0
             to: 1.0
-            duration: Math.max(100, Number(tile.fx.duration) || 1000)
+            duration: Wallpaper.transitionDuration(tile.fx)
             easing.type: Easing.InOutCubic
         }
         PauseAnimation { duration: 450 }
@@ -245,7 +245,7 @@ Rectangle {
                     property real progress: tile.progress
                     property real transitionType: tile.typeIndex
                     property vector2d origin: Qt.vector2d(tile.originX, tile.originY)
-                    property vector4d params: Qt.vector4d(tile.vertical ? 1.0 : 0.0, tile.direction, tile.seed, 0.0)
+                    property vector4d params: Qt.vector4d(tile.typeIndex === 8 ? Wallpaper.hexCells(tile.fx) : (tile.vertical ? 1.0 : 0.0), tile.direction, tile.seed, 0.0)
                     property color tint: "transparent"
 
                     onStatusChanged: { if (String(fragmentShader) !== "") GpuCompatibility.observeShader(String(fragmentShader), status, log); }
@@ -255,7 +255,7 @@ Rectangle {
                 ShaderEffect {
                     anchors.fill: parent
                     z: 3
-                    visible: tile.typeIndex === 4 && tile.progress > 0.0 && tile.progress < 1.0
+                    visible: (tile.typeIndex === 4 || tile.typeIndex === 9) && tile.progress > 0.0 && tile.progress < 1.0
 
                     property vector2d itemSize: Qt.vector2d(width, height)
                     property real progress: tile.progress

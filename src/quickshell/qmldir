@@ -71,6 +71,7 @@ CompositorStateBase 1.0 singletons/system/CompositorStateBase.qml
 singleton MangoState 1.0 singletons/system/MangoState.qml
 singleton NiriState 1.0 singletons/system/NiriState.qml
 singleton SwayState 1.0 singletons/system/SwayState.qml
+singleton UmbrielState 1.0 singletons/system/UmbrielState.qml
 singleton RecordingState 1.0 singletons/system/RecordingState.qml
 singleton SysNotif 1.0 singletons/system/SysNotif.qml
 singleton TimerState 1.0 singletons/system/TimerState.qml

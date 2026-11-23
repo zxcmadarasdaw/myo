@@ -73,6 +73,7 @@ ShellRoot {
                 readonly property bool staticVideoA: GpuCompatibility.effective.fallback || performanceMode || (pathA !== "" && failedVideoA === pathA)
                 readonly property bool staticVideoB: GpuCompatibility.effective.fallback || performanceMode || (pathB !== "" && failedVideoB === pathB)
                 property bool wipeIsVertical: false
+                property real hexSize: 80
                 property int swipeDirection: 0
                 property real transitionOriginX: 0.5
                 property real transitionOriginY: 0.5
@@ -250,7 +251,7 @@ ShellRoot {
                         captureWait.stop();
                         barWindow.capturingFrame = false;
                         barWindow.frozenActive = false;
-                        const fx = Wallpaper.resolveTransition(-1);
+                        const fx = Wallpaper.resolveTransition(-1, barWindow.screen.name);
                         barWindow.configureTransition(fx, -1, -1);
                         barWindow._loadNew(savedPath, false);
                         savedTitle.reload();
@@ -549,6 +550,7 @@ ShellRoot {
                 function configureTransition(fx, customOriginX, customOriginY) {
                     barWindow.configuredTransitionType = fx.type;
                     barWindow.activeDuration = fx.duration;
+                    barWindow.hexSize = fx.hexSize;
                     barWindow.wipeIsVertical = fx.vertical;
                     barWindow.swipeDirection = fx.direction;
                     barWindow.transitionSeed = Math.random() * 100.0;
@@ -606,7 +608,7 @@ ShellRoot {
                         }
                     }
 
-                    let fx = Wallpaper.resolveTransition(chosenType);
+                    let fx = Wallpaper.resolveTransition(chosenType, barWindow.screen.name);
                     barWindow.configureTransition(fx, fromMenu ? customOriginX : -1, fromMenu ? customOriginY : -1);
 
                     if (typeof DesktopMenuController !== "undefined") {
@@ -835,7 +837,7 @@ ShellRoot {
                         property real progress: barWindow.transitionProgress
                         property real transitionType: barWindow.activeTransitionType
                         property vector2d origin: Qt.vector2d(barWindow.transitionOriginX, barWindow.transitionOriginY)
-                        property vector4d params: Qt.vector4d(barWindow.wipeIsVertical ? 1.0 : 0.0, barWindow.swipeDirection, barWindow.transitionSeed, 0.0)
+                        property vector4d params: Qt.vector4d(barWindow.activeTransitionType === 8 ? barWindow.hexSize : (barWindow.wipeIsVertical ? 1.0 : 0.0), barWindow.swipeDirection, barWindow.transitionSeed, 0.0)
                         property color tint: "transparent"
 
                         fragmentShader: GpuCompatibility.shadersAllowed ? Caching.fileUrl(Caching.serpantinumDir + "/assets/shaders/transitions/wallpaper_transition.frag.qsb") : ""
@@ -938,7 +940,7 @@ ShellRoot {
                         property real progress: barWindow.transitionProgress
                         property real transitionType: barWindow.activeTransitionType
                         property vector2d origin: Qt.vector2d(barWindow.transitionOriginX, barWindow.transitionOriginY)
-                        property vector4d params: Qt.vector4d(barWindow.wipeIsVertical ? 1.0 : 0.0, barWindow.swipeDirection, barWindow.transitionSeed, 0.0)
+                        property vector4d params: Qt.vector4d(barWindow.activeTransitionType === 8 ? barWindow.hexSize : (barWindow.wipeIsVertical ? 1.0 : 0.0), barWindow.swipeDirection, barWindow.transitionSeed, 0.0)
                         property color tint: "transparent"
 
                         fragmentShader: GpuCompatibility.shadersAllowed ? Caching.fileUrl(Caching.serpantinumDir + "/assets/shaders/transitions/wallpaper_transition.frag.qsb") : ""
@@ -1033,7 +1035,7 @@ ShellRoot {
                         onStatusChanged: GpuCompatibility.observeShader("wallpaper-paintGlow", status, log)
                         anchors.fill: parent
                         z: 3
-                        visible: barWindow.activeTransitionType === 4 && !barWindow.isPreloading && barWindow.transitionProgress < 1.0
+                        visible: (barWindow.activeTransitionType === 4 || barWindow.activeTransitionType === 9) && !barWindow.isPreloading && barWindow.transitionProgress < 1.0
 
                         property vector2d itemSize: Qt.vector2d(width, height)
                         property real progress: barWindow.transitionProgress

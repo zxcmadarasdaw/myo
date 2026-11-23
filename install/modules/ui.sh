@@ -10,7 +10,7 @@ C_YELLOW=$'\e[33m'
 C_RED=$'\e[31m'
 C_MAGENTA=$'\e[35m'
 
-ENABLE_TELEMETRY=true
+ENABLE_TELEMETRY=false
 INSTALL_FULL_WALLPAPERS=true
 SELECTED_COMPOSITORS=()
 DETECTED_COMPOSITOR_LABEL=""
@@ -81,7 +81,7 @@ read_key() {
 
 init_compositor_detection() {
     local installed=()
-    for comp in hyprland niri sway mango; do
+    for comp in hyprland niri sway mango umbriel; do
         if command -v "$comp" &>/dev/null || pm_is_installed "$(compositor_package_name "$comp")"; then
             installed+=("$comp")
         fi
@@ -93,6 +93,9 @@ init_compositor_detection() {
 
     if [[ -n "$MANGO_INSTANCE_SIGNATURE" ]] || pgrep -x "mango" &>/dev/null || [[ "$de" == *"mango"* ]] || [[ "$session" == *"mango"* ]]; then
         running="mango"
+    elif [[ -n "${UMBRIEL_SOCKET:-}" || "$de" == *umbriel* || "$session" == *umbriel* ]] ||
+        pgrep -x umbriel &>/dev/null; then
+        running="umbriel"
     elif [[ -n "$HYPRLAND_INSTANCE_SIGNATURE" ]] || pgrep -x "Hyprland" &>/dev/null || pgrep -x "hyprland" &>/dev/null || [[ "$de" == *"hyprland"* ]] || [[ "$session" == *"hyprland"* ]]; then
         running="hyprland"
     elif [[ -n "$SWAYSOCK" ]] || pgrep -x "sway" &>/dev/null || [[ "$de" == *"sway"* ]] || [[ "$session" == *"sway"* ]]; then
@@ -237,6 +240,7 @@ manage_compositors_menu() {
         local status_niri="$(t "installer.ui.not_installed")"
         local status_sway="$(t "installer.ui.not_installed")"
         local status_mango="$(t "installer.ui.not_installed")"
+        local status_umbriel="$(t "installer.ui.not_installed")"
 
         if command -v hyprland &>/dev/null || pm_is_installed hyprland; then
             status_hypr="$(t "installer.ui.installed")"
@@ -250,23 +254,27 @@ manage_compositors_menu() {
         if command -v mango &>/dev/null || pm_is_installed "$(compositor_package_name mango)"; then
             status_mango="$(t "installer.ui.installed")"
         fi
+        if command -v umbriel >/dev/null; then status_umbriel="$(t "installer.ui.installed")"; fi
 
         local S_HYPR="${DIM}[ ]${RESET}"
         local S_NIRI="${DIM}[ ]${RESET}"
         local S_SWAY="${DIM}[ ]${RESET}"
         local S_MANGO="${DIM}[ ]${RESET}"
+        local S_UMBRIEL="${DIM}[ ]${RESET}"
 
         [[ " ${SELECTED_COMPOSITORS[*]} " =~ " hyprland " ]] && S_HYPR="${C_GREEN}[✓]${RESET}"
         [[ " ${SELECTED_COMPOSITORS[*]} " =~ " niri " ]] && S_NIRI="${C_GREEN}[✓]${RESET}"
         [[ " ${SELECTED_COMPOSITORS[*]} " =~ " sway " ]] && S_SWAY="${C_GREEN}[✓]${RESET}"
         [[ " ${SELECTED_COMPOSITORS[*]} " =~ " mango " ]] && S_MANGO="${C_GREEN}[✓]${RESET}"
+        [[ " ${SELECTED_COMPOSITORS[*]} " =~ " umbriel " ]] && S_UMBRIEL="${C_GREEN}[✓]${RESET}"
 
         local items=(
             "1. $S_HYPR Hyprland $status_hypr"
             "2. $S_NIRI Niri $status_niri"
             "3. $S_SWAY Sway $status_sway"
             "4. $S_MANGO Mango $status_mango"
-            "5. ${BOLD}${C_GREEN}$(t "installer.ui.done")${RESET}"
+            "5. $S_UMBRIEL Umbriel $status_umbriel"
+            "6. ${BOLD}${C_GREEN}$(t "installer.ui.done")${RESET}"
         )
 
         if [ "$rendered_lines" -gt 0 ]; then
@@ -328,7 +336,14 @@ manage_compositors_menu() {
                     SELECTED_COMPOSITORS+=("mango")
                 fi
                 ;;
-            "5"|ESC|[qQ])
+            "5")
+                if [[ " ${SELECTED_COMPOSITORS[*]} " == *" umbriel "* ]]; then
+                    remove_compositor umbriel
+                else
+                    SELECTED_COMPOSITORS+=(umbriel)
+                fi
+                ;;
+            "6"|ESC|[qQ])
                 break
                 ;;
             ENTER|SPACE)
@@ -362,6 +377,13 @@ manage_compositors_menu() {
                         fi
                         ;;
                     4)
+                        if [[ " ${SELECTED_COMPOSITORS[*]} " == *" umbriel "* ]]; then
+                            remove_compositor umbriel
+                        else
+                            SELECTED_COMPOSITORS+=(umbriel)
+                        fi
+                        ;;
+                    5)
                         break
                         ;;
                 esac

@@ -29,7 +29,7 @@ ACTIONS = {
     "install": "Install", "verify": "Verify", "repair": "Repair",
     "update": "Update", "missing": "Install Missing",
 }
-COMPOSITORS = ("hyprland", "niri", "sway", "mango")
+COMPOSITORS = ("hyprland", "niri", "sway", "mango", "umbriel")
 OPTIONS = {
     "config": "Deploy compositor and Kitty configuration",
     "replace": "Replace matching config files with mandatory backups",
@@ -46,7 +46,7 @@ OPTIONS = {
     "wallpapers": "Download a small wallpaper selection",
     "full-wallpapers": "Download the full wallpaper collection",
     "sync": "Refresh pacman databases and upgrade all system packages",
-    "aur": "Allow the reviewed AUR fallback for Quickshell",
+    "aur": "Allow reviewed AUR builds for Quickshell or Umbriel",
     "build": "Allow source builds and their build dependencies",
     "telemetry": "Send anonymous installation telemetry",
     "launch": "Start Serpantinum after verification",

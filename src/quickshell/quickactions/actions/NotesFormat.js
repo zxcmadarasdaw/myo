@@ -1,5 +1,15 @@
 .pragma library
 
+// The list needs one short preview. Leave the full text for the editor.
+function listSnippet(value) {
+    const text = String(value || "");
+    const start = text.search(/\S/);
+    if (start < 0) return "...";
+    const end = start + 240;
+    const snippet = text.slice(start, end).replace(/\n/g, " ").trimEnd();
+    return text.length > end ? snippet + "…" : snippet;
+}
+
 function formatInlineMarkdown(text) {
     if (!text) return "";
     var s = text;

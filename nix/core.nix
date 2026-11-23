@@ -5,18 +5,18 @@
 }:
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "serpantinum-core";
-  version = "0.6.1";
+  version = "0.8.0";
 
   src = fetchFromGitHub {
     owner = "ilyamiro";
     repo = "serpantinum-core";
     rev = "v${finalAttrs.version}";
-    hash = "sha256-+k+Dn1XrM7IoJv4Sdaaul0MIzlOB1b4Lq/fuo3daoVc=";
+    hash = "sha256-JC3lhOBqUbDX0jHA7y0EZkDwGwNpUFZ4ZDhxumJudMM=";
   };
 
   buildInputs = [ sqlite ];
 
-  cargoHash = "sha256-Gyg0DtDoRllkyNuSWZviTy2KBaMibRx+MkQe6lNypC8=";
+  cargoHash = "sha256-uqcgSz2AawX+Ya66qUZqMuvFJ+K43+lU9jJ2WAAMD4M=";
 
   meta = {
     description = "A core of services for Serpantinum shell in Rust";

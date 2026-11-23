@@ -5,6 +5,8 @@
 pm_aur_recipe() {
     case "$1" in
         quickshell) printf '%s\n' quickshell-git ;;
+        umbriel) printf '%s\n' umbriel-git ;;
+        xdg-desktop-portal-umbriel-git) printf '%s\n' xdg-desktop-portal-umbriel-git ;;
         *) return 1 ;;
     esac
 }
@@ -18,6 +20,11 @@ pm_aur_install() (
         return
     fi
     pacman -Sl >/dev/null || return 1
+    if [ "$package" = umbriel ] && ! pm_is_installed xdg-desktop-portal-umbriel-git; then
+        # The Umbriel recipe requires this other AUR package. Review and
+        # install it independently, since makepkg only resolves binary repos.
+        pm_aur_install xdg-desktop-portal-umbriel-git || return 1
+    fi
     work="$(mktemp -d -- "$MANAGER_TMP/aur.XXXXXX")" || return 1
     printf '@@activity\tDownloading\tAUR recipe %s\n' "$recipe"
     git clone --depth 1 -- "https://aur.archlinux.org/$recipe.git" "$work/recipe" || return 1

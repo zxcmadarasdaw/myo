@@ -12,6 +12,28 @@ ColumnLayout {
     Layout.fillWidth: true
     spacing: rootObj.s(6)
 
+    SettingsRow {
+        rootObj: section.rootObj
+        visible: !!section.tab.activeTransitionWorkspace
+        settingId: "wallpaper_transition_workspace"
+        icon: "󰍹"
+        title: I18n.t("guide.theme.wallpaper.transition.workspace.title")
+        description: I18n.t("guide.theme.wallpaper.transition.workspace.desc")
+
+        Switch {
+            implicitWidth: section.rootObj.s(200)
+            implicitHeight: section.rootObj.s(32)
+            options: ["global", "current"].map(key => I18n.t("guide.theme.wallpaper.transition.workspace." + key))
+            currentIndex: section.tab.workspaceTransitionOnly ? 1 : 0
+            onValueChanged: index => section.tab.workspaceTransitionOnly = index === 1
+        }
+        ClickButton {
+            visible: section.tab.workspaceTransitionOnly
+            buttonText: I18n.t("guide.theme.wallpaper.transition.workspace.clear")
+            onClicked: section.tab.resetTransitionWorkspace()
+        }
+    }
+
     component DurationSelector: NumberSelector {
         id: selector
         required property var tab
@@ -188,5 +210,75 @@ ColumnLayout {
         searchKeywords: "wallpaper transition paint grow organic cells pixels colonies spread duration speed"
 
         DurationSelector { tab: section.tab; transitionId: "paint" }
+    }
+
+    Repeater {
+        model: ["wave", "blinds", "clock", "hex", "ink"]
+
+        delegate: SettingsGroup {
+            id: effectGroup
+            required property string modelData
+            readonly property string parameter: ({wave: "direction", blinds: "orientation", clock: "origin", ink: "origin"})[modelData] || ""
+            readonly property var choices: parameter === "direction" ? ["random"].concat(Wallpaper.swipeDirections)
+                : parameter === "orientation" ? Wallpaper.wipeOrientations : Wallpaper.circleOrigins
+            rootObj: section.rootObj
+            icon: "󰒝"
+            title: section.tab.transitionName(modelData)
+            description: I18n.t("guide.theme.wallpaper.transition." + modelData + ".desc")
+
+            DurationSelector { tab: section.tab; transitionId: effectGroup.modelData }
+
+            subSettings: [
+                SettingsRow {
+                    rootObj: section.rootObj
+                    settingId: "wallpaper_transition_speed_" + effectGroup.modelData
+                    title: I18n.t("guide.theme.wallpaper.transition.speed")
+                    NumberSelector {
+                        implicitWidth: section.rootObj.s(130)
+                        from: 0.25
+                        to: 4
+                        stepSize: 0.25
+                        decimals: 2
+                        suffix: "×"
+                        value: Number(section.tab.effect(effectGroup.modelData).speed) || 1
+                        onValueChanged: section.tab.updateEffect(effectGroup.modelData, "speed", value)
+                    }
+                },
+                SettingsRow {
+                    rootObj: section.rootObj
+                    visible: effectGroup.modelData === "hex"
+                    settingId: "wallpaper_transition_hex_size"
+                    title: I18n.t("guide.theme.wallpaper.transition.hex.size")
+                    NumberSelector {
+                        implicitWidth: section.rootObj.s(130)
+                        from: 20
+                        to: 240
+                        stepSize: 5
+                        value: Wallpaper.hexCells(section.tab.effect("hex"))
+                        onValueChanged: {
+                            if (effectGroup.modelData === "hex") section.tab.updateEffect("hex", "size", value);
+                        }
+                    }
+                },
+                SettingsRow {
+                    rootObj: section.rootObj
+                    visible: !!effectGroup.parameter
+                    settingId: "wallpaper_transition_options_" + effectGroup.modelData
+                    title: effectGroup.parameter ? I18n.t("guide.theme.wallpaper.transition." + effectGroup.parameter + ".title") : ""
+                    Dropdown {
+                        Layout.preferredWidth: section.rootObj.s(180)
+                        Layout.preferredHeight: section.rootObj.s(32)
+                        options: effectGroup.choices.map(key => effectGroup.parameter ?
+                            I18n.t("guide.theme.wallpaper.transition." + effectGroup.parameter + "." + key) : "")
+                        currentIndex: Math.max(0, effectGroup.choices.indexOf(section.tab.effect(effectGroup.modelData)[effectGroup.parameter]))
+                        fuzzySearch: false
+                        onValueChanged: function(index, value) {
+                            if (effectGroup.parameter && index >= 0 && index < effectGroup.choices.length)
+                                section.tab.updateEffect(effectGroup.modelData, effectGroup.parameter, effectGroup.choices[index]);
+                        }
+                    }
+                }
+            ]
+        }
     }
 }

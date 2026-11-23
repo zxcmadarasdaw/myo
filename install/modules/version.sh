@@ -40,8 +40,6 @@ get_telemetry_id() {
         raw_id=$(uuidgen)
     elif [ -f /proc/sys/kernel/random/uuid ]; then
         raw_id=$(cat /proc/sys/kernel/random/uuid 2>/dev/null)
-    elif [ -f /etc/machine-id ]; then
-        raw_id=$(cat /etc/machine-id 2>/dev/null)
     else
         raw_id=$(head -c 16 /dev/urandom | od -An -t x1 | tr -d ' \n')
     fi
@@ -53,12 +51,12 @@ get_telemetry_enabled() {
     if [ -f "$VERSION_FILE" ]; then
         local enabled
         enabled=$(awk -F= '/^ENABLE_TELEMETRY=/{gsub(/"/, "", $2); print $2}' "$VERSION_FILE")
-        if [ "$enabled" = "false" ]; then
-            echo "false"
+        if [ "$enabled" = "true" ]; then
+            echo "true"
             return
         fi
     fi
-    echo "true"
+    echo "false"
 }
 
 get_saved_preference() {
@@ -151,7 +149,7 @@ write_version_state() {
     local version="${1:-"$DEFAULT_FALLBACK_VERSION"}"
     local commit="${2:-"unknown"}"
     local tel_id="$3"
-    local tel_enabled="${4:-true}"
+    local tel_enabled="${4:-false}"
     local compositors="$5"
     local opt_sddm="${6:-true}"
     local sddm_wayland="${7:-false}"
@@ -161,7 +159,9 @@ write_version_state() {
         commit="unknown"
     fi
 
-    if [[ -z "$tel_id" ]]; then
+    if [[ "$tel_enabled" != true ]]; then
+        tel_id=""
+    elif [[ -z "$tel_id" ]]; then
         tel_id=$(get_telemetry_id)
     else
         tel_id=$(format_uuid "$tel_id")

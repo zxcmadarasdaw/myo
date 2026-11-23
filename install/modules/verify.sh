@@ -93,18 +93,18 @@ installed_program_matches() {
     done
 }
 
-verify_hyprland_session() {
-    local directory entry
+verify_wayland_session() {
+    local compositor="$1" pattern="$2" directory entry
     local data_roots=()
     IFS=: read -r -a data_roots <<< "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
     for directory in "${data_roots[@]}" /usr/share; do
         [ -n "$directory" ] || continue
-        for entry in "$directory"/wayland-sessions/[Hh]yprland*.desktop; do
+        for entry in "$directory"/wayland-sessions/$pattern.desktop; do
             [ -r "$entry" ] || continue
             grep -Eq '^Exec=.+' "$entry" && ! grep -Eq '^(Hidden|NoDisplay)=true' "$entry" && return 0
         done
     done
-    verify_error 'Hyprland is present without a Wayland session entry. Check the installed Hyprland package and display manager.'
+    verify_error "$compositor is present without a Wayland session entry. Check the installed package and display manager."
 }
 
 verify_installation() {
@@ -157,7 +157,7 @@ verify_installation() {
                     verify_error "Hyprland $version could not validate $hypr_config:"$'\n'"${hypr_report:-No diagnostic output}"
                 fi
                 if [ "${MANAGED_INSTALL:-false}" = true ] && [ -n "${version:-}" ]; then
-                    verify_hyprland_session
+                    verify_wayland_session Hyprland '[Hh]yprland*'
                 fi
                 # Hyprland's own dialogs (app not responding, permission
                 # prompts). Not used by Serpantinum; Fedora ships it only in
@@ -169,6 +169,17 @@ verify_installation() {
                 ;;
             mango)
                 command -v mango >/dev/null 2>&1 || verify_error "MangoWC is not installed (it needs the Terra repository on Fedora)"
+                ;;
+            umbriel)
+                if ! command -v umbriel >/dev/null 2>&1; then
+                    verify_error "Umbriel is not installed"
+                else
+                    verify_wayland_session Umbriel '[Uu]mbriel*'
+                    local umbriel_config="${XDG_CONFIG_HOME:-$HOME/.config}/umbriel/config.toml"
+                    if [ -f "$umbriel_config" ] && ! umbriel config validate -c "$umbriel_config"; then
+                        verify_error "Umbriel rejected $umbriel_config"
+                    fi
+                fi
                 ;;
             *)
                 command -v "$comp" >/dev/null 2>&1 || verify_error "$comp is not installed"

@@ -20,6 +20,7 @@ Item {
     property bool isRound: false
 
     property string textContent: ""
+    property string textFontFamily: ""
     readonly property bool isEmpty: root.textContent.trim() === ""
 
     AtelierKit { id: kit; style: root.faceStyle }
@@ -42,7 +43,7 @@ Item {
         height: card.contentHeight
         text: root.isEmpty ? I18n.t("widgets.text.placeholder", "Enter text")
               : (root.prompt ? "> " : root.look === "elegant" ? "“" : "") + root.textContent + (root.look === "elegant" ? "”" : "")
-        font.family: kit.displayFamily
+        font.family: root.textFontFamily || kit.displayFamily
         font.weight: kit.displayWeight
         font.italic: root.look === "elegant"
         font.letterSpacing: root.look === "editorial" ? -Scaler.s(0.5) : 0

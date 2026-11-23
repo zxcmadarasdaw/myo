@@ -263,7 +263,7 @@ exec 1>&8 2>&7
 source "$MODULES_DIR/version.sh"
 source "$MODULES_DIR/config.sh"
 
-TELEMETRY_ID=$(get_telemetry_id)
+TELEMETRY_ID=""
 ENABLE_TELEMETRY=$(get_telemetry_enabled)
 OPT_SDDM=$(get_saved_preference OPT_SDDM "$OPT_SDDM")
 SDDM_WAYLAND=$(get_saved_preference SDDM_WAYLAND "$SDDM_WAYLAND")
@@ -284,6 +284,7 @@ TARGET_VERSION=$(get_target_version "$PROJECT_ROOT" "$REPO_SLUG")
 TARGET_COMMIT=$(get_target_commit "$PROJECT_ROOT" "$REPO_SLUG")
 
 if [ "$ENABLE_TELEMETRY" = true ] && [ -f "$MODULES_DIR/telemetry.sh" ]; then
+    TELEMETRY_ID=$(get_telemetry_id)
     bash "$MODULES_DIR/telemetry.sh" --mode init --version "$TARGET_VERSION" --id "$TELEMETRY_ID" --enabled "$ENABLE_TELEMETRY"
 fi
 

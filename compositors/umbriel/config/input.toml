@@ -1,0 +1,11 @@
+# Adapted from Serpantinum 2cce8546. Copyright 2026 Illia Miroshnichenko and contributors.
+# AGPL-3.0-or-later. Autostart adapted to the local installer.
+[input.keyboard]
+layout = "us"
+options = "grp:alt_shift_toggle"
+
+[input.touchpad]
+tap = true
+natural_scroll = true
+accel_profile = "flat"
+click_method = "clickfinger"

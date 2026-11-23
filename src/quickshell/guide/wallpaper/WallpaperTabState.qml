@@ -17,7 +17,11 @@ GuideTab {
     property alias wallpaperRevision: currentWallpaper.revision
     property alias isWallpaperVideo: currentWallpaper.isVideo
 
-    property var transition: Wallpaper.transitionSettings()
+    property bool workspaceTransitionOnly: false
+    readonly property string activeTransitionWorkspace: Wallpaper.transitionWorkspace("")
+    readonly property string transitionWorkspace: workspaceTransitionOnly ? activeTransitionWorkspace : ""
+    property var transition: Wallpaper.transitionSettings(transitionWorkspace)
+    onTransitionWorkspaceChanged: transition = Wallpaper.transitionSettings(transitionWorkspace)
 
     CurrentWallpaper {
         id: currentWallpaper
@@ -39,7 +43,23 @@ GuideTab {
 
     function saveTransition(next) {
         wallpaperTabRoot.transition = next;
-        Config.setSetting("wallpaperTransition", next);
+        const workspace = wallpaperTabRoot.transitionWorkspace;
+        if (workspace) {
+            const profiles = Object.assign({}, Config.getSetting("wallpaperTransitionByWorkspace", {}));
+            profiles[workspace] = next;
+            Config.setSetting("wallpaperTransitionByWorkspace", profiles);
+        } else {
+            Config.setSetting("wallpaperTransition", next);
+        }
+    }
+
+    function resetTransitionWorkspace() {
+        const workspace = wallpaperTabRoot.transitionWorkspace;
+        if (!workspace) return;
+        const profiles = Object.assign({}, Config.getSetting("wallpaperTransitionByWorkspace", {}));
+        delete profiles[workspace];
+        Config.setSetting("wallpaperTransitionByWorkspace", profiles);
+        wallpaperTabRoot.transition = Wallpaper.transitionSettings(workspace);
     }
 
     function updateTransition(key, value) {
@@ -78,7 +98,7 @@ GuideTab {
     Connections {
         target: Config
         function onSettingsLoaded() {
-            wallpaperTabRoot.transition = Wallpaper.transitionSettings();
+            wallpaperTabRoot.transition = Wallpaper.transitionSettings(wallpaperTabRoot.transitionWorkspace);
             let wpDir = Config.getSetting("wallpaperDir", "") || Config.getSetting("wallpaper_dir", "");
             if (wpDir && wpDir !== "") {
                 wallpaperTabRoot.currentWallpaperDir = wpDir;

@@ -30,6 +30,7 @@ declare -A PM_PKG_MAP=(
 
 declare -A PM_EXTERNAL_REPO_MAP=(
     [hyprland]=1
+    [umbriel]=1
 )
 
 declare -A PM_RELEASE_MAP=(
@@ -117,6 +118,19 @@ pm_enable_hyprland_repo() {
     sudo xbps-install -Sy
 }
 
+pm_enable_umbriel_repo() {
+    local url="https://universalrepo.pages.dev/void" answer
+    local config="/etc/xbps.d/10-universalrepository.conf"
+    if [ ! -f "$config" ]; then
+        printf 'Add the third-party Umbriel repository %s? Review its signing key when XBPS asks. [y/N] ' "$url" >&2
+        read -r answer </dev/tty || return 1
+        [[ "$answer" =~ ^[yY]$ ]] || return 1
+        sudo mkdir -p "$(dirname "$config")" || return 1
+        printf 'repository=%s\n' "$url" | sudo tee "$config" >/dev/null || return 1
+    fi
+    sudo xbps-install -S
+}
+
 pm_github_asset_url() {
     local repo="$1" pattern="$2"
     curl -fsSL --connect-timeout 15 --retry 3 "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null \
@@ -191,7 +205,8 @@ pm_install_pkg() {
     target="${spec%%|*}"
 
     if [ -n "${PM_EXTERNAL_REPO_MAP[$pkg]:-}" ] && ! xbps-query -R "$target" &>/dev/null; then
-        pm_enable_hyprland_repo || return 1
+        if [ "$pkg" = umbriel ]; then pm_enable_umbriel_repo || return 1
+        else pm_enable_hyprland_repo || return 1; fi
     fi
 
     sudo xbps-install -y "$target"

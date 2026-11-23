@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import "../../"
 
 Item {
@@ -96,27 +97,67 @@ Item {
         onTriggered: { if (!captureProbe.running) captureProbe.running = true; }
     }
 
-    readonly property var transitionIds: ["fade", "wipe", "circle", "swipe", "paint"]
+    readonly property var transitionIds: ["fade", "wipe", "circle", "swipe", "paint", "wave", "blinds", "clock", "hex", "ink"]
     readonly property var transitionModes: ["random", "custom"]
     readonly property var wipeOrientations: ["random", "horizontal", "vertical"]
     readonly property var circleOrigins: ["random", "center"]
     readonly property var swipeDirections: ["left", "right", "top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right"]
     readonly property var defaultTransitionSettings: ({
         "mode": "random",
-        "pool": ["fade", "wipe", "circle", "swipe", "paint"],
+        "pool": root.transitionIds,
         "effects": {
             "fade": { "duration": 1000 },
             "wipe": { "duration": 1600, "orientation": "random" },
             "circle": { "duration": 1600, "origin": "random" },
             "swipe": { "duration": 1600, "direction": "random" },
-            "paint": { "duration": 2400 }
+            "paint": { "duration": 2400 },
+            "wave": { "duration": 1800, "direction": "random", "speed": 1 },
+            "blinds": { "duration": 1600, "orientation": "random", "speed": 1 },
+            "clock": { "duration": 1800, "origin": "center", "speed": 1 },
+            "hex": { "duration": 2000, "size": 80, "speed": 1 },
+            "ink": { "duration": 3000, "origin": "random", "speed": 1 }
         }
     })
 
-    function transitionSettings(): var {
+    Component.onCompleted: {
+        if (Compositor.name === "niri") NiriState.subscribe();
+        if (Compositor.name === "umbriel") UmbrielState.subscribe();
+    }
+    Component.onDestruction: {
+        if (Compositor.name === "niri") NiriState.unsubscribe();
+        if (Compositor.name === "umbriel") UmbrielState.unsubscribe();
+    }
+
+    function transitionWorkspace(screenName: string): string {
+        if (Compositor.name === "hyprland") {
+            const workspace = screenName ? Hyprland.monitors.values.find(m => m.name === screenName)?.activeWorkspace
+                                         : Hyprland.focusedWorkspace;
+            if (workspace && workspace.id > 0)
+                return "hyprland:" + (screenName || workspace.monitor?.name || "") + ":" + workspace.id;
+        }
+        if (Compositor.name === "niri") {
+            const workspaces = Object.values(NiriState.workspacesMap);
+            const workspace = workspaces.find(w => screenName ? w.output === screenName && w.is_active : w.is_focused);
+            if (workspace && workspace.output && workspace.idx > 0)
+                return "niri:" + workspace.output + ":" + workspace.idx;
+        }
+        if (Compositor.name === "umbriel") {
+            const output = screenName || UmbrielState.focusedOutput;
+            const index = UmbrielState.activeIndicesByOutput[output];
+            if (output && Number.isInteger(index) && index >= 0)
+                return "umbriel:" + output + ":" + (index + 1);
+        }
+        return "";
+    }
+
+    function transitionSettings(workspace = "") {
         let d = root.defaultTransitionSettings;
         let s = (typeof Config !== "undefined") ? Config.getSetting("wallpaperTransition", {}) : {};
         if (!s || typeof s !== "object") s = {};
+        if (workspace) {
+            const profiles = Config.getSetting("wallpaperTransitionByWorkspace", {}) || {};
+            if (profiles[workspace] && typeof profiles[workspace] === "object") s = profiles[workspace];
+        }
         let effects = {};
         for (let i = 0; i < root.transitionIds.length; i++) {
             let id = root.transitionIds[i];
@@ -132,8 +173,18 @@ Item {
         };
     }
 
-    function resolveTransition(typeIndex: int): var {
-        let s = root.transitionSettings();
+    function transitionDuration(fx: var): int {
+        const duration = Math.max(100, Math.min(10000, Number(fx.duration) || 1000));
+        const speed = Math.max(0.25, Math.min(4, Number(fx.speed) || 1));
+        return Math.max(100, Math.round(duration / speed));
+    }
+
+    function hexCells(fx: var): int {
+        return Math.max(20, Math.min(240, Math.round(Number(fx.size) || 80)));
+    }
+
+    function resolveTransition(typeIndex, screenName = "") {
+        let s = root.transitionSettings(root.transitionWorkspace(screenName));
         let id;
         if (typeIndex >= 0 && typeIndex < root.transitionIds.length) {
             id = root.transitionIds[typeIndex];
@@ -142,11 +193,11 @@ Item {
             id = candidates[Math.floor(Math.random() * candidates.length)];
         }
         let fx = s.effects[id];
-        let duration = Number(fx.duration);
         let dirIdx = root.swipeDirections.indexOf(fx.direction);
         return {
             "type": root.transitionIds.indexOf(id),
-            "duration": isNaN(duration) ? root.defaultTransitionSettings.effects[id].duration : Math.max(100, Math.min(10000, Math.round(duration))),
+            "duration": root.transitionDuration(fx),
+            "hexSize": root.hexCells(fx),
             "vertical": fx.orientation === "vertical" || (fx.orientation !== "horizontal" && Math.random() < 0.5),
             "direction": dirIdx >= 0 ? dirIdx : Math.floor(Math.random() * root.swipeDirections.length),
             "centered": fx.origin === "center"

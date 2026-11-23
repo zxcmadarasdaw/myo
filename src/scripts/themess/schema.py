@@ -88,7 +88,7 @@ SETTINGS = {
     }),
     "animations": ("wallpaperTransition", {
         "mode": choice(("random", "custom")),
-        "pool": items(choice(("fade", "wipe", "circle", "swipe", "paint")), 5),
+        "pool": items(choice(("fade", "wipe", "circle", "swipe", "paint", "wave", "blinds", "clock", "hex", "ink")), 10),
         "effects": {
             "fade": {"duration": integer(100, 10000)},
             "wipe": {"duration": integer(100, 10000), "orientation": choice(("random", "horizontal", "vertical"))},
@@ -96,6 +96,13 @@ SETTINGS = {
             "swipe": {"duration": integer(100, 10000), "direction": choice(
                 ("left", "right", "top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right"))},
             "paint": {"duration": integer(100, 10000)},
+            "wave": {"duration": integer(100, 10000), "speed": number(0.25, 4), "direction": choice(
+                ("random", "left", "right", "top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right"))},
+            "blinds": {"duration": integer(100, 10000), "speed": number(0.25, 4),
+                       "orientation": choice(("random", "horizontal", "vertical"))},
+            "clock": {"duration": integer(100, 10000), "speed": number(0.25, 4), "origin": choice(("random", "center"))},
+            "hex": {"duration": integer(100, 10000), "speed": number(0.25, 4), "size": integer(20, 240)},
+            "ink": {"duration": integer(100, 10000), "speed": number(0.25, 4), "origin": choice(("random", "center"))},
         },
     }),
     "canvas": ("canvas", {

@@ -19,6 +19,7 @@ Item {
     property bool isRound: false
 
     property string textContent: ""
+    property string textFontFamily: ""
     readonly property bool isEmpty: root.textContent.trim() === ""
     readonly property FaceTone tone: FaceTone {}
     readonly property real pad: Math.max(Scaler.s(6), Math.min(width, height) * 0.14)
@@ -40,7 +41,7 @@ Item {
         anchors.margins: root.pad
         anchors.leftMargin: root.pad * 1.2
         text: root.isEmpty ? I18n.t("widgets.text.placeholder", "Enter text") : root.textContent
-        font.family: ThemeBackend.fontFamily
+        font.family: root.textFontFamily || ThemeBackend.fontFamily
         font.weight: Font.Light
         font.pixelSize: height
         fontSizeMode: Text.Fit

@@ -100,3 +100,12 @@ python3() {
 pm_dnf install -y --assumeyes hyprland
 grep -q -- 'dnf --operation install --repo-option=--disablerepo=terra -- hyprland' "$work/queue-call"
 printf 'PASS: the managed DNF path retains the Terra exclusion and native confirmation\n'
+
+[ "$(pm_resolve_name umbriel)" = umbriel-nightly ]
+[ "${PM_TERRA_MAP[umbriel]}" = 1 ]
+[ "$(pm_aur_recipe umbriel)" = umbriel-git ]
+[ "$(pm_aur_recipe xdg-desktop-portal-umbriel-git)" = xdg-desktop-portal-umbriel-git ]
+mkdir -p "$work/share/wayland-sessions"
+printf '[Desktop Entry]\nExec=umbriel\n' > "$work/share/wayland-sessions/umbriel.desktop"
+XDG_DATA_DIRS="$work/share" verify_wayland_session Umbriel '[Uu]mbriel*'
+printf 'PASS: Umbriel package sources, required AUR portal and Wayland session entry\n'

@@ -50,6 +50,7 @@ declare -A PM_PKG_MAP=(
     [niri]="niri"
     [sway]="sway"
     [mangowm]="mangowm"
+    [umbriel]="umbriel-nightly"
     [sddm]="sddm"
     [qt6-declarative]="qt6-qtdeclarative"
     [qt6-svg]="qt6-qtsvg"
@@ -64,6 +65,7 @@ declare -A PM_COPR_MAP=(
 
 declare -A PM_TERRA_MAP=(
     [mangowm]=1
+    [umbriel]=1
 )
 
 PM_YUM_REPOS_DIR="${PM_YUM_REPOS_DIR:-/etc/yum.repos.d}"
@@ -263,7 +265,7 @@ pm_enable_copr() {
 
 pm_enable_terra() {
     rpm -q terra-release &>/dev/null && return 0
-    echo "MangoWC needs a configured and trusted Terra repository. Configure Terra with its signing keys before retrying." >&2
+    echo "This package needs a configured and trusted Terra repository. Configure Terra with its signing keys before retrying." >&2
     return 1
 }
 

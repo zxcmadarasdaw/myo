@@ -6,7 +6,7 @@ import "../../reusables"
 // (click: next, right click: previous, wheel: either way).
 // settingData: { property: "material", name: "Material",
 //                options: [{ id: "glass", label: "Glass" }, ...],
-//                optionsSource: "netInterfaces" | "monoFonts" }   // optional live list
+//                optionsSource: "netInterfaces" | "monoFonts" | "textFonts" }
 Item {
     id: settingRoot
     property var typeData: null
@@ -36,6 +36,11 @@ Item {
                 list.push({ id: f, label: f });
             }
             return list;
+        }
+        if (sd && sd.optionsSource === "textFonts") {
+            const families = [...new Set(Qt.fontFamilies())].sort((a, b) => a.localeCompare(b));
+            return [{ id: "", label: I18n.t("widgets.settings.textFontDefault", "Theme font") }]
+                .concat(families.map(family => ({ id: family, label: family })));
         }
         return (sd && Array.isArray(sd.options)) ? sd.options : [];
     }

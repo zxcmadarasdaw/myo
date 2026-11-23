@@ -1,0 +1,9 @@
+# Adapted from Serpantinum 2cce8546. Copyright 2026 Illia Miroshnichenko and contributors.
+# AGPL-3.0-or-later. Autostart adapted to the local installer.
+[include]
+files = [
+  "config/input.toml",
+  "config/layout.toml",
+  "config/autostart.toml",
+  "config/keybinds.toml",
+]

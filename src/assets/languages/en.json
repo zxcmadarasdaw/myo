@@ -899,6 +899,35 @@
             "top_right": "From top right",
             "bottom_left": "From bottom left",
             "bottom_right": "From bottom right"
+          },
+          "wave": {
+            "name": "Wave",
+            "desc": "A directional wave rolls across the wallpaper"
+          },
+          "blinds": {
+            "name": "Blinds",
+            "desc": "Reveal the wallpaper in parallel strips"
+          },
+          "clock": {
+            "name": "Clock",
+            "desc": "Sweep clockwise from the top of the dial"
+          },
+          "hex": {
+            "name": "Hexagonal Grid",
+            "desc": "Expand from cell to cell in a hexagonal grid",
+            "size": "Cell size"
+          },
+          "ink": {
+            "name": "Ink Spread",
+            "desc": "Spread the image organically like ink"
+          },
+          "speed": "Speed multiplier",
+          "workspace": {
+            "title": "Transition profile",
+            "desc": "Keep separate effects for the focused workspace and monitor",
+            "global": "Global",
+            "current": "This workspace",
+            "clear": "Use global settings"
           }
         }
       },
@@ -2038,7 +2067,9 @@
       "lineThickness": "Thickness",
       "visualizerStyle": "Visualizer style",
       "hideText": "Hide text",
-      "textContent": "Text"
+      "textContent": "Text",
+      "textFont": "Text font",
+      "textFontDefault": "Theme font"
     },
     "align": {
       "left": "Left",

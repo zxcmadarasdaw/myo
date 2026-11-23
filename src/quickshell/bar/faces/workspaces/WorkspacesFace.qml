@@ -49,6 +49,15 @@ Item {
     readonly property int swayActiveIndex: SwayState.activeIndexFor(myOutput)
     readonly property var swayOccupiedMap: SwayState.occupiedMap
     property bool swaySubscribed: false
+    property bool umbrielSubscribed: false
+
+    function syncUmbrielSubscription() {
+        const want = Compositor.name === "umbriel" && moduleActive;
+        if (want === umbrielSubscribed) return;
+        umbrielSubscribed = want;
+        if (want) UmbrielState.subscribe();
+        else UmbrielState.unsubscribe();
+    }
 
     function syncSwaySubscription() {
         let want = Compositor.name === "sway" && moduleActive;
@@ -97,6 +106,7 @@ Item {
         if (act >= count) count = act + 1;
         if (Compositor.name === "niri" && niriMaxWorkspaceIndex >= count) count = niriMaxWorkspaceIndex + 1;
         if (Compositor.name === "mango" && mangoTagCount > 0) count = Math.min(count, mangoTagCount);
+        if (Compositor.name === "umbriel" && UmbrielState.countFor(myOutput) > 0) return UmbrielState.countFor(myOutput);
         if (blockSize > 0) return blockSize;
         return Math.max(2, count);
     }
@@ -174,6 +184,7 @@ Item {
         if (Compositor.name === "niri") return !!(niriExistingMap[index] && niriOccupiedMap[index]);
         if (Compositor.name === "sway") return !!swayOccupiedMap[index];
         if (Compositor.name === "mango") return !!(mangoOccupiedMap && MangoState.isOccupied(myOutput, index));
+        if (Compositor.name === "umbriel") return UmbrielState.isOccupied(myOutput, index);
         let ws = wsForId(hyprBase + index + 1);
         return ws !== null && ws.toplevels && ws.toplevels.values && ws.toplevels.values.length > 0;
     }
@@ -191,6 +202,8 @@ Item {
             SwayState.focusWorkspace(index);
         } else if (Compositor.name === "mango") {
             Quickshell.execDetached(["mmsg", "dispatch", "view," + wsId]);
+        } else if (Compositor.name === "umbriel") {
+            UmbrielState.dispatch("workspace-switch", [String(wsId)]);
         } else if (Compositor.name === "hyprland") {
             Hyprland.dispatch("hl.dsp.focus({ workspace = " + wsId + " })");
         }
@@ -204,6 +217,8 @@ Item {
             idx = swayActiveIndex;
         } else if (Compositor.name === "mango") {
             idx = mangoActiveIndex;
+        } else if (Compositor.name === "umbriel") {
+            idx = UmbrielState.activeIndexFor(myOutput);
         } else {
             if (hyprActiveId < 0) return -1;
             idx = hyprActiveId - 1 - hyprBase;
@@ -216,6 +231,7 @@ Item {
         syncNiriSubscription();
         syncMangoSubscription();
         syncSwaySubscription();
+        syncUmbrielSubscription();
         syncModel();
     }
 
@@ -223,12 +239,14 @@ Item {
         if (niriSubscribed) NiriState.unsubscribe();
         if (mangoSubscribed) MangoState.unsubscribe();
         if (swaySubscribed) SwayState.unsubscribe();
+        if (umbrielSubscribed) UmbrielState.unsubscribe();
     }
 
     onModuleActiveChanged: {
         syncNiriSubscription();
         syncMangoSubscription();
         syncSwaySubscription();
+        syncUmbrielSubscription();
     }
 
     Connections {

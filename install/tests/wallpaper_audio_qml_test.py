@@ -85,7 +85,9 @@ singleton Caching 1.0 Caching.qml
 singleton GpuCompatibility 1.0 GpuCompatibility.qml
 singleton ThemeBackend 1.0 ThemeBackend.qml
 singleton I18n 1.0 I18n.qml
+singleton Compositor 1.0 Compositor.qml
 """)
+    write("Compositor.qml", 'pragma Singleton\nimport QtQuick\nQtObject { property string name: "test" }\n')
     write("reusables/qmldir", """Toggle 1.0 inputs/Toggle.qml
 Dropdown 1.0 inputs/Dropdown.qml
 IconButton 1.0 buttons/IconButton.qml
@@ -173,6 +175,14 @@ import QtQuick
 QtObject { function observeMedia(key, path, state, reason) {} }
 """)
     write("Quickshell/qmldir", "module Quickshell\nsingleton Quickshell 1.0 Quickshell.qml\n")
+    write("Quickshell/Hyprland/qmldir", "module Quickshell.Hyprland\nsingleton Hyprland 1.0 Hyprland.qml\n")
+    write("Quickshell/Hyprland/Hyprland.qml", """pragma Singleton
+import QtQuick
+QtObject {
+    property var focusedWorkspace: null
+    property var monitors: ({values: []})
+}
+""")
     write("Quickshell/Quickshell.qml", """pragma Singleton
 import QtQuick
 QtObject {

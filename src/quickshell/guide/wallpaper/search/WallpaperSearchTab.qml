@@ -323,6 +323,12 @@ GuideTab {
                     onClicked: { tab.view = "favorites"; WallpaperSearch.readFavorites(); }
                 }
             }
+            Btn {
+                objectName: "transitionSettingsButton"
+                icon: "󰒝"
+                hint: tab.tr("Wallpaper transitions", "Переходы обоев")
+                onClicked: tab.rootObj.gotoTab("Theme", "ThemeWallpapers")
+            }
             Btn { objectName: "settingsButton"; icon: "󰒓"; hint: tab.tr("Sources, API keys and options", "Источники, API-ключи и настройки"); onClicked: tab.showSettings = true }
         }
 

@@ -46,6 +46,9 @@ pm_missing_pkgs() {
     local result status=0 pkg
     local targets=()
     for pkg in "$@"; do
+        if [[ "$pkg" == umbriel ]] && pm_is_installed umbriel-git && command -v umbriel >/dev/null; then
+            continue
+        fi
         if [[ "$pkg" == quickshell ]] && pm_is_installed quickshell-git && quickshell_is_current; then
             continue
         fi

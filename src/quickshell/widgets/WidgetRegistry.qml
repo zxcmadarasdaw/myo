@@ -1083,7 +1083,10 @@ QtObject {
                     accentColor: "surface0",
                     textColor: "mauve",
                     component: registry.textContentInputComponent
-                }
+                },
+                _setting("textFontFamily", "choice", "bottom", {
+                    name: I18n.t("widgets.settings.textFont", "Text font"), optionsSource: "textFonts"
+                })
             ].concat(registry.atelierSettings)
         },
         // GPU load (GpuStats: sysfs or nvidia-smi). Atelier only; says "not measured"

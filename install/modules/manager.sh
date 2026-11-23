@@ -39,7 +39,7 @@ manager_options() {
         IFS=, read -r -a SELECTED_COMPOSITORS <<< "$comps"
     fi
     for comp in "${SELECTED_COMPOSITORS[@]}"; do
-        case "$comp" in hyprland|niri|sway|mango) ;; *) return 1 ;; esac
+        case "$comp" in hyprland|niri|sway|mango|umbriel) ;; *) return 1 ;; esac
     done
 }
 
@@ -88,8 +88,15 @@ manager_pacman_preflight() {
             official+=("$pkg")
         elif [ "$OPT_AUR" = true ] && pm_aur_recipe "$pkg" >/dev/null; then
             manager_record change "Binary package unavailable in configured repositories. AUR fallback planned for $pkg."
+            if [ "$pkg" = umbriel ] && ! pm_is_installed xdg-desktop-portal-umbriel-git; then
+                manager_record change 'Review the separate xdg-desktop-portal-umbriel-git recipe first.'
+            fi
         else
-            manager_record error "$pkg is unavailable in configured pacman repositories. Check repository metadata and mirrors."
+            if pm_aur_recipe "$pkg" >/dev/null; then
+                manager_record error "$pkg is unavailable in configured pacman repositories. Enable the reviewed AUR build and source builds."
+            else
+                manager_record error "$pkg is unavailable in configured pacman repositories. Check repository metadata and mirrors."
+            fi
             return 1
         fi
     done
@@ -273,17 +280,17 @@ manager_probe() {
             manager_record change 'Install using existing pacman databases. Refresh requires a separately selected full system upgrade.'
         fi
         if [ "$OPT_AUR" = true ]; then
-            manager_record change 'Allow quickshell-git from AUR only if official binary repositories lack Quickshell. Review the exact recipe before building. Build tools may be required.'
+            manager_record change 'Allow known AUR recipes for Quickshell or Umbriel when the binary package is unavailable. Review the recipe before building.'
         fi
         manager_pacman_preflight || true
     else
-        manager_record change 'Install with DNF. Missing packages may require the configured COPR sources (Hyprland, Quickshell, cliphist, GPU Screen Recorder) or upstream releases (Matugen, Satty). Review any repository and key prompts.'
+        manager_record change 'Install with DNF. Missing packages may require configured COPR sources or upstream releases. Umbriel and MangoWC require trusted Terra. Review repository and key prompts.'
     fi
     manager_record change "Package targets missing or outdated: ${MANAGER_MISSING[*]:-none}. Native transaction reviews include dependencies, conflicts, changes and sizes."
     manager_record change 'Deploy the shell and themes under ~/.local/share/serpantinum, create user launch links and initial settings, and record the installed version.'
     if [ "$OPT_GLOBAL_LAUNCHERS" = true ]; then
         manager_record change 'Add missing compatibility links in /usr/local/bin using sudo.'
-    elif [[ " ${SELECTED_COMPOSITORS[*]} " =~ [[:space:]](niri|sway|mango)[[:space:]] ]]; then
+    elif [[ " ${SELECTED_COMPOSITORS[*]} " =~ [[:space:]](niri|sway|mango|umbriel)[[:space:]] ]]; then
         manager_record warning 'For this desktop session, ensure ~/.local/bin is on its PATH or select compatibility launch links.'
     fi
     if [ "$OPT_CONFIG" = true ]; then
@@ -306,6 +313,9 @@ manager_probe() {
     if [ "$OPT_SERVICES" = true ]; then manager_record change 'Set up PAM, NetworkManager, power profiles and PipeWire services.'; fi
     if [ "$OPT_VPN" = true ]; then manager_record change 'Install the checked offline VPN bundle, TUN systemd unit and local polkit rules.'; fi
     if [ "$OPT_ENGINES" = true ]; then manager_record change 'Install Ski and the audio, gamma and core daemons from Serpantinum upstream releases. Update mode checks for newer releases.'; fi
+    if [[ " ${SELECTED_COMPOSITORS[*]} " == *" umbriel "* ]]; then
+        manager_record change "Umbriel requires Serpantinum Core $CORE_VERSION for workspace IPC."
+    fi
     if [ "$OPT_BUILD" = true ]; then manager_record change 'Allow the audio daemon source build and its compiler dependencies if required.'; fi
     if [ "$OPT_FONTS" = true ]; then manager_record change 'Download missing Iosevka Nerd Fonts.'; fi
     if [ "$OPT_WALLPAPERS" = true ]; then manager_record change "Download wallpapers. Full pack: $INSTALL_FULL_WALLPAPERS."; fi
@@ -389,7 +399,17 @@ manager_dependencies() {
 
 manager_engines() {
     local job command fn
-    if [ "$OPT_ENGINES" != true ]; then return 0; fi
+    if [ "$OPT_ENGINES" != true ]; then
+        if [[ " ${SELECTED_COMPOSITORS[*]} " == *" umbriel "* ]] &&
+            ! version_at_least "$(core_installed_version)" "$CORE_VERSION"; then
+            install_core_daemon
+            version_at_least "$(core_installed_version)" "$CORE_VERSION" || {
+                echo "Umbriel integration needs Serpantinum Core $CORE_VERSION or later." >&2
+                return 1
+            }
+        fi
+        return 0
+    fi
     for job in 'ski:install_ski' 'serpantinum-audio:install_audio_daemon' \
         'serpantinum-gamma:install_gamma_daemon' 'serpantinum-core:install_core_daemon'; do
         command="${job%%:*}" fn="${job#*:}"
@@ -553,7 +573,8 @@ manager_run() {
         if [[ "$INSTALL_STATE" != current || "$MANAGER_ACTION" = repair ]]; then
             rm -f -- "$STATE_DIR/first_launch.done" "$HOME/.local/state/quickshell/first_launch.done"
         fi
-        telemetry_id="$(get_telemetry_id)"
+        telemetry_id=""
+        if [ "$ENABLE_TELEMETRY" = true ]; then telemetry_id="$(get_telemetry_id)"; fi
         write_version_state "$TARGET_VERSION" "$TARGET_COMMIT" "$telemetry_id" "$ENABLE_TELEMETRY" \
             "${SELECTED_COMPOSITORS[*]}" "$saved_sddm" "$saved_wayland" "$saved_wallpapers"
         if [ "$ENABLE_TELEMETRY" = true ]; then

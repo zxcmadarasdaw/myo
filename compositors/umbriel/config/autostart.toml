@@ -1,0 +1,9 @@
+# Adapted from Serpantinum 2cce8546. Copyright 2026 Illia Miroshnichenko and contributors.
+# AGPL-3.0-or-later. Autostart adapted to the local installer.
+[general]
+show_cheatsheet = false
+autostart = [
+  "command -v cliphist >/dev/null && exec wl-paste --type text --watch cliphist store",
+  "command -v cliphist >/dev/null && exec wl-paste --type image --watch cliphist store",
+  'if command -v serpantinumd >/dev/null; then exec serpantinumd start; else exec "$HOME/.local/bin/serpantinumd" start; fi',
+]

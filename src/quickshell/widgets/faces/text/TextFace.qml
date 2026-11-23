@@ -19,6 +19,7 @@ Item {
     property bool isRound: false
 
     property string textContent: ""
+    property string textFontFamily: ""
 
     readonly property bool isEmpty: root.textContent.trim() === ""
 
@@ -26,7 +27,7 @@ Item {
         anchors.fill: parent
         anchors.margins: Math.min(parent.width, parent.height) * 0.05
         text: root.isEmpty ? I18n.t("widgets.text.placeholder", "Enter text") : root.textContent
-        font.family: ThemeBackend.fontFamily
+        font.family: root.textFontFamily || ThemeBackend.fontFamily
         font.pixelSize: height
         fontSizeMode: Text.Fit
         minimumPixelSize: 8

@@ -89,7 +89,7 @@ const installerRussian = new Map(Object.entries({
   "Download a small wallpaper selection": "Скачать небольшую подборку обоев",
   "Download the full wallpaper collection": "Скачать полную коллекцию обоев",
   "Refresh pacman databases and upgrade all system packages": "Обновить базы pacman и все системные пакеты",
-  "Allow the reviewed AUR fallback for Quickshell": "Разрешить проверенный рецепт Quickshell из AUR",
+  "Allow reviewed AUR builds for Quickshell or Umbriel": "Разрешить проверенные сборки Quickshell или Umbriel из AUR",
   "Allow source builds and their build dependencies": "Разрешить сборку из исходников и установку её зависимостей",
   "Send anonymous installation telemetry": "Отправлять анонимную телеметрию установки",
   "Start Serpantinum after verification": "Запустить Serpantinum после проверки",
@@ -207,7 +207,7 @@ function openPreparation(state) {
     $("actions").append(choice("radio", "action", value, installerText(label), value === initial));
   }
   for (const name of state.compositors) {
-    const label = { hyprland: "Hyprland", sway: "Sway", niri: "Niri", mango: "MangoWC" }[name];
+    const label = { hyprland: "Hyprland", sway: "Sway", niri: "Niri", mango: "MangoWC", umbriel: "Umbriel" }[name];
     $("compositors").append(choice("checkbox", "compositor", name, label, selected.includes(name)));
   }
   for (const [value, label] of Object.entries(state.options)) {

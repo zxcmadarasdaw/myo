@@ -568,6 +568,10 @@ deploy_package() {
             update_untouched_compositor_file "$REPO_ROOT" "$OLD_COMMIT" \
                 "compositors/hyprland/$cfg" "${COMPOSITORS[@]}" || return 1
         done
+        for cfg in config.toml config/input.toml config/layout.toml config/autostart.toml config/keybinds.toml; do
+            update_untouched_compositor_file "$REPO_ROOT" "$OLD_COMMIT" \
+                "compositors/umbriel/$cfg" "${COMPOSITORS[@]}" || return 1
+        done
     else
         for cfg in "${EXTRA_CONFIGS[@]}"; do
             install_config_tree "$REPO_ROOT/config/$cfg" "$config_home/$cfg" || return 1
