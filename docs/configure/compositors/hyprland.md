@@ -17,6 +17,28 @@ Configuration is stored in `~/.config/hypr`. The main file is `hyprland.lua`, wh
 - `keybinds.lua` - keybindings for compositor actions and shell controls
 - `canvas.lua` - projects real floating windows onto the Infinite Canvas
 
+## Window animations
+
+Open **Settings → Animations** with **Super+H**, or run
+`serpantinum settings animations`. Opening and closing have separate
+styles, durations and easing. Moving and resizing share Hyprland's
+`windowsMove` setting. **Move and resize** also has separate switches for
+animation during manual resizing and dragging with the mouse.
+
+To set a rule for Firefox, a terminal or a file manager, open the app and
+select it under **Application rules → Open windows**. This fills in the
+class reported by Hyprland, which can vary by package. Rules apply one
+style to both opening and closing, or disable all animations for that
+window. Switching presets preserves the rules. **Restore defaults**
+clears the profile and its rules.
+
+**Apply** saves the profile to
+`${XDG_CONFIG_HOME:-~/.config}/hypr/serpantinum-animations.lua` and reloads
+Hyprland. The supplied `hyprland.lua` loads the file again at startup.
+If you maintain your own `hyprland.lua`, copy the animation loader from the
+[shipped configuration](../../../compositors/hyprland/hyprland.lua) after
+your window and animation settings, then run `hyprctl reload`.
+
 ## Floating windows on the Infinite Canvas
 
 With Hyprland 0.57.1 and the Lua configuration, use **Super+Z** to float an

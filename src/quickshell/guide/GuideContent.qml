@@ -85,7 +85,7 @@ Item {
                 }
 
                 function release() {
-                    if (status === Loader.Null) return;
+                    if (status === Loader.Null || (tabData.keepLoaded && status === Loader.Ready)) return;
                     popup.setSlotLoaded(order, false);
                     source = "";
                 }

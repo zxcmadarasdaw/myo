@@ -602,6 +602,7 @@ Item {
 
     property var tabsModel: [
         { id: "Welcome", key: "welcome", name: "Welcome", icon: "󰋜", file: "WelcomeTab.qml" },
+        { id: "Animations", key: "animations", name: "Animations", icon: "󰕧", file: "AnimationsTab.qml", keepLoaded: true },
         {
             id: "General",
             key: "general",

@@ -165,6 +165,8 @@ Rectangle {
                         required property int index
 
                         readonly property int tabIndex: index
+                        readonly property string tabTitle: I18n.t("guide.tabs." + (modelData.key || modelData.id).toLowerCase(),
+                            modelData.name || modelData.id)
                         opacity: popup.getTabOpacity(tabIndex)
                         transform: Translate { x: (I18n.rtl ? popup.s(24) : popup.s(-24)) * (1.0 - popup.getTabProgress(tabIndex)) }
                         readonly property bool hasSubtabs: Boolean(modelData.subtabs && modelData.subtabs.length > 0)
@@ -230,7 +232,7 @@ Rectangle {
 
                                 Text {
                                     visible: !popup.compact
-                                    text: I18n.t("guide.tabs." + (tabDelegate.modelData.key || tabDelegate.modelData.id).toLowerCase(), tabDelegate.modelData.name || tabDelegate.modelData.id)
+                                    text: tabDelegate.tabTitle
                                     font.family: ThemeBackend.fontFamily
                                     font.weight: Font.Medium
                                     font.pixelSize: popup.s(13)
@@ -278,6 +280,10 @@ Rectangle {
                                     }
                                 }
                             }
+
+                            ToolTip.visible: popup.compact && headerMa.containsMouse
+                            ToolTip.delay: 450
+                            ToolTip.text: tabDelegate.tabTitle
                         }
 
                         Item {
