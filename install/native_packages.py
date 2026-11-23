@@ -7,16 +7,25 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
+import subprocess
 import tempfile
 
-from download_queue import DOWNLOAD_MODES, TransferError, command, install_command, redact
+from download_queue import DOWNLOAD_MODES, TransferError, command, redact
 
 
 NETWORK = re.compile(r"failed to download|failed to retrieve|curl error|HTTP (?:error )?[45]\d\d|"
                      r"timeout|timed out|TLS|SSL_ERROR|external downloader|no mirrors", re.I)
 TRUST = re.compile(r"signature|NOKEY|NOTTRUSTED|(?:GPG|OpenPGP) (?:key|check)|keyring|"
                    r"digest|checksum|corrupt(?:ed)? package", re.I)
+
+
+def install_command(argv):
+    print(redact(shlex.join(argv)), flush=True)
+    # The parent owns the PTY. Keep stderr on it too: sudo and the package
+    # manager must be able to detect a terminal and display native prompts.
+    return subprocess.call(argv, env=dict(os.environ, LC_ALL="C.UTF-8"))
 
 
 def native_command(args, work, parallel):
@@ -27,6 +36,9 @@ def native_command(args, work, parallel):
         options = ["--setopt=assumeyes=False", "--setopt=keepcache=True",
                    f"--setopt={gpg}=True", f"--setopt=*.{gpg}=True", "--setopt=localpkg_gpgcheck=True",
                    "--setopt=install_weak_deps=False", f"--setopt=max_parallel_downloads={parallel}"]
+        # This compositor COPR also publishes Kitty. Use Fedora's Kitty
+        # packages in installer transactions while retaining the Hyprland stack.
+        options.append("--setopt=copr:copr.fedorainfracloud.org:sdegler:hyprland.excludepkgs=kitty,kitty-*")
         if gpg == "pkg_gpgcheck":
             options.append(f"--setopt=max_downloads_per_mirror={parallel}")
         return ["sudo", "dnf", *args.repo_option, *options, *(["--refresh"] if args.refresh else []),
@@ -38,7 +50,7 @@ def native_command(args, work, parallel):
         raise TransferError("Cannot read effective pacman options")
     # Preserve libalpm's sandbox, signature policy, mirrors and cache.
     # Use libalpm's downloader for this transaction.
-    content = re.sub(r"(?m)^[ \t]*(?:ParallelDownloads|XferCommand)[ \t]*=.*$", "", content)
+    content = re.sub(r"(?m)^[ \t]*(?:(?:ParallelDownloads|XferCommand)[ \t]*=.*|DisableDownloadTimeout[ \t]*)$", "", content)
     options = f"[options]\nParallelDownloads = {parallel}"
     if not re.search(r"(?m)^CheckSpace[ \t]*$", content):
         options += "\nCheckSpace"
@@ -100,19 +112,20 @@ def main():
     if any(not re.fullmatch(r"--disablerepo=[\w.*?+:-]+", item) for item in args.repo_option):
         parser.error("only repository exclusions are supported")
     parallel, preference = profile(args.backend, args.download_mode)
-    transaction = argparse.Namespace(native_errors=[])
     report = dict(native=True, backend=args.backend, mode=args.download_mode, limit=parallel,
                   stage="NATIVE", download="NATIVE", verification="NATIVE", installation="RUNNING",
-                  total=None, downloaded=None, native_errors=transaction.native_errors,
+                  total=None, downloaded=None, native_errors=[],
                   targets=args.targets, native_cache=("/var/cache/libdnf5 or /var/cache/dnf"
                                                      if args.backend == "dnf" else "pacman CacheDir"))
     emit("queue", dict(report, reset=True))
     status = 1
     try:
         with tempfile.TemporaryDirectory(prefix="serpantinum-native-") as work:
-            status = install_command(native_command(args, work, parallel), transaction)
-        report["stage"] = "INSTALLED"
-        report["installation"] = "SUCCESS_WITH_WARNINGS" if transaction.native_errors else "SUCCESS"
+            status = install_command(native_command(args, work, parallel))
+        if status:
+            report.update(stage="BLOCKED", installation="FAILED", error=f"Native command exited with status {status}. See the journal.")
+        else:
+            report.update(stage="INSTALLED", installation="SUCCESS")
     except KeyboardInterrupt:
         status = 130
         report.update(stage="CANCELLED", installation="CANCELLED")

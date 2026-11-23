@@ -169,6 +169,7 @@ verify_installation() {
                 ;;
             mango)
                 command -v mango >/dev/null 2>&1 || verify_error "MangoWC is not installed (it needs the Terra repository on Fedora)"
+                if [ "${MANAGED_INSTALL:-false}" = true ]; then verify_wayland_session MangoWC '[Mm]ango*'; fi
                 ;;
             umbriel)
                 if ! command -v umbriel >/dev/null 2>&1; then
@@ -183,6 +184,7 @@ verify_installation() {
                 ;;
             *)
                 command -v "$comp" >/dev/null 2>&1 || verify_error "$comp is not installed"
+                if [ "${MANAGED_INSTALL:-false}" = true ]; then verify_wayland_session "$comp" "$comp*"; fi
                 ;;
         esac
     done

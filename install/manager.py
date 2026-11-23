@@ -21,6 +21,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 from download_queue import DOWNLOAD_MODES, redact
+from native_packages import NETWORK as NATIVE_NETWORK, TRUST as NATIVE_TRUST
 
 
 HERE = Path(__file__).resolve().parent
@@ -51,12 +52,33 @@ OPTIONS = {
     "telemetry": "Send anonymous installation telemetry",
     "launch": "Start Serpantinum after verification",
 }
+OPTIONS_RU = {
+    "config": "Развернуть конфиги",
+    "replace": "Заменить конфиги с резервной копией",
+    "backup": "Сохранить настройки",
+    "global-launchers": "Добавить ссылки в /usr/local/bin",
+    "services": "Настроить службы и PAM",
+    "sddm": "Установить и настроить SDDM",
+    "wayland": "Wayland для SDDM",
+    "display-manager": "Переключить диспетчер входа на SDDM",
+    "engines": "Установить Ski и фоновые службы",
+    "extras": "Добавить утилиты захвата и OCR",
+    "vpn": "Настроить VPN и TUN",
+    "fonts": "Установить шрифты Iosevka",
+    "wallpapers": "Скачать обои",
+    "full-wallpapers": "Скачать полный набор обоев",
+    "sync": "Обновить базы и всю систему (pacman)",
+    "aur": "Разрешить проверяемые сборки AUR",
+    "build": "Разрешить сборку из исходников",
+    "telemetry": "Отправить анонимную телеметрию",
+    "launch": "Запустить оболочку после проверки",
+}
 ANSI = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[()][0-9A-Z]")
 CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 PROMPT = re.compile(
     r"@@ask\b|\[\s*(?:[yn]/[yn]|[yn]/[yn]/[?])\s*\]|"
     r"Enter a (?:selection|number)|\(default[ =:]|"
-    r"(?:password|passphrase).*:\s*$|\?\s*$", re.I,
+    r"(?:password|passphrase).*:\s*$|\?\s*$|\[(?:y/N|Y/n)\]\s*[:?]?\s*$", re.I,
 )
 SECRET_PROMPT = re.compile(r"(?:password|passphrase).*:\s*$|\[Serpantinum sudo\]", re.I)
 TRANSFER = re.compile(r"(?:download|receiving objects|[KMG]i?B/s)", re.I)
@@ -74,7 +96,8 @@ DIAGNOSTICS = (
      "Free space on the reported filesystem and review the installation plan again."),
     (re.compile(r"db\.lck|unable to lock database|waiting for process with pid", re.I),
      "Let the other package manager finish. Retry when the package database lock is released."),
-    (re.compile(r"invalid.*signature|unknown trust|signature verification failed|public key is not installed", re.I),
+    (re.compile(r"invalid.*signature|unknown trust|signature verification failed|public key is not installed|"
+                r"signatures? not ok|NOKEY|NOTTRUSTED", re.I),
      "Check the system clock and the repository signing key. Use trusted repository keys when retrying."),
     (re.compile(r"conflicting dependencies|package conflict|conflicting files|transaction test error", re.I),
      "Review the conflicting packages or files in the journal and resolve the transaction before retrying."),
@@ -207,6 +230,8 @@ class Run:
         self.metrics = {}
         self.downloads = {}
         self.queue = {}
+        self.native_errors = collections.deque(maxlen=8)
+        self.native_trust_error = self.native_network_error = False
         self.reports = []
         self.integration = "PENDING"
         self.integration_detail = ""
@@ -256,6 +281,14 @@ class Run:
                 event["packages"] = list(self.downloads.values())
                 if event.get("native"):
                     event["total"] = self.queue.get("total")
+                    event["native_errors"] = list(dict.fromkeys(self.native_errors))
+                    if event["installation"] == "SUCCESS" and self.native_errors:
+                        event["installation"] = "SUCCESS_WITH_WARNINGS"
+                    elif event["installation"] == "FAILED":
+                        if self.native_trust_error:
+                            event["verification"] = "FAILED"
+                        elif self.native_network_error:
+                            event["download"] = "FAILED"
                 self.reports.append(event)
                 self.save_reports()
                 if event.get("native"):
@@ -275,6 +308,8 @@ class Run:
                 return
             if event.get("reset"):
                 self.downloads = {}
+                self.native_errors.clear()
+                self.native_trust_error = self.native_network_error = False
             if event.get("native") and not event.get("reset"):
                 event["total"] = self.queue.get("total")
             self.queue = event
@@ -319,7 +354,15 @@ class Run:
             self.append(f"{self.status} · {self.component}")
             return
         line = line.removeprefix("@@ask\t")
+        if self.queue.get("native") and line == self.latest and RATE.search(line):
+            return  # DNF redraws unchanged progress rows while other downloads move.
         self.append(line)
+        if self.queue.get("native") and self.queue.get("stage") == "NATIVE":
+            if re.match(r"^error:", line, re.I):
+                self.native_errors.append(redact(line)[:512])
+            if re.search(r"error|fail|not ok|nokey|nottrusted|invalid|corrupt", line, re.I):
+                self.native_trust_error |= bool(NATIVE_TRUST.search(line))
+                self.native_network_error |= bool(NATIVE_NETWORK.search(line))
         if NETWORK_ERROR.search(line):
             self.network = "Transfer error reported"
         for pattern, diagnostic in DIAGNOSTICS:
@@ -339,6 +382,10 @@ class Run:
                 self.status = "Updating" if "upgrading" in text.lower() else "Installing"
                 self.metrics = {"package": text.split("[", 1)[0].strip(), "count": f"{done} / {total}",
                                 "install_index": int(done), "install_total": int(total)}
+        verification = count[3].strip() if count else line
+        if self.queue.get("native") and re.match(
+                r"checking (?:keys in keyring|package integrity)|running transaction (?:check|test)", verification, re.I):
+            self.status, self.metrics = "Verifying", {}
         speed, size = RATE.search(line), SIZE.search(line)
         percent = PERCENT.search(line)
         if not installing and (speed or (percent and (TRANSFER.search(line) or line.startswith("#")))):
@@ -391,8 +438,11 @@ class Run:
         tail = clean(self.pending).strip()
         if not tail and PROMPT.search(self.latest):
             tail = self.latest
-        self.secret = self.echo_disabled() or bool(SECRET_PROMPT.search(tail))
-        self.prompt = tail if not self.cancelled and not self.reply_in_flight and PROMPT.search(tail) else ""
+        is_prompt = bool(PROMPT.search(tail)) and not RATE.search(tail)
+        # Sudo can run its own PTY in raw mode while the package manager draws
+        # progress. Echo state alone doesn't indicate a password prompt.
+        self.secret = bool(SECRET_PROMPT.search(tail)) or (not is_prompt and self.echo_disabled())
+        self.prompt = tail if not self.cancelled and not self.reply_in_flight and is_prompt else ""
         if now >= self.next_sample:
             rows = process_activity(self.pid)
             if rows != self.children:
@@ -800,8 +850,8 @@ def summary(inventory, packages=False):
             print(f"  {state}: " + (", ".join(name for name, value in inventory["package"] if value == state) or "—"))
 
 
-def print_plan(records):
-    summary(records, packages=True)
+def print_plan(records, packages=True):
+    summary(records, packages=packages)
     for path, minimum, free in records["disk"]:
         print(f"  Space at {path} · {minimum} KiB required before transactions · {free} KiB free")
     for change in records["change"]:
@@ -875,33 +925,54 @@ def terminal_run(manager):
 
 
 def terminal(manager):
-    summary(manager.inventory, packages=True)
-    print("\nCtrl+C requests cancellation during a run. Enter opens manual input for an unrecognized prompt.")
+    language = os.environ.get("LC_ALL") or os.environ.get("LC_MESSAGES") or os.environ.get("LANG", "")
+    russian = language.startswith("ru")
+    tr = lambda en, ru: ru if russian else en
+    advanced = False
+    actions = list(ACTIONS)
+    summary(manager.inventory)
+    print(tr("\nCtrl+C cancels a run. Press Enter to answer a native prompt manually.",
+             "\nCtrl+C отменяет операцию. Нажмите Enter, чтобы ответить на запрос вручную."))
     while True:
         saved = manager.saved()
-        print("\n" + "   ".join(f"{i}. {label}" for i, label in enumerate(ACTIONS.values(), 1)) +
-              ("   R. Review saved plan" if saved else "") + "   Q. Quit")
-        value = input("Action: ").strip().lower()
+        labels = tr(list(ACTIONS.values()), ["Установить", "Проверить", "Восстановить", "Обновить", "Установить недостающее"])
+        print("\n" + "   ".join(f"{i}. {label}" for i, label in enumerate(labels, 1)) +
+              tr("   P. Prepare system", "   P. Подготовить систему") +
+              (tr("   R. Review saved plan", "   R. Открыть сохранённый план") if saved else ""))
+        print(tr("A. Switch to simple mode", "A. Обычный режим") if advanced else tr("A. Advanced mode", "A. Расширенный режим"),
+              tr("   Q. Quit   L. Русский", "   Q. Выход   L. English"))
+        value = input(tr("Action: ", "Действие: ")).strip().lower()
         if value == "q":
             return
+        if value == "a":
+            advanced = not advanced
+            continue
+        if value == "l":
+            russian = not russian
+            continue
         try:
             if value == "r" and saved:
                 records = manager.review({}, saved=True)
-            elif value in {"1", "2", "3", "4", "5"}:
-                records = manager.review(terminal_plan(manager, list(ACTIONS)[int(value) - 1]))
+            elif value == "p" or value in {"1", "2", "3", "4", "5"}:
+                action = "install" if value == "p" else actions[int(value) - 1]
+                defaults = manager.inventory["selected"][0][0].split() or ["hyprland"]
+                plan = terminal_plan(manager, action, tr) if advanced else dict(
+                    action=action, compositors=defaults, options=["config", "backup"])
+                records = manager.review(plan)
             else:
                 continue
-            print_plan(records)
-            if not manager.plan or input("Approve this plan? [y/N] ").strip().lower() != "y":
+            print_plan(records, packages=advanced)
+            if value == "p" or not manager.plan or input(tr("Approve this plan? [y/N] ", "Подтвердить план? [y/N] ")).strip().lower() != "y":
                 continue
             manager.start(approval=records["approval"])
             while True:
                 terminal_run(manager)
                 if manager.run.exit_code == 0 and not manager.run.cancelled:
-                    if "launch" not in manager.active_plan["options"] and input("Launch Serpantinum? [y/N] ").strip().lower() == "y":
+                    if "launch" not in manager.active_plan["options"] and input(tr("Launch Serpantinum? [y/N] ", "Запустить Serpantinum? [y/N] ")).strip().lower() == "y":
                         manager.launch()
                     break
-                choice = input("Retry step [r], restart plan [a], or return to actions [Enter]: ").strip().lower()
+                choice = input(tr("Retry step [r], restart plan [a], or return [Enter]: ",
+                                  "Повторить этап [r], весь план [a] или вернуться [Enter]: ")).strip().lower()
                 if choice not in {"r", "a"}:
                     break
                 manager.start("retry" if choice == "r" else "restart")
@@ -910,20 +981,22 @@ def terminal(manager):
             print(exc, file=sys.stderr)
 
 
-def terminal_plan(manager, action):
+def terminal_plan(manager, action, tr):
     defaults = manager.inventory["selected"][0][0].split() or ["hyprland"]
-    compositors = input(f"Compositor(s) [{' '.join(defaults)}]: ").lower().split() or defaults
+    compositors = input(tr("Compositors", "Композиторы") + f" [{' '.join(defaults)}]: ").lower().split() or defaults
     options = []
     download_mode = "balanced"
     if action != "verify":
         available = [name for name in OPTIONS if name not in {"aur", "sync"} or manager.inventory["meta"][0][2] == "pacman"]
         for i, name in enumerate(available, 1):
-            print(f"  {i:2}. {OPTIONS[name]}")
+            print(f"  {i:2}. {tr(OPTIONS[name], OPTIONS_RU[name])}")
         suggested = [str(available.index(name) + 1) for name in ("config", "backup")]
-        print(f"  Suggested first install: configuration and a private snapshot ({' '.join(suggested)}).")
-        options = [available[int(n) - 1] for n in input("Option numbers [none]: ").split()
+        print(tr("  Suggested for the first install: configuration and snapshot",
+                 "  Для первой установки подходят конфиги и резервная копия") + f" ({' '.join(suggested)}).")
+        options = [available[int(n) - 1] for n in input(tr("Option numbers [none]: ", "Номера параметров [нет]: ")).split()
                    if n.isdecimal() and 1 <= int(n) <= len(available)]
-        download_mode = input("Download mode (Stable 1, Balanced 4, Fast 8, Adaptive 1–8) [Balanced]: ").strip().lower() or "balanced"
+        download_mode = input(tr("Download mode", "Режим загрузки") +
+                              " (stable 1, balanced 4, fast 8, adaptive 1–8) [balanced]: ").strip().lower() or "balanced"
     return dict(action=action, compositors=compositors, options=options, download_mode=download_mode)
 
 
@@ -994,19 +1067,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(200, manager.updates.report(query))
             except (OSError, ValueError):
                 self.send(404, {"error": "System update report unavailable."})
-        elif path == "/status":
-            after = int(query) if query.isdecimal() and len(query) < 12 else 0
-            self.send(200, dict(run=manager.run.state(after) if manager.run else None, launchError=manager.launch_error))
-        elif path == "/journal" and manager.run:
-            self.send(200, Path(manager.run.path).read_bytes(), "text/plain; charset=utf-8")
-        elif path in {"/report.json", "/report.txt"} and manager.run:
-            report = manager.run.report()
-            if path.endswith(".json"):
-                self.send(200, report)
-            else:
-                self.send(200, report_text(report), "text/plain; charset=utf-8")
         else:
-            self.send(404, {"error": "Unknown installer route."})
+            self.send(404, {"error": "Unknown system update route."})
 
     def do_POST(self):
         manager = self.server.manager
@@ -1024,36 +1086,12 @@ class Handler(BaseHTTPRequestHandler):
             if self.path.startswith("/updates/"):
                 self.update_request(manager, self.path.rsplit("/", 1)[-1], data)
                 return
-            if manager.updates_only and self.path != "/close":
-                raise ValueError("Use the original terminal installer for desktop setup on this system.")
-            if self.path in {"/review", "/review-saved", "/refresh"} and manager.run and manager.run.exit_code is None:
-                raise ValueError("Wait for the current operation to finish.")
-            if self.path in {"/review", "/review-saved"}:
-                self.send(200, manager.review(data, saved=self.path == "/review-saved"))
-                return
-            if self.path == "/refresh":
-                manager.inventory = probe()
-                manager.plan = None
-                self.send(200, manager.inventory)
-                return
-            if self.path == "/start":
-                manager.start(approval=data.get("approval"))
-            elif self.path == "/retry":
-                manager.start("retry")
-            elif self.path == "/restart":
-                manager.start("restart")
-            elif self.path == "/cancel" and manager.run:
-                manager.run.cancel()
-            elif self.path == "/answer" and manager.run:
-                manager.run.answer(data.get("answer"), data.get("secret") is True)
-            elif self.path == "/launch":
-                manager.launch()
-            elif self.path == "/close":
-                if manager.updates.active() or (manager.run and manager.run.exit_code is None):
+            if self.path == "/close":
+                if manager.updates.active():
                     raise ValueError("Cancel the operation and wait for it to stop before closing.")
                 self.server.closed = True
             else:
-                self.send(404, {"error": "Unknown installer action."})
+                self.send(404, {"error": "Unknown system update action."})
                 return
             self.send(200, {"ok": True})
         except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
@@ -1075,7 +1113,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send(200, {"ok": True})
 
 
-def desktop(manager):
+def system_updates_desktop(manager):
     with LocalServer(("127.0.0.1", 0), Handler) as server:
         server.host = f"127.0.0.1:{server.server_port}"
         server.origin = f"http://{server.host}"
@@ -1084,7 +1122,7 @@ def desktop(manager):
         server.closed = False
         server.connected = False
         url = f"{server.origin}/#{server.key}"
-        print(f"Opening Serpantinum installer. Keep this process open.\n{url}", flush=True)
+        print(f"Opening Serpantinum System Updates. Keep this process open.\n{url}", flush=True)
         opened = subprocess.Popen(["xdg-open", url], stdin=subprocess.DEVNULL,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
@@ -1100,7 +1138,7 @@ def desktop(manager):
             manager.update()
             server.handle_request()
             if not server.connected and (opened.poll() not in {None, 0} or time.monotonic() > startup_deadline):
-                print("Could not open the browser installer. Switching to the terminal interface.", file=sys.stderr)
+                print("Could not open the System Updates interface.", file=sys.stderr)
                 manager.graphical = False
                 manager.updates.close()
                 return False
@@ -1124,15 +1162,19 @@ def main():
     if hasattr(signal, "SIGHUP"):
         signal.signal(signal.SIGHUP, stop)
     try:
+        graphical = os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")
+        if not (args.tui or args.check or args.system_updates) and graphical:
+            from installer_window import desktop
+            if desktop(Manager):
+                return 0
         manager = Manager()
-        manager.updates_only = manager.updates.pm == "void"
+        manager.updates_only = True
         if args.check:
             summary(manager.inventory, packages=True)
-        elif not args.tui and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")) and shutil.which("xdg-open") and desktop(manager):
-            pass
         elif args.system_updates:
-            print("Open a graphical session with a default browser to use --system-updates.", file=sys.stderr)
-            return 1
+            if not (graphical and shutil.which("xdg-open") and system_updates_desktop(manager)):
+                print("Open a graphical session with a default browser to use --system-updates.", file=sys.stderr)
+                return 1
         elif sys.stdin.isatty():
             terminal(manager)
         else:

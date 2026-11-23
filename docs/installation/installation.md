@@ -39,13 +39,15 @@ bash install/maintenance.sh backup
 bash install.sh
 ```
 
-The installer opens in your desktop browser and works before Quickshell is installed. On a minimal system it offers to install Python 3 in the terminal first. Use `bash install.sh --tui` from a terminal or `bash install.sh --check` for the inventory. Select **Hyprland**, review the plan, and approve the listed changes. Package manager questions appear in the installer's journal.
+The installer opens a native Qt window when Qt 6 Python bindings are available. Fedora provides `python3-pyside6`, and Arch and CachyOS provide `pyside6` or `python-pyqt6`. The same installer runs in a terminal when the bindings are unavailable. Use `bash install.sh --tui` to open it directly or `bash install.sh --check` for the system inventory.
 
-CachyOS and Arch use pacman and the configured binary repositories. You can explicitly select a full system upgrade on an installed system if the existing package databases need to be refreshed. Fedora 45 uses DNF and its Fedora-specific packages and repositories. The supported Hyprland Lua baseline is 0.55.0 and the Quickshell baseline is 0.3.0. [Installer checks](../installer/TESTS.md)
+**Prepare system** reviews the package and storage plan. **Install Serpantinum**, **Verify**, and **Repair** run the selected operation. The window and terminal menus support English and Russian. In **Advanced**, review package targets, open the technical journal, or adjust the installation options. Read and answer DNF or pacman questions in the response field or the terminal. Review the transaction sizes and repository key fingerprints before approving.
+
+CachyOS and Arch use pacman and the configured binary repositories. On an installed system, explicitly select a full system upgrade if the package databases need to be refreshed. A Live image with pending upgrades needs a matching package snapshot or an installed system. Plan space for the extracted packages and package cache on the temporary overlay. Fedora 45 uses DNF, its native package cache, and COPR when a compatible version is unavailable in the Fedora repositories. The supported Hyprland Lua baseline is 0.55.0 and the Quickshell baseline is 0.3.0. [Installer validation](../installer/NATIVE_INSTALLER.md)
 
 If you already log into KDE through SDDM or another display manager, keep the optional SDDM step off. Select the Hyprland session in your existing login screen after the installer reports success. Switch back to KDE from the same session picker. Close your session before switching compositor. Existing custom SDDM files in `/etc/sddm.conf` continue to take precedence over drop-ins.
 
-To update, update your checkout, rerun `bash install.sh`, and choose **Update**. Use **Verify** to inspect the existing installation, **Repair** to restore files, or **Install Missing** to fill in missing parts. After a failure, open the journal and use **Retry failed step** after resolving the cause. For VPN components alone, use `bash install.sh --vpn-only` in an active local session. The original terminal installer is available with `--legacy-tui`. Void uses that flow.
+To update, update your checkout, rerun `bash install.sh`, and choose **Update** in **Advanced**. **Install missing** is also available there. After a failure, check the journal and use **Retry step** after resolving the cause. Logs and reports are stored under `${XDG_STATE_HOME:-$HOME/.local/state}/serpantinum`. For VPN components alone, use `bash install.sh --vpn-only` in an active local session. The original terminal installer is available with `--legacy-tui`. Void uses that flow. The separate `--system-updates` command opens its existing browser interface over loopback.
 
 ### Back up, restore or remove the shell installation
 

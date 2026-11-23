@@ -92,7 +92,7 @@ bootstrap_tool() {
                 return 1
             fi
             config="$(mktemp)" || return 1
-            if ! pacman-conf | awk '/^[[:space:]]*ParallelDownloads[[:space:]]*=/ {next} {print} /^\[options\]$/ {print "ParallelDownloads = 1"}' > "$config"; then
+            if ! pacman-conf | awk '/^[[:space:]]*(ParallelDownloads|XferCommand)[[:space:]]*=/ || /^[[:space:]]*(CheckSpace|DisableDownloadTimeout)[[:space:]]*$/ {next} {print} /^\[options\]$/ {print "ParallelDownloads = 1\nCheckSpace"}' > "$config"; then
                 rm -f -- "$config"
                 return 1
             fi
@@ -180,6 +180,11 @@ if [[ "$PM_NAME" != void || "${1:-}" == --system-updates ]]; then
                     exit 1
                 }
                 command -v python3 >/dev/null
+            fi
+            # The documented curl | bash entry still has a controlling
+            # terminal, even though the script itself arrived on stdin.
+            if [[ "${1:-}" != --check && ! -t 0 ]] && ( : </dev/tty ) 2>/dev/null; then
+                exec python3 "$INSTALL_DIR/manager.py" "$@" </dev/tty
             fi
             exec python3 "$INSTALL_DIR/manager.py" "$@" ;;
         *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;

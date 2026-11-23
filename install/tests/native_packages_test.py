@@ -22,12 +22,13 @@ class NativeTests(unittest.TestCase):
                 self.assertIn(f"--setopt=*.{key}=True", command)
                 self.assertIn("--setopt=localpkg_gpgcheck=True", command)
                 self.assertIn("--setopt=keepcache=True", command)
+                self.assertIn("--setopt=copr:copr.fedorainfracloud.org:sdegler:hyprland.excludepkgs=kitty,kitty-*", command)
                 self.assertIn("--setopt=max_parallel_downloads=8", command)
                 self.assertEqual(command[-4:], ["--refresh", "upgrade", "--", "kitty"])
                 self.assertFalse({"--cacheonly", "--nogpgcheck", "-y"} & set(command))
 
     def test_pacman_has_one_transaction_with_native_cache_mirrors_and_signature_policy(self):
-        config = "[options]\nSigLevel = Required DatabaseOptional\nXferCommand = /usr/bin/false\n" \
+        config = "[options]\nSigLevel = Required DatabaseOptional\nXferCommand = /usr/bin/false\nDisableDownloadTimeout\n" \
                  "[core]\nServer = https://mirror/core\nCacheServer = https://cache/core\n"
         args = argparse.Namespace(backend="pacman", upgrade=True, targets=["hyprland", "quickshell"])
         with tempfile.TemporaryDirectory() as folder, patch.object(packages, "command", side_effect=[config, "/cache"]), \
@@ -42,6 +43,7 @@ class NativeTests(unittest.TestCase):
                      "ParallelDownloads = 4", "CheckSpace"):
             self.assertIn(line, resolved)
         self.assertNotIn("XferCommand", resolved)
+        self.assertNotIn("DisableDownloadTimeout", resolved)
 
     def test_reports_trust_failure_separately_and_keeps_the_native_detail(self):
         message = "Error: kitty.rpm: Header OpenPGP signature: NOKEY"

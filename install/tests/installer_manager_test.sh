@@ -34,9 +34,11 @@ pacman() {
         -Q) return 1 ;;
         -T) printf '%s\n' kitty; return 127 ;;
         -Qu) if [ -e "$work/updates" ]; then printf 'glibc 1 -> 2\n'; else return 1; fi ;;
-        -Si) [ "${3:-}" != quickshell ] ;;
+        -Si)
+            [ "${3:-}" != quickshell ] || return 1
+            if [ "${3:-}" = extra/kitty ]; then printf 'Installed Size  : 10.00 MiB\n'; fi ;;
         -Sl) return 0 ;;
-        -Sp) printf 'SP-SIZE:8388608\nSP-SIZE:1048576\n' ;;
+        -Sp) printf 'SP-SIZE:8388608\textra/kitty\nSP-SIZE:1048576\tcore/glibc\n' ;;
         *) return 2 ;;
     esac
 }
@@ -53,6 +55,7 @@ manager_dependency_plan
 ! [ -e "$work/transactions" ]
 manager_pacman_preflight > "$work/plan"
 grep -q 'estimates 9 MiB' "$work/plan"
+grep -q 'resolved 2 packages' "$work/plan"
 ! [ -e "$work/transactions" ]
 printf 'PASS: preparation queries selected components and estimates cached-database downloads without sudo\n'
 
@@ -69,12 +72,25 @@ printf 'PASS: pacman lock and pending upgrades prevent a transaction\n'
 
 MANAGER_LIVE=true
 OPT_SYNC=true
-df() { printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\nfixture 16384 12000 4384 73%% /\n'; }
+df() { printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\nfixture 1048576 536576 512000 52%% /\n'; }
 manager_probe > "$work/plan"
 grep -q 'full upgrade can consume significant temporary space in Live' "$work/plan"
-grep -q 'Insufficient free space' "$work/plan"
+grep -q 'Insufficient Live storage' "$work/plan"
+grep -q 'Available RAM:' "$work/plan"
+grep -q 'Native cache:' "$work/plan"
 ! [ -e "$work/transactions" ]
-printf 'PASS: low-space Live preparation blocks a full upgrade\n'
+OPT_SYNC=false
+if manager_space > "$work/plan"; then exit 1; fi
+grep -q 'Insufficient Live storage' "$work/plan"
+printf 'PASS: a 500 MiB Live overlay blocks preparation before package installation\n'
+
+MANAGER_ACTION=verify STATE_DIR="$HOME/.local/state/serpantinum"
+verify_installation() { return 1; }
+if manager_run > "$work/verify"; then exit 1; fi
+grep -q $'@@integration\tFAILED' "$work/verify"
+! grep -q '@@done' "$work/verify"
+MANAGER_ACTION=install
+printf 'PASS: verification failure cannot report a successful phase\n'
 
 mkdir -p "$work/template" "$work/player-config"
 printf 'new default\n' > "$work/template/settings"

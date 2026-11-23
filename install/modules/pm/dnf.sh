@@ -62,6 +62,10 @@ declare -A PM_COPR_MAP=(
     [cliphist]="mecattaf/duoRPM"
     [gpu-screen-recorder]="arabianq/gpu-screen-recorder"
 )
+# The original Hyprland COPR has an empty Fedora 45 repository.
+if [ "${DISTRO_VERSION:-}" = 45 ]; then
+    PM_COPR_MAP[hyprland]="sdegler/hyprland"
+fi
 
 declare -A PM_TERRA_MAP=(
     [mangowm]=1
@@ -120,6 +124,9 @@ pm_dnf() {
         for arg in "$@"; do
             case "$arg" in -y|--assumeyes) ;; *) args+=("$arg");; esac
         done
+        printf 'Running:'
+        printf ' %q' sudo dnf "${PM_DNF_OPTS[@]}" --setopt=assumeyes=False "${args[@]}"
+        printf '\n'
         sudo dnf "${PM_DNF_OPTS[@]}" --setopt=assumeyes=False "${args[@]}"
         return
     fi
@@ -129,7 +136,16 @@ pm_dnf() {
 pm_dnf_query() {
     local PM_DNF_OPTS
     pm_dnf_repo_opts
-    dnf "${PM_DNF_OPTS[@]}" "$@"
+    if [ "${MANAGED_INSTALL:-false}" = true ]; then
+        printf 'Repository lookup:' >&2
+        printf ' %q' dnf "${PM_DNF_OPTS[@]}" "$@" >&2
+        printf '\n' >&2
+    fi
+    timeout 75s dnf "${PM_DNF_OPTS[@]}" "$@" </dev/null || {
+        local status=$?
+        if [ "$status" = 124 ]; then echo 'DNF repository lookup timed out. Check the connection and enabled repositories.' >&2; fi
+        return "$status"
+    }
 }
 
 PM_MATUGEN_MIN_MAJOR=4
@@ -208,7 +224,7 @@ pm_matugen_ok() {
 
 pm_matugen_release_url() {
     local url
-    url="$(curl -fsSL --connect-timeout 15 --retry 3 "https://api.github.com/repos/$PM_MATUGEN_REPO/releases/latest" 2>/dev/null \
+    url="$(curl -fsSL --connect-timeout 15 --max-time 60 --retry 3 "https://api.github.com/repos/$PM_MATUGEN_REPO/releases/latest" 2>/dev/null \
         | jq -r '[.assets[] | select(.name | test("x86_64\\.tar\\.gz$"))][0].browser_download_url // empty' 2>/dev/null)"
     echo "${url:-${PM_RELEASE_MAP[matugen]}}"
 }
@@ -293,7 +309,7 @@ pm_install_release_binary() {
     fi
     tmp="$(mktemp -d)"
     mkdir -p "$bin_dir"
-    if curl -fsSL --connect-timeout 15 --retry 3 "$url" -o "$tmp/pkg.tar.gz" &&
+    if curl -fsSL --connect-timeout 15 --max-time 180 --retry 3 "$url" -o "$tmp/pkg.tar.gz" &&
         { [ -z "$digest" ] || printf '%s  %s\n' "${digest#sha256:}" "$tmp/pkg.tar.gz" | sha256sum -c --quiet -; } &&
         tar -xzf "$tmp/pkg.tar.gz" -C "$tmp"; then
         found="$(find "$tmp" -type f -name "$binary" | head -n 1)"
@@ -311,11 +327,26 @@ pm_install_batch() {
     PM_BATCH_LEFT=("$@")
     local batch=() names=() rest=() pkg target
     for pkg in "$@"; do
-        if [ -n "${PM_RELEASE_MAP[$pkg]:-}" ] || [ -n "${PM_COPR_MAP[$pkg]:-}" ] || [ -n "${PM_TERRA_MAP[$pkg]:-}" ]; then
+        if [ -n "${PM_RELEASE_MAP[$pkg]:-}" ] || [ -n "${PM_TERRA_MAP[$pkg]:-}" ]; then
+            rest+=("$pkg")
+        elif [ "${MANAGED_INSTALL:-false}" != true ] && [ -n "${PM_COPR_MAP[$pkg]:-}" ]; then
             rest+=("$pkg")
         else
-            batch+=("$pkg")
             target="$(pm_dnf_target "$(pm_resolve_name "$pkg")")" || return 1
+            if [ -n "${PM_COPR_MAP[$pkg]:-}" ]; then
+                local available minimum=0
+                case "$pkg" in
+                    hyprland) minimum="$MIN_HYPRLAND_LUA_VERSION" ;;
+                    quickshell) minimum="$MIN_QUICKSHELL_VERSION" ;;
+                esac
+                available="$(pm_dnf_query --setopt=assumeno=True repoquery --available --latest-limit=1 \
+                    --queryformat '%{version}\n' "$target")" || return 1
+                available="$(sort -V <<< "$available" | tail -n 1)"
+                if ! version_at_least "$available" "$minimum"; then
+                    pm_enable_copr "${PM_COPR_MAP[$pkg]}" || return 1
+                fi
+            fi
+            batch+=("$pkg")
             names+=("$target")
         fi
     done
@@ -401,11 +432,15 @@ pm_remove_conflicting_pkg() {
 # Fedora's own hyprland package may predate the Lua configuration format.
 # Try the COPR build, which tracks upstream releases.
 pm_upgrade_hyprland() {
-    pm_enable_copr "${PM_COPR_MAP[hyprland]}" || return 1
-    pm_dnf upgrade -y --refresh hyprland
+    pm_dnf upgrade -y --refresh hyprland || return 1
+    if ! version_at_least "$(hyprland_version)" "$MIN_HYPRLAND_LUA_VERSION"; then
+        pm_enable_copr "${PM_COPR_MAP[hyprland]}" && pm_dnf upgrade -y --refresh hyprland
+    fi
 }
 
 pm_upgrade_quickshell() {
-    pm_enable_copr "${PM_COPR_MAP[quickshell]}" || return 1
-    pm_dnf upgrade -y --refresh quickshell
+    pm_dnf upgrade -y --refresh quickshell || return 1
+    if ! quickshell_is_current; then
+        pm_enable_copr "${PM_COPR_MAP[quickshell]}" && pm_dnf upgrade -y --refresh quickshell
+    fi
 }

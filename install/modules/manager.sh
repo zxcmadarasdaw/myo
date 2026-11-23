@@ -52,33 +52,51 @@ manager_disk() {
 }
 
 manager_space() {
-    local size path needed shortfall=0
+    local size path needed cache_size=unknown shortfall=0
     size="$(du -sk -- "$PROJECT_ROOT/bin" "$PROJECT_ROOT/src" "$PROJECT_ROOT/themess" |
         awk '{sum += $1} END {print sum+0}')"
     manager_disk "$HOME/.local/share" "$(( size + 16384 ))" || shortfall=1
     manager_disk "${XDG_CACHE_HOME:-$HOME/.cache}" 65536 || shortfall=1
+    manager_record change "Root filesystem: $(findmnt -no FSTYPE / 2>/dev/null || echo unknown). Available RAM: $(awk '/^MemAvailable:/ {print $2 " KiB"}' /proc/meminfo)."
+    case "$PM_NAME" in
+        pacman) path="$(pacman-conf CacheDir | head -n 1)" ;;
+        dnf) if command -v dnf5 >/dev/null; then path=/var/cache/libdnf5; else path=/var/cache/dnf; fi ;;
+        *) path=/var/cache ;;
+    esac
+    if size="$(du -sk -- "$path" 2>/dev/null)"; then
+        cache_size="${size%%[[:space:]]*}"
+    fi
+    manager_record change "Native cache: ${path:-unknown}. Current size in KiB: $cache_size."
+    manager_disk "${path:-/var/cache}" 0 || shortfall=1
     for path in /usr /var "${TMPDIR:-/tmp}"; do
         needed=131072
-        if [ "$MANAGER_LIVE" = true ]; then needed=262144; fi
-        if [ "$MANAGER_LIVE" = true ] && [ "$OPT_SYNC" = true ] && [ "$path" != "${TMPDIR:-/tmp}" ]; then
-            needed=1048576
+        if [ "$MANAGER_LIVE" = true ] && [ "${#MANAGER_MISSING[@]}" -gt 0 ]; then
+            # This is headroom for a desktop transaction. Both native managers
+            # still show the resolved sizes and perform their own space checks.
+            needed=262144
+            if [ "$path" != "${TMPDIR:-/tmp}" ]; then needed=1048576; fi
         fi
         manager_disk "$path" "$needed" || shortfall=1
     done
     if (( shortfall )); then
-        manager_record error "Insufficient free space. Free space on the listed filesystems and review the plan again."
+        if [ "$MANAGER_LIVE" = true ]; then
+            manager_record error "Insufficient Live storage for the desktop transaction. The temporary overlay must hold the installed files and may also hold the package cache. Use a system with sufficient persistent storage."
+        else
+            manager_record error "Insufficient free space. Free space on the listed filesystems and review the plan again."
+        fi
         return 1
     fi
 }
 
 manager_pacman_preflight() {
-    local message pkg files bytes cache
+    local message pkg files bytes cache installed_kib estimated_kib
     if [ "$OPT_SYNC" = true ] && [ "${MANAGER_LIVE:-false}" = true ]; then
         manager_record error 'Full upgrades are disabled in Live mode. Use an installed system or a current Live image with matching repository databases.'
         return 1
     fi
     [ "$OPT_SYNC" != true ] && [ ${#MANAGER_MISSING[@]} -gt 0 ] || return 0
     if ! message="$(pm_pacman_ready 2>&1)"; then
+        message="${message%%$'\n'*}"
         manager_record error "${message:-Failed to read pacman repository databases.}"
         return 1
     fi
@@ -101,11 +119,27 @@ manager_pacman_preflight() {
         fi
     done
     [ ${#official[@]} -gt 0 ] || return 0
-    if ! files="$(pacman -Sp --needed --print-format 'SP-SIZE:%s' "${official[@]}" </dev/null 2>&1)"; then
+    if ! files="$(pacman -Sp --needed --print-format $'SP-SIZE:%s\t%r/%n' "${official[@]}" </dev/null 2>&1)"; then
         manager_record error "Pacman could not resolve all required dependencies. $files"
         return 1
     fi
-    bytes="$(awk -F: '/^SP-SIZE:[0-9]+$/ { sum += $2 } END { printf "%.0f", sum }' <<< "$files")"
+    bytes="$(awk '/^SP-SIZE:[0-9]+([[:space:]]|$)/ { sub(/^SP-SIZE:/, ""); sum += $1 } END { printf "%.0f", sum }' <<< "$files")"
+    local resolved=()
+    mapfile -t resolved < <(awk -F '\t' '/^SP-SIZE:[0-9]+\t/ && $2 != "" { print $2 }' <<< "$files")
+    if [ "${#resolved[@]}" -gt 0 ]; then
+        if ! message="$(LC_ALL=C pacman -Si -- "${resolved[@]}" 2>&1)"; then
+            manager_record error "Could not read installed sizes from pacman: $message"
+            return 1
+        fi
+        installed_kib="$(awk '/^Installed Size[[:space:]]*:/ {
+            units = $NF; size = $(NF-1)
+            if (units == "MiB") size *= 1024
+            if (units == "GiB") size *= 1048576
+            if (units == "B") size /= 1024
+            sum += size
+        } END { printf "%.0f", sum + 1 }' <<< "$message")"
+        manager_record change "Pacman resolved ${#resolved[@]} packages, with $(( (installed_kib + 1023) / 1024 )) MiB of installed files before accounting for replacements."
+    fi
     if (( bytes > 0 )); then
         cache="$(pacman-conf CacheDir)" || return 1
         cache="${cache%%$'\n'*}"
@@ -113,6 +147,21 @@ manager_pacman_preflight() {
         manager_record change "Pacman estimates $(( (bytes + 1048575) / 1048576 )) MiB of package downloads from current databases."
         if ! manager_disk "$cache" "$(( (bytes + 1023) / 1024 ))"; then
             manager_record error "The pacman cache at $cache has insufficient free space for the estimated downloads."
+            return 1
+        fi
+    fi
+    if [ "$MANAGER_LIVE" = true ] && [ -n "${installed_kib:-}" ]; then
+        estimated_kib="$installed_kib"
+        # Typical Live images place /usr and the package cache on one overlay.
+        # Allow a separately mounted cache to use its own free-space budget.
+        cache="${cache:-$(pacman-conf CacheDir | head -n 1)}"
+        cache="${cache:-/var/cache/pacman/pkg}"
+        while [ ! -e "$cache" ] && [ "$cache" != / ]; do cache="$(dirname -- "$cache")"; done
+        if [ "$(stat -c %d -- /usr)" = "$(stat -c %d -- "$cache")" ]; then
+            estimated_kib=$(( estimated_kib + (bytes + 1023) / 1024 ))
+        fi
+        if ! manager_disk /usr "$estimated_kib"; then
+            manager_record error 'The Live overlay has insufficient space for the resolved package transaction.'
             return 1
         fi
     fi
@@ -220,10 +269,13 @@ manager_dependency_plan() {
         done
         targets=("${required[@]}")
     fi
-    local bootstrap=(jq curl git unzip fontconfig)
+    local bootstrap=(jq curl git unzip fontconfig diffutils)
     for pkg in "${bootstrap[@]}"; do
         tool="$pkg"
-        [ "$pkg" != fontconfig ] || tool=fc-cache
+        case "$pkg" in
+            fontconfig) tool=fc-cache ;;
+            diffutils) tool=cmp ;;
+        esac
         if ! command -v "$tool" >/dev/null; then targets+=("$pkg"); fi
     done
     mapfile -t DEPENDENCY_TARGETS < <(printf '%s\n' "${targets[@]}" | awk '!seen[$0]++')
@@ -284,7 +336,12 @@ manager_probe() {
         fi
         manager_pacman_preflight || true
     else
-        manager_record change 'Install with DNF. Missing packages may require configured COPR sources or upstream releases. Umbriel and MangoWC require trusted Terra. Review repository and key prompts.'
+        manager_record change 'Install with DNF. Missing or outdated packages may require COPR. Review the repository and signing key prompts.'
+        for pkg in "${MANAGER_MISSING[@]}"; do
+            if [ -n "${PM_COPR_MAP[$pkg]:-}" ]; then
+                manager_record change "COPR fallback for $pkg: ${PM_COPR_MAP[$pkg]}."
+            fi
+        done
     fi
     manager_record change "Package targets missing or outdated: ${MANAGER_MISSING[*]:-none}. Native transaction reviews include dependencies, conflicts, changes and sizes."
     manager_record change 'Deploy the shell and themes under ~/.local/share/serpantinum, create user launch links and initial settings, and record the installed version.'
@@ -333,7 +390,8 @@ manager_pacman_packages() {
     if [ "$OPT_SYNC" = true ]; then
         local sync_targets=()
         for pkg in "${MANAGER_MISSING[@]}"; do
-            if [ "$OPT_AUR" = true ] && pm_aur_recipe "$pkg" >/dev/null; then continue; fi
+            if [ "$OPT_AUR" = true ] && pm_aur_recipe "$pkg" >/dev/null &&
+                ! pacman -Si -- "$pkg" >/dev/null 2>&1; then continue; fi
             sync_targets+=("$pkg")
         done
         printf '@@activity\tDownloading\tPacman databases and system packages\n'
@@ -367,18 +425,16 @@ manager_dnf_packages() {
     pm_install_batch "${MANAGER_MISSING[@]}" </dev/tty || return 1
     for pkg in "${PM_BATCH_LEFT[@]}"; do
         printf '@@activity\tInstalling\t%s\n' "$pkg"
-        if ! pm_is_installed "$pkg" || [[ "$pkg" != hyprland && "$pkg" != quickshell ]]; then
-            pm_install_pkg "$pkg" 1 </dev/tty || return 1
-        fi
-        case "$pkg" in
-            hyprland)
-                if ! version_at_least "$(hyprland_version)" "$MIN_HYPRLAND_LUA_VERSION"; then
-                    pm_upgrade_hyprland </dev/tty || return 1
-                fi ;;
-            quickshell)
-                if ! quickshell_is_current; then pm_upgrade_quickshell </dev/tty || return 1; fi ;;
-        esac
+        pm_install_pkg "$pkg" 1 </dev/tty || return 1
     done
+    hash -r
+    if [[ " ${MANAGER_MISSING[*]} " == *" hyprland "* ]] &&
+        ! version_at_least "$(hyprland_version)" "$MIN_HYPRLAND_LUA_VERSION"; then
+        pm_upgrade_hyprland </dev/tty || return 1
+    fi
+    if [[ " ${MANAGER_MISSING[*]} " == *" quickshell "* ]] && ! quickshell_is_current; then
+        pm_upgrade_quickshell </dev/tty || return 1
+    fi
 }
 
 manager_dependencies() {
@@ -530,7 +586,7 @@ manager_run() {
             flock -sn 9 || { echo 'An installation is in progress. Verify after it finishes.'; return 1; }
         fi
         manager_record '@@phase' 1 1 Verifying 'Installed environment'
-        manager_verify
+        manager_verify || return 1
         manager_record '@@done' 1
         return
     fi

@@ -78,7 +78,7 @@ class ManagerTests(unittest.TestCase):
         plan = installer.normalize_plan({"action": "verify", "compositors": ["hyprland"], "options": ["launch"]})
         self.assertEqual(plan["options"], [])
 
-    def test_http_requires_same_origin_and_session_and_serves_the_user_interface(self):
+    def test_system_updates_http_requires_same_origin_and_has_no_install_actions(self):
         with patch.object(installer, "probe", side_effect=lambda *args: inventory()):
             with installer.LocalServer(("127.0.0.1", 0), installer.Handler) as server:
                 server.host = f"127.0.0.1:{server.server_port}"
@@ -103,8 +103,10 @@ class ManagerTests(unittest.TestCase):
                     with rejected.exception as response:
                         self.assertEqual(response.code, 403)
                     headers["Origin"] = server.origin
-                    with urlopen(Request(endpoint, data, headers), timeout=3) as response:
-                        self.assertTrue(json.load(response)["approval"])
+                    with self.assertRaises(HTTPError) as rejected:
+                        urlopen(Request(endpoint, data, headers), timeout=3)
+                    with rejected.exception as response:
+                        self.assertEqual(response.code, 404)
                     with urlopen(Request(server.origin + "/updates/status", headers=headers), timeout=3) as response:
                         self.assertEqual(json.load(response)["pm"], "dnf")
                     with self.assertRaises(HTTPError) as rejected:
@@ -197,6 +199,50 @@ class PtyTests(unittest.TestCase):
         self.assertEqual(run.completed, 2)
         self.assertNotIn(secret, Path(run.path).read_text())
         self.assertIn("1 / 4", run.metrics["count"])
+
+    def test_phase_two_native_worker_keeps_all_three_tty_streams(self):
+        work = Path(self.temp.name)
+        sudo = work / "sudo"
+        sudo.write_text(
+            "#!/usr/bin/env bash\n"
+            "if ! [[ -t 0 && -t 1 && -t 2 ]]; then\n"
+            "  read -r hidden_prompt\n"
+            "  exit 42\n"
+            "fi\n"
+            "stty -echo; printf '[Serpantinum sudo] Password: ' >&2; read -r password; stty echo\n"
+            "[[ $password == fixture-password ]] || exit 43\n"
+            "printf '\\nContinue transaction? [y/N] ' >&2; read -r answer\n"
+            "[[ $answer == y ]] || exit 44\n"
+            "printf '\\n(1/1) installing quickshell\\n'\n"
+        )
+        sudo.chmod(0o700)
+        with patch.dict(os.environ, {"PATH": f"{work}:{os.environ['PATH']}"}):
+            worker = shlex.join([sys.executable, str(installer.HERE / "native_packages.py"), "dnf", "quickshell"])
+            run = self.start("printf '@@phase\\t2\\t6\\tInstalling\\tPackages\\n'; " + worker)
+        self.until(run, lambda: run.secret and "Password" in run.prompt)
+        run.answer("fixture-password", True)
+        self.until(run, lambda: "Continue transaction?" in run.prompt)
+        run.answer("y", False)
+        self.until(run, lambda: run.exit_code is not None)
+        self.assertEqual(run.exit_code, 0)
+        self.assertNotIn("fixture-password", Path(run.path).read_text())
+
+    def test_dnf_progress_with_unknown_eta_is_not_a_prompt(self):
+        run = self.start("printf '[1/4] Total 0%% | 1.0 B/s | 4.0 KiB | ?'; sleep 30")
+        self.until(run, lambda: "B/s" in run.pending)
+        self.assertFalse(run.prompt)
+
+    def test_native_network_failure_preserves_status_and_reason(self):
+        work = Path(self.temp.name)
+        sudo = work / "sudo"
+        sudo.write_text("#!/usr/bin/env bash\nprintf 'Error: failed to download kitty: HTTP 404\\n' >&2\nexit 17\n")
+        sudo.chmod(0o700)
+        with patch.dict(os.environ, {"PATH": f"{work}:{os.environ['PATH']}"}):
+            run = self.start(shlex.join([sys.executable, str(installer.HERE / "native_packages.py"), "dnf", "kitty"]))
+        self.until(run, lambda: run.exit_code is not None)
+        self.assertEqual(run.exit_code, 17)
+        self.assertEqual(run.reports[-1]["download"], "FAILED")
+        self.assertIn("HTTP 404", Path(run.path).read_text())
 
     def test_unknown_prompt_failure_and_cancellation(self):
         run = self.start("printf 'Select provider '; read -r provider; printf '\\nCould not resolve mirror\\n'; exit 4")
