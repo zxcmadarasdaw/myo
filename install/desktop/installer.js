@@ -17,6 +17,113 @@ let generation = 0;
 let approval = null;
 let lastQueueEnd = "";
 let savedPlan = null;
+let installerInventory;
+
+const installerRussian = new Map(Object.entries({
+  "Installation manager": "Менеджер установки",
+  "Close installer": "Закрыть установщик",
+  "Installer closed": "Установщик закрыт",
+  "Version": "Версия",
+  "Operating system": "Операционная система",
+  "Package manager": "Пакетный менеджер",
+  "Installation": "Установка",
+  "Loading": "Загрузка",
+  "Components": "Компоненты",
+  "Refresh": "Обновить данные",
+  "Package inventory": "Список пакетов",
+  "Disk space": "Место на диске",
+  "Prepare installation": "Подготовка установки",
+  "Desktop sessions": "Сеансы рабочего стола",
+  "Configuration and optional components": "Конфигурация и дополнительные компоненты",
+  "Package download mode": "Режим загрузки пакетов",
+  "Review changes": "Просмотреть изменения",
+  "Review verification": "Просмотреть план проверки",
+  "Review saved plan": "Просмотреть сохранённый план",
+  "Run verification": "Запустить проверку",
+  "Packages missing or due for update": "Отсутствующие или устаревшие пакеты",
+  "Approve and start": "Подтвердить и запустить",
+  "Installation progress": "Ход установки",
+  "Installation phases": "Этапы установки",
+  "Current transfer": "Текущая загрузка",
+  "Package downloads": "Загрузка пакетов",
+  "Native package manager": "Штатный пакетный менеджер",
+  "Parallel downloads": "Параллельные загрузки",
+  "Packages in transaction": "Пакеты в транзакции",
+  "Native cache": "Системный кэш",
+  "Package verification failed": "Ошибка проверки пакетов",
+  "Package download failed": "Ошибка загрузки пакетов",
+  "Native transaction failed": "Ошибка транзакции пакетного менеджера",
+  "Native transaction complete": "Транзакция пакетного менеджера завершена",
+  "Native transaction completed with warnings": "Транзакция пакетного менеджера завершена с предупреждениями",
+  "Advanced options": "Расширенные параметры",
+  "Live Test Mode": "Режим проверки Live",
+  "Install optional capture, OCR and desktop utilities": "Установить дополнительные утилиты для записи, OCR и рабочего стола",
+  "Download report": "Отчёт о загрузке",
+  "Retry Failed Downloads": "Повторить неудачные загрузки",
+  "Export Installation Report": "Сохранить отчёт об установке",
+  "Send response": "Отправить ответ",
+  "Read the transaction in the journal before answering. An empty response uses the command’s default.": "Прочитайте сведения о транзакции в журнале. Пустой ответ выбирает действие по умолчанию.",
+  "Respond to a terminal prompt": "Ответить на запрос терминала",
+  "Cancel safely": "Отменить",
+  "Retry failed step": "Повторить неудачный шаг",
+  "Restart approved plan": "Перезапустить подтверждённый план",
+  "Launch Serpantinum": "Запустить Serpantinum",
+  "Installation journal": "Журнал установки",
+  "Save full journal": "Сохранить полный журнал",
+  "Install": "Установить",
+  "Verify": "Проверить",
+  "Repair": "Восстановить",
+  "Update": "Обновить Serpantinum",
+  "Install Missing": "Установить недостающее",
+  "Deploy compositor and Kitty configuration": "Развернуть конфигурацию композитора и Kitty",
+  "Replace matching config files with mandatory backups": "Заменить совпадающие файлы конфигурации с резервным копированием",
+  "Take a private settings snapshot first": "Сначала создать локальную копию настроек",
+  "Install compatibility launch links in /usr/local/bin": "Установить ссылки для совместимости в /usr/local/bin",
+  "Configure system and PipeWire services (includes PAM)": "Настроить системные службы, PipeWire и PAM",
+  "Install and configure SDDM and its theme": "Установить и настроить SDDM и тему",
+  "Use the SDDM Wayland greeter": "Использовать экран входа SDDM на Wayland",
+  "Switch the current display manager to SDDM": "Переключить дисплейный менеджер на SDDM",
+  "Install Ski, Audio DSP, Core and Gamma": "Установить Ski, Audio DSP, Core и Gamma",
+  "Install offline VPN and system TUN integration": "Установить офлайн-VPN и интеграцию TUN",
+  "Download Iosevka Nerd Fonts": "Скачать Iosevka Nerd Fonts",
+  "Download a small wallpaper selection": "Скачать небольшую подборку обоев",
+  "Download the full wallpaper collection": "Скачать полную коллекцию обоев",
+  "Refresh pacman databases and upgrade all system packages": "Обновить базы pacman и все системные пакеты",
+  "Allow the reviewed AUR fallback for Quickshell": "Разрешить проверенный рецепт Quickshell из AUR",
+  "Allow source builds and their build dependencies": "Разрешить сборку из исходников и установку её зависимостей",
+  "Send anonymous installation telemetry": "Отправлять анонимную телеметрию установки",
+  "Start Serpantinum after verification": "Запустить Serpantinum после проверки",
+  "Installed": "Установлено",
+  "Missing": "Отсутствует",
+  "Optional": "Необязательный компонент",
+  "Failed": "Ошибка",
+  "Update available": "Доступно обновление",
+  "Update required": "Требуется обновление",
+  "Detected": "Обнаружена",
+  "Legacy install": "Устаревшая установка",
+  "New setup": "Новая установка",
+  "VERIFICATION COMPLETED": "ПРОВЕРКА ЗАВЕРШЕНА",
+  "INSTALLATION COMPLETED": "УСТАНОВКА ЗАВЕРШЕНА",
+  "INSTALLATION COMPLETED WITH WARNINGS": "УСТАНОВКА ЗАВЕРШЕНА С ПРЕДУПРЕЖДЕНИЯМИ"
+}));
+const installerText = (text) => document.documentElement.lang === "ru" ? installerRussian.get(text) || text : text;
+
+function localizeInstaller() {
+  const walker = document.createTreeWalker(document.querySelector("main"), NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      return node.parentElement.closest("#system-updates")
+        ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const sources = new Map(Array.from(installerRussian, ([english, russian]) => [russian, english]));
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const original = node.data.trim();
+    const english = sources.get(original) || original;
+    if (installerRussian.has(english)) node.data = node.data.replace(original, installerText(english));
+  }
+  if (installerInventory) renderInventory(installerInventory);
+}
 
 function element(tag, label, className) {
   const node = document.createElement(tag);
@@ -57,16 +164,19 @@ function choice(kind, name, value, label, checked = false) {
 }
 
 function renderInventory(records) {
+  installerInventory = records;
   const [os, distribution, pm, version, commit, state] = records.meta[0];
   $("os").textContent = os || distribution;
   $("manager").textContent = pm;
   $("version").textContent = commit === "unknown" ? version : `${version} · ${commit}`;
-  $("existing").textContent = { current: "Detected", legacy: "Legacy install", fresh: "New setup" }[state] || state;
+  $("existing").dataset.installState = state;
+  $("existing").textContent = installerText(records.session?.[0]?.[0] === "live" ? "Live Test Mode"
+    : { current: "Detected", legacy: "Legacy install", fresh: "New setup" }[state] || state);
   list($("warnings"), [...(records.warning || []), ...(records.error || [])]);
   const entries = (records.component || []).map(([name, status, detail]) => {
     const item = element("details", "", "component");
     const heading = element("summary");
-    const badge = element("span", status, "badge");
+    const badge = element("span", installerText(status), "badge");
     badge.dataset.state = status;
     heading.append(element("strong", name), badge);
     item.append(heading, element("p", detail));
@@ -94,7 +204,7 @@ function openPreparation(state) {
   const maintenance = state.inventory.meta[0][5] === "current";
   const initial = maintenance ? "verify" : "install";
   for (const [value, label] of Object.entries(state.actions)) {
-    $("actions").append(choice("radio", "action", value, label, value === initial));
+    $("actions").append(choice("radio", "action", value, installerText(label), value === initial));
   }
   for (const name of state.compositors) {
     const label = { hyprland: "Hyprland", sway: "Sway", niri: "Niri", mango: "MangoWC" }[name];
@@ -102,7 +212,7 @@ function openPreparation(state) {
   }
   for (const [value, label] of Object.entries(state.options)) {
     if (["sync", "aur"].includes(value) && state.inventory.meta[0][2] !== "pacman") continue;
-    $("options").append(choice("checkbox", "option", value, label, ["config", "backup"].includes(value)));
+    $("options").append(choice("checkbox", "option", value, installerText(label), ["config", "backup"].includes(value)));
   }
   changeSelection();
 }
@@ -144,8 +254,8 @@ async function review(saved = false) {
   const packages = (records.package || []).filter((row) => row[1] !== "Installed").map((row) => row[0]);
   $("target-packages").hidden = packages.length === 0;
   $("targets").textContent = packages.join(", ");
-  $("plan-heading").textContent = data.action === "verify" ? "Review verification" : "Review changes";
-  $("start").textContent = data.action === "verify" ? "Run verification" : "Approve and start";
+  $("plan-heading").textContent = installerText(data.action === "verify" ? "Review verification" : "Review changes");
+  $("start").textContent = installerText(data.action === "verify" ? "Run verification" : "Approve and start");
   $("start").disabled = Boolean(records.error?.length);
   $("plan").hidden = false;
   $("plan").scrollIntoView({ block: "nearest" });
@@ -193,7 +303,7 @@ function renderRun(run, launchError) {
   const ok = run.code === 0 && run.status === "Completed";
   const nativeErrors = (run.reports || []).flatMap(report => report.native_errors || []);
   const completed = nativeErrors.length ? "INSTALLATION COMPLETED WITH WARNINGS" : "INSTALLATION COMPLETED";
-  $("status").textContent = ok ? (run.total === 1 ? "VERIFICATION COMPLETED" : completed) : run.status;
+  $("status").textContent = installerText(ok ? (run.total === 1 ? "VERIFICATION COMPLETED" : completed) : run.status);
   $("status").dataset.state = run.status;
   $("current").textContent = run.phase ? `Phase ${run.phase} of ${run.total} · ${run.component}` : run.component;
   $("elapsed").textContent = `${Math.floor(run.elapsed / 60)}m ${run.elapsed % 60}s`;
@@ -260,6 +370,24 @@ function renderQueue(run) {
   const packages = run.downloads || [];
   $("download-queue").hidden = !run.queue?.stage;
   if (!run.queue?.stage) return;
+  const native = run.queue.native;
+  for (const id of ["queue-overall", "queue-active", "queue-packages"]) $(id).hidden = !!native;
+  if (native) {
+    const queue = run.queue;
+    $("queue-current").textContent = [queue.backend, installerText("Native package manager"),
+      installerText("Parallel downloads") + " " + queue.limit].join(" · ");
+    $("queue-counts").textContent = queue.total ? installerText("Packages in transaction") + " " + queue.total : "";
+    $("queue-storage").textContent = installerText("Native cache") + " · " + queue.native_cache;
+    $("queue-report").hidden = !["INSTALLED", "BLOCKED", "CANCELLED"].includes(queue.stage);
+    const label = queue.verification === "FAILED" ? "Package verification failed"
+      : queue.download === "FAILED" ? "Package download failed"
+      : queue.installation === "SUCCESS_WITH_WARNINGS" ? "Native transaction completed with warnings"
+      : queue.installation === "SUCCESS" ? "Native transaction complete"
+      : queue.stage === "CANCELLED" ? "Cancelled" : "Native transaction failed";
+    $("queue-summary").textContent = [installerText(label), queue.error, ...(queue.native_errors || [])].filter(Boolean).join("\n");
+    $("retry-downloads").hidden = running || queue.download !== "FAILED";
+    return;
+  }
   const good = packages.filter(p => p.checksum_verified ?? ["VERIFIED", "INSTALLED"].includes(p.state)).length;
   const failed = packages.filter(p => p.state === "FAILED").length;
   const deferred = run.queue.deferred ?? packages.filter(p => p.state === "DEFERRED").length;
@@ -400,12 +528,18 @@ click("close", async () => {
   await request("/close", {});
   closed = true;
   sessionStorage.removeItem("serpantinum-installer");
-  document.querySelector("main").replaceChildren(element("h1", "Installer closed"));
+  document.querySelector("main").replaceChildren(element("h1", installerText("Installer closed")));
 });
 $("preparation").addEventListener("change", changeSelection);
 $("answer").addEventListener("keydown", (event) => {
   if (event.key === "Enter") $("send").click();
 });
-request("/inventory")
-  .then((state) => { openPreparation(state); poll(); })
-  .catch(showError);
+document.addEventListener("DOMContentLoaded", () => {
+  request("/inventory")
+    .then((state) => {
+      openPreparation(state);
+      window.dispatchEvent(new CustomEvent("installer-ready", { detail: state }));
+      if (!state.updatesOnly) poll();
+    })
+    .catch(showError);
+});

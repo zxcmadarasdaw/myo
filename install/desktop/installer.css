@@ -23,6 +23,7 @@ h1 { margin-bottom: 0; font-size: clamp(2.6rem, 7vw, 5.3rem); letter-spacing: -.
 h2 { margin-bottom: 18px; font-size: 1.28rem; letter-spacing: -.03em; }
 .masthead, .heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .masthead { margin-bottom: 32px; align-items: end; }
+.header-controls { display: flex; gap: 8px; flex-wrap: wrap; }
 .heading h2 { margin-bottom: 0; }
 .heading { margin-bottom: 18px; }
 .section-title { display: block; color: var(--accent); margin-bottom: 12px; letter-spacing: .09em; text-transform: uppercase; font-size: .75rem; font-weight: 700; }
@@ -113,3 +114,20 @@ progress { display: block; width: 100%; margin: 6px 0 12px; height: 10px; accent
 #queue-active:empty { display: none; }
 .queue-active-row { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--border); border-radius: 7px; }
 .queue-active-row p { margin: 0; }
+
+#system-updates { margin-bottom: 18px; }
+#system-updates h3 { margin: 0 0 10px; font-size: 1rem; }
+#updates-platform { text-align: end; }
+#updates-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
+#updates-facts div { padding: 10px 12px; border-radius: 8px; background: var(--raised); }
+#updates-facts dt { color: var(--muted); font-size: .82rem; }
+#updates-facts dd { margin: 4px 0 0; font-weight: 650; overflow-wrap: anywhere; }
+#updates-settings { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 14px; }
+.updates-subsection { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 14px; }
+.updates-list { margin: 0 0 14px; padding: 0; list-style: none; max-height: 290px; overflow: auto; }
+.updates-list li { padding: 7px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.updates-list button { margin-left: 8px; }
+#system-updates pre { background: var(--base); border-radius: 8px; padding: 12px; max-height: 300px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+#updates-active .queue-active-row { margin: 0 0 8px; }
+#updates-confirm { color: var(--text); width: min(480px, calc(100% - 32px)); }
+#updates-confirm::backdrop { background: #000b; }

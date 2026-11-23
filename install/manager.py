@@ -20,7 +20,7 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
-from download_queue import DOWNLOAD_MODES
+from download_queue import DOWNLOAD_MODES, redact
 
 
 HERE = Path(__file__).resolve().parent
@@ -40,6 +40,7 @@ OPTIONS = {
     "wayland": "Use the SDDM Wayland greeter",
     "display-manager": "Switch the current display manager to SDDM",
     "engines": "Install Ski, Audio DSP, Core and Gamma",
+    "extras": "Install optional capture, OCR and desktop utilities",
     "vpn": "Install offline VPN and system TUN integration",
     "fonts": "Install Iosevka Nerd Fonts",
     "wallpapers": "Download a small wallpaper selection",
@@ -60,9 +61,11 @@ PROMPT = re.compile(
 SECRET_PROMPT = re.compile(r"(?:password|passphrase).*:\s*$|\[Serpantinum sudo\]", re.I)
 TRANSFER = re.compile(r"(?:download|receiving objects|[KMG]i?B/s)", re.I)
 NETWORK_ERROR = re.compile(r"could not resolve|failed retrieving|could not connect|network is unreachable|"
-                           r"connection timed out|failed to download|failed to fetch|SSL certificate", re.I)
+                           r"connection timeout|connection timed out|failed to download|failed to fetch|"
+                           r"SSL certificate|SSL_ERROR_SYSCALL|failed to retrieve some files|"
+                           r"error invoking external downloader|HTTP(?: error)? 404", re.I)
 COUNTER = re.compile(r"^[([]\s*(\d+)\s*/\s*(\d+)\s*[)\]]\s*(.*)")
-RATE = re.compile(r"\b\d+(?:\.\d+)?\s*[KMGT]?i?B/s\b", re.I)
+RATE = re.compile(r"(?<![-\d.])\b\d+(?:\.\d+)?\s*[KMGT]?i?B/s\b", re.I)
 SIZE = re.compile(r"\b\d+(?:\.\d+)?\s*[KMGT]i?B\b(?!/s)", re.I)
 PERCENT = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d+)?)%")
 DIAGNOSTICS = (
@@ -153,10 +156,10 @@ def atomic_text(path, contents):
         Path(temporary).unlink(missing_ok=True)
 
 
-def log_file():
+def log_file(prefix="install."):
     state = installer_state_dir()
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
-    fd, path = tempfile.mkstemp(prefix="install.", suffix=".log", dir=state, text=True)
+    fd, path = tempfile.mkstemp(prefix=prefix, suffix=".log", dir=state, text=True)
     return os.fdopen(fd, "w", encoding="utf-8", buffering=1), path
 
 
@@ -182,11 +185,12 @@ def process_activity(pid):
 
 
 class Run:
-    def __init__(self, command):
+    def __init__(self, command, system=False):
         import codecs
         import pty
 
-        self.log, self.path = log_file()
+        self.log, self.path = log_file("system-update." if system else "install.")
+        self.system = system
         self.started = self.last_event = self.last_activity = time.monotonic()
         self.lines = collections.deque(maxlen=800)
         self.cursor = self.phase = self.completed = 0
@@ -229,6 +233,8 @@ class Run:
         os.set_blocking(self.fd, False)
 
     def append(self, message):
+        if self.system or self.queue.get("native"):
+            message = redact(message)
         self.cursor += 1
         self.lines.append((self.cursor, message))
         self.log.write(message + "\n")
@@ -248,8 +254,15 @@ class Run:
                 return
             if fields[0] == "@@report":
                 event["packages"] = list(self.downloads.values())
+                if event.get("native"):
+                    event["total"] = self.queue.get("total")
                 self.reports.append(event)
                 self.save_reports()
+                if event.get("native"):
+                    self.append(f"{event['backend']} · {event['installation']}")
+                    if event.get("error"):
+                        self.append(event["error"])
+                    return
                 self.append(f"Download: {event.get('download', 'PENDING')} · "
                             f"{event.get('downloaded', 0)}/{event.get('total', 0)} checksums verified · "
                             f"Verification: {event.get('verification', 'PENDING')} · "
@@ -262,7 +275,14 @@ class Run:
                 return
             if event.get("reset"):
                 self.downloads = {}
+            if event.get("native") and not event.get("reset"):
+                event["total"] = self.queue.get("total")
             self.queue = event
+            if event.get("native"):
+                self.network = "Native package manager"
+                if event.get("stage") == "NATIVE":
+                    self.status, self.metrics = "Preparing", {}
+                return
             package = event.get("package")
             if isinstance(package, dict) and package.get("name"):
                 previous = self.downloads.get(package["name"], {})
@@ -307,13 +327,18 @@ class Run:
                 self.diagnostic = diagnostic
                 break
         count = COUNTER.match(line)
+        if self.queue.get("native"):
+            planned = re.match(r"Packages \((\d+)\)|\s*(?:Installing|Upgrading):\s+(\d+) packages?", line)
+            if planned and (planned[1] or not self.queue.get("total")):
+                self.queue["total"] = int(planned[1] or planned[2])
         installing = False
         if count:
             done, total, text = count.groups()
-            if re.search(r"\b(?:installing|upgrading|reinstalling)\b", text, re.I):
+            if re.search(r"\b(?:installing|upgrading|reinstalling|removing|cleanup|erasing)\b", text, re.I):
                 installing = True
                 self.status = "Updating" if "upgrading" in text.lower() else "Installing"
-                self.metrics = {"package": text, "count": f"{done} / {total} (current package)"}
+                self.metrics = {"package": text.split("[", 1)[0].strip(), "count": f"{done} / {total}",
+                                "install_index": int(done), "install_total": int(total)}
         speed, size = RATE.search(line), SIZE.search(line)
         percent = PERCENT.search(line)
         if not installing and (speed or (percent and (TRANSFER.search(line) or line.startswith("#")))):
@@ -329,6 +354,8 @@ class Run:
             if count:
                 self.metrics["package"] = count[3].split("|", 1)[0].strip()
                 self.metrics["count"] = f"{count[1]} / {count[2]} (current transfer)"
+            elif self.queue.get("native") and size and size.start():
+                self.metrics["package"] = line[:size.start()].strip()
         if re.search(r"==> (?:Starting (?:build|prepare)\(\)|Making package)", line):
             self.status = "Building"
             self.metrics = {}
@@ -421,10 +448,11 @@ class Run:
 
     def state(self, after):
         now = self.finished or time.monotonic()
+        redact_output = self.system or self.queue.get("native")
         return dict(
             status="Waiting for Input" if self.prompt else "Cancelling" if self.cancelled and self.fd is not None else self.status,
-            component=self.component, latest=self.latest, partial=clean(self.pending),
-            prompt=self.prompt.removeprefix("@@ask\t"), secret=self.secret,
+            component=self.component, latest=self.latest, partial=redact(clean(self.pending)) if redact_output else clean(self.pending),
+            prompt=(redact(self.prompt) if redact_output else self.prompt).removeprefix("@@ask\t"), secret=self.secret,
             phase=self.phase, total=self.total, completed=self.completed,
             elapsed=int(now - self.started), idle=int(now - self.last_event),
             active=int(now - self.last_activity), processes=sorted({row[2] for row in self.children}),
@@ -452,9 +480,150 @@ class Run:
             self.append("Could not save report on disk. Use Export Installation Report while this window is open.")
 
 
+class SystemUpdates:
+    def __init__(self, pm):
+        self.pm = pm
+        self.work = None
+        self.checker = None
+        self.plan = None
+        self.approval = None
+        self.mode = "balanced"
+        self.run = None
+        self.operation = None
+        self.source = None
+        self.last_saved = None
+
+    def active(self):
+        return self.run is not None and self.run.exit_code is None
+
+    def command(self, operation):
+        return [sys.executable, str(HERE / "system_updates.py"), operation, self.pm,
+                self.work.name, "--mode", self.mode]
+
+    def check(self, mode):
+        if not isinstance(mode, str) or mode not in DOWNLOAD_MODES:
+            raise ValueError("Unknown package download mode.")
+        if self.active() or self.checker:
+            raise ValueError("Wait for the current system update operation.")
+        self.invalidate()
+        self.mode = mode
+        self.work = tempfile.TemporaryDirectory(prefix="serpantinum-updates-")
+        self.checker = subprocess.Popen(self.command("check"), stdin=subprocess.DEVNULL,
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                        start_new_session=True)
+
+    def invalidate(self):
+        self.plan = self.approval = None
+        if self.checker:
+            if self.checker.poll() is None:
+                try:
+                    os.killpg(self.checker.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                self.checker.wait()
+            self.checker = None
+        if self.work:
+            self.work.cleanup()
+            self.work = None
+
+    def start(self, operation, data):
+        if self.active() or self.checker or not self.plan or not self.work:
+            raise ValueError("Wait for the current check and review its results.")
+        if self.plan.get("live", True):
+            raise ValueError("System changes are disabled in a Live session.")
+        command = self.command(operation)
+        if operation == "upgrade":
+            if not self.approval or data.get("approval") != self.approval:
+                raise ValueError("Check updates and approve the current system plan.")
+            if data.get("snapshot") is True:
+                if not self.plan["snapshot"]:
+                    raise ValueError("No supported Btrfs snapshot is configured.")
+                command.append("--snapshot")
+        elif operation == "additional":
+            source = data.get("source")
+            if data.get("confirm") is not True or source not in self.plan["actions"]:
+                raise ValueError("The selected update source is unavailable.")
+            if source == "aur" and (self.plan.get("error") or self.plan.get("packages") != []):
+                raise ValueError("Check that the repository packages are current before updating AUR.")
+            command.extend(["--source", source])
+        elif operation == "reboot":
+            if data.get("confirm") is not True or self.plan.get("reboot") not in {"required", "kernel_changed"}:
+                raise ValueError("Explicit confirmation is required to reboot.")
+        else:
+            raise ValueError("Unknown system update action.")
+        self.run = Run(command, system=True)
+        self.operation = operation
+        self.source = data.get("source") if operation == "additional" else None
+        self.approval = None
+        self.last_saved = None
+
+    def update(self):
+        if self.checker and self.checker.poll() is not None:
+            self.checker = None
+            try:
+                self.plan = json.loads((Path(self.work.name) / "plan.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                self.plan = {"error": "The update check did not produce a result."}
+            if (not self.plan.get("error") and not self.plan.get("live") and self.plan.get("packages")
+                    and self.plan.get("download") is not None
+                    and all(row["free"] >= row["required"] for row in self.plan["disks"])):
+                self.approval = secrets.token_urlsafe(18)
+        if not self.run or self.last_saved == self.run.path:
+            return
+        self.run.update()
+        if self.run.exit_code is None:
+            return
+        record = dict(id=Path(self.run.path).name, date=int(time.time()), operation=self.operation, source=self.source,
+                      pm=self.pm, status=self.run.status, code=self.run.exit_code,
+                      plan=self.plan, report=self.run.report())
+        try:
+            atomic_text(Path(self.run.path + ".history.json"), json.dumps(record, ensure_ascii=False))
+        except OSError:
+            record["history_error"] = "Could not save system update history."
+        self.last_saved = self.run.path
+        if self.operation in {"upgrade", "additional"} and self.run.exit_code == 0:
+            self.check(self.mode)
+
+    def state(self, after):
+        return dict(pm=self.pm, checking=self.checker is not None, plan=self.plan, mode=self.mode,
+                    approval=self.approval, operation=self.operation,
+                    run=self.run.state(after) if self.run else None)
+
+    def history(self):
+        files = sorted(installer_state_dir().glob("system-update.*.log.history.json"),
+                       key=lambda file: file.stat().st_mtime, reverse=True)
+        rows = []
+        for file in files[:50]:
+            try:
+                entry = json.loads(file.read_text(encoding="utf-8"))
+                rows.append({key: entry[key] for key in ("id", "date", "operation", "source", "pm", "status", "code")})
+            except (OSError, ValueError, KeyError):
+                continue
+        return rows
+
+    def report(self, name):
+        if not re.fullmatch(r"system-update\.[a-z0-9_]+\.log", name):
+            raise ValueError("Unknown system update report.")
+        path = installer_state_dir() / name
+        record = json.loads(path.with_name(name + ".history.json").read_text(encoding="utf-8"))
+        record["journal"] = path.read_text(encoding="utf-8")
+        return record
+
+    def close(self):
+        if self.active():
+            self.run.cancel()
+            while self.active():
+                self.update()
+                time.sleep(0.1)
+        self.invalidate()
+
+
 class Manager:
     def __init__(self):
         self.inventory = probe()
+        self.updates = SystemUpdates(self.inventory["meta"][0][2])
+        self.graphical = False
+        self.updates_only = False
         self.plan = None
         self.review_key = None
         self.active_plan = None
@@ -522,6 +691,8 @@ class Manager:
         return records
 
     def start(self, mode="start", approval=None):
+        if self.updates.active():
+            raise ValueError("Wait for the system update before starting the desktop installer.")
         if self.run and self.run.exit_code is None:
             raise ValueError("An installation is already running.")
         resume = self.review_resume
@@ -536,6 +707,8 @@ class Manager:
             plan = self.plan
             self.plan = self.review_key = None
         self.run = Run(backend_args("--manager-run", plan, resume))
+        if self.graphical:
+            self.updates.invalidate()
         self.active_plan = plan
         self.resume_phase = resume
         self.saved_phase = None
@@ -559,6 +732,7 @@ class Manager:
                          stderr=subprocess.DEVNULL)
 
     def update(self):
+        self.updates.update()
         if not self.run:
             return
         self.run.update()
@@ -570,6 +744,8 @@ class Manager:
             self.last_snapshot = now
         if self.run.exit_code is not None and not self.launch_checked:
             self.launch_checked = True
+            if self.graphical:
+                self.updates.check(self.updates.mode)
             if self.run.exit_code == 0 and not self.run.cancelled and "launch" in self.active_plan["options"]:
                 try:
                     self.launch()
@@ -577,6 +753,7 @@ class Manager:
                     self.launch_error = str(exc)
 
     def cancel_and_wait(self):
+        self.updates.close()
         if self.run and self.run.exit_code is None:
             self.run.cancel()
             while self.run.exit_code is None:
@@ -593,8 +770,13 @@ def report_text(report):
     transactions = report["transactions"] or [report["current"]]
     for number, transaction in enumerate(transactions, 1):
         packages = transaction.get("packages", [])
+        if transaction.get("native"):
+            lines.extend([f"Manager: {transaction['backend']} · parallel downloads {transaction['limit']}",
+                          "Targets: " + " ".join(transaction.get("targets", [])),
+                          f"Native cache: {transaction.get('native_cache', '')}"])
         lines.extend([f"Transaction {number}: {transaction.get('stage', 'unknown')}",
-                      f"Total: {len(packages)}", transaction.get("error", "")])
+                      f"Total: {transaction.get('total') or 'see native journal' if transaction.get('native') else len(packages)}",
+                      transaction.get("error", "")])
         for label in ("download", "verification", "installation"):
             lines.append(f"{label.title()}: {transaction.get(label, 'PENDING')}")
         lines.extend(transaction.get("native_errors", []))
@@ -788,6 +970,7 @@ class Handler(BaseHTTPRequestHandler):
             "/": ("index.html", "text/html; charset=utf-8"),
             "/installer.css": ("installer.css", "text/css; charset=utf-8"),
             "/installer.js": ("installer.js", "text/javascript; charset=utf-8"),
+            "/system-updates.js": ("system-updates.js", "text/javascript; charset=utf-8"),
         }
         if path in assets:
             name, mime = assets[path]
@@ -799,7 +982,18 @@ class Handler(BaseHTTPRequestHandler):
         manager = self.server.manager
         if path == "/inventory":
             self.server.connected = True
-            self.send(200, dict(inventory=manager.inventory, actions=ACTIONS, options=OPTIONS, compositors=COMPOSITORS, saved=manager.saved()))
+            self.send(200, dict(inventory=manager.inventory, actions=ACTIONS, options=OPTIONS,
+                                compositors=COMPOSITORS, saved=manager.saved(), updatesOnly=manager.updates_only))
+        elif path == "/updates/status":
+            after = int(query) if query.isdecimal() and len(query) < 12 else 0
+            self.send(200, manager.updates.state(after))
+        elif path == "/updates/history":
+            self.send(200, manager.updates.history())
+        elif path == "/updates/report":
+            try:
+                self.send(200, manager.updates.report(query))
+            except (OSError, ValueError):
+                self.send(404, {"error": "System update report unavailable."})
         elif path == "/status":
             after = int(query) if query.isdecimal() and len(query) < 12 else 0
             self.send(200, dict(run=manager.run.state(after) if manager.run else None, launchError=manager.launch_error))
@@ -827,6 +1021,11 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(body)
             if not isinstance(data, dict):
                 raise ValueError("Expected an installation request.")
+            if self.path.startswith("/updates/"):
+                self.update_request(manager, self.path.rsplit("/", 1)[-1], data)
+                return
+            if manager.updates_only and self.path != "/close":
+                raise ValueError("Use the original terminal installer for desktop setup on this system.")
             if self.path in {"/review", "/review-saved", "/refresh"} and manager.run and manager.run.exit_code is None:
                 raise ValueError("Wait for the current operation to finish.")
             if self.path in {"/review", "/review-saved"}:
@@ -850,7 +1049,7 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/launch":
                 manager.launch()
             elif self.path == "/close":
-                if manager.run and manager.run.exit_code is None:
+                if manager.updates.active() or (manager.run and manager.run.exit_code is None):
                     raise ValueError("Cancel the operation and wait for it to stop before closing.")
                 self.server.closed = True
             else:
@@ -859,6 +1058,21 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, {"ok": True})
         except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
             self.send(400, {"error": str(exc)})
+
+    def update_request(self, manager, operation, data):
+        updates = manager.updates
+        if manager.run and manager.run.exit_code is None:
+            raise ValueError("Wait for desktop installation to finish.")
+        if operation == "check":
+            updates.check(data.get("mode", "balanced"))
+        elif operation in {"upgrade", "additional", "reboot"}:
+            updates.start(operation, data)
+        elif operation == "answer" and updates.active():
+            updates.run.answer(data.get("answer"), data.get("secret") is True)
+        else:
+            self.send(404, {"error": "Unknown system update action."})
+            return
+        self.send(200, {"ok": True})
 
 
 def desktop(manager):
@@ -879,13 +1093,18 @@ def desktop(manager):
                 return False
         except subprocess.TimeoutExpired:
             pass
+        manager.graphical = True
+        manager.updates.check("balanced")
         startup_deadline = time.monotonic() + 45
         while not server.closed:
             manager.update()
             server.handle_request()
             if not server.connected and (opened.poll() not in {None, 0} or time.monotonic() > startup_deadline):
                 print("Could not open the browser installer. Switching to the terminal interface.", file=sys.stderr)
+                manager.graphical = False
+                manager.updates.close()
                 return False
+        manager.updates.close()
         return True
 
 
@@ -894,6 +1113,7 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--tui", action="store_true")
     mode.add_argument("--check", action="store_true", help="print a read-only inventory and exit")
+    mode.add_argument("--system-updates", action="store_true", help="open the graphical system update manager")
     args = parser.parse_args()
     manager = None
 
@@ -905,10 +1125,14 @@ def main():
         signal.signal(signal.SIGHUP, stop)
     try:
         manager = Manager()
+        manager.updates_only = manager.updates.pm == "void"
         if args.check:
             summary(manager.inventory, packages=True)
         elif not args.tui and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")) and shutil.which("xdg-open") and desktop(manager):
             pass
+        elif args.system_updates:
+            print("Open a graphical session with a default browser to use --system-updates.", file=sys.stderr)
+            return 1
         elif sys.stdin.isatty():
             terminal(manager)
         else:

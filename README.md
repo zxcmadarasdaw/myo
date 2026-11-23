@@ -47,7 +47,9 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/ilyamiro/serpantinum/mas
 ```
 
 > [!NOTE]
-> To update, run the script again and choose "update".
+> To update Serpantinum Desktop, run the script again and choose **Update**.
+
+The graphical installer's **System updates** section checks the distribution's repositories, previews the full system transaction, and records its progress and result. Open it from a checkout with `bash install.sh --system-updates`, including on Void Linux. Live sessions can run the checks. AUR and Flatpak updates have separate actions when the corresponding tools are available.
 
 ---
 

@@ -6,12 +6,19 @@
   <title>Serpantinum Installer</title>
   <link rel="stylesheet" href="/installer.css">
   <script defer src="/installer.js"></script>
+  <script defer src="/system-updates.js"></script>
 </head>
 <body>
   <main>
     <header class="masthead">
       <div><span class="section-title">Installation manager</span><h1>Serpantinum</h1></div>
-      <button id="close" class="quiet">Close installer</button>
+      <div class="header-controls">
+        <select id="installer-language" aria-label="Language">
+          <option value="en">English</option>
+          <option value="ru">Русский</option>
+        </select>
+        <button id="close" class="quiet">Close installer</button>
+      </div>
     </header>
     <section class="system" aria-label="System and version">
       <div><span>Version</span><strong id="version">Loading</strong></div>
@@ -22,7 +29,106 @@
     <p id="error" role="alert" hidden></p>
     <ul id="warnings" class="warnings" hidden></ul>
 
-    <div class="layout">
+    <section id="system-updates" class="panel" aria-labelledby="updates-heading">
+      <div class="heading">
+        <h2 id="updates-heading" data-update-text="heading">System updates</h2>
+        <span id="updates-platform" class="muted"></span>
+      </div>
+      <p id="updates-state" class="status" role="status" data-update-text="checking">Checking repositories…</p>
+      <p id="updates-live" class="warnings" data-update-text="live" hidden></p>
+      <p id="updates-error" class="warnings" role="alert" hidden></p>
+      <dl id="updates-facts"></dl>
+      <div class="buttons">
+        <button id="updates-check" data-update-text="check">Check for updates</button>
+        <button id="updates-install" class="primary" data-update-text="install" disabled>Download and install</button>
+        <button id="updates-details-button" data-update-text="details" aria-expanded="false" aria-controls="updates-details">Details</button>
+        <button id="updates-history-button" data-update-text="history" aria-expanded="false" aria-controls="updates-history">Update history</button>
+      </div>
+      <div id="updates-settings">
+        <label for="updates-mode" data-update-text="mode">Package download mode</label>
+        <select id="updates-mode">
+          <option value="stable">Stable · 1</option>
+          <option value="balanced" selected>Balanced · 4</option>
+          <option value="fast">Fast · 8</option>
+          <option value="adaptive">Adaptive · 1–8</option>
+        </select>
+      </div>
+      <div id="updates-details" class="updates-subsection" hidden>
+        <h3 data-update-text="packages">Transaction packages</h3>
+        <ul id="updates-packages" class="updates-list"></ul>
+        <h3 data-update-text="space">Disk space</h3>
+        <ul id="updates-disks" class="updates-list"></ul>
+        <div id="updates-mirrors" hidden>
+          <h3 data-update-text="mirrorErrors">Repository and mirror diagnostics</h3>
+          <p data-update-text="mirrorHint"></p>
+          <pre id="updates-diagnostics"></pre>
+        </div>
+        <details id="updates-native" hidden>
+          <summary data-update-text="nativePlan">Package manager plan</summary>
+          <pre id="updates-native-text"></pre>
+        </details>
+      </div>
+      <div id="updates-history" class="updates-subsection" hidden>
+        <h3 data-update-text="history">Update history</h3>
+        <ul id="updates-history-list" class="updates-list"></ul>
+        <pre id="updates-history-journal" hidden></pre>
+      </div>
+      <div id="updates-sources" class="updates-subsection" hidden>
+        <h3 data-update-text="additional">Additional sources</h3>
+        <p id="updates-aur-hint" class="muted" data-update-text="noAur" hidden></p>
+        <div class="buttons">
+          <button id="updates-aur" data-update-text="aur" hidden>Update AUR packages</button>
+          <button id="updates-flatpak-user" data-update-text="flatpakUser" hidden>Update user Flatpaks</button>
+          <button id="updates-flatpak-system" data-update-text="flatpakSystem" hidden>Update system Flatpaks</button>
+        </div>
+      </div>
+      <div id="updates-operation" class="updates-subsection" hidden>
+        <h3 data-update-text="progress">Update progress</h3>
+        <p id="updates-stage" role="status"></p>
+        <progress id="updates-progress" aria-labelledby="updates-stage"></progress>
+        <p id="updates-rate" class="muted"></p>
+        <div id="updates-active"></div>
+        <details id="updates-transfer-errors" hidden>
+          <summary data-update-text="mirrorErrors">Repository and mirror diagnostics</summary>
+          <pre id="updates-transfer-log"></pre>
+        </details>
+        <p id="updates-failure" class="warnings" hidden></p>
+        <details id="updates-journal">
+          <summary data-update-text="journal">Package manager journal</summary>
+          <pre id="updates-lines" tabindex="0"></pre>
+        </details>
+        <div id="updates-question" class="question" hidden>
+          <label id="updates-prompt" for="updates-answer"></label>
+          <form id="updates-answer-form" class="answer-row">
+            <input id="updates-answer" autocomplete="off" spellcheck="false">
+            <button class="primary" data-update-text="send">Send response</button>
+          </form>
+        </div>
+        <div class="buttons">
+          <button id="updates-manual" data-update-text="manual" hidden>Respond to a terminal prompt</button>
+          <button id="updates-retry" class="primary" data-update-text="retry" hidden>Recheck and retry</button>
+          <button id="updates-export" data-update-text="export" hidden>Export update report</button>
+        </div>
+      </div>
+      <div class="buttons">
+        <button id="updates-reboot" data-update-text="reboot" hidden>Reboot now</button>
+        <button id="updates-desktop" data-update-text="desktop" hidden>Set up Serpantinum Desktop</button>
+      </div>
+      <dialog id="updates-confirm" class="panel">
+        <h3 id="updates-confirm-title"></h3>
+        <p id="updates-confirm-body"></p>
+        <ul id="updates-confirm-packages" class="updates-list" hidden></ul>
+        <label id="updates-snapshot-choice" hidden>
+          <input id="updates-snapshot" type="checkbox"><span data-update-text="snapshot">Create a Btrfs snapshot with Snapper first</span>
+        </label>
+        <div class="buttons">
+          <button id="updates-approve" class="primary" data-update-text="approve">Confirm</button>
+          <button id="updates-dismiss" data-update-text="dismiss">Back</button>
+        </div>
+      </dialog>
+    </section>
+
+    <div id="desktop-layout" class="layout">
       <section class="panel inventory" aria-labelledby="components-heading">
         <div class="heading">
           <h2 id="components-heading">Components</h2>
@@ -44,8 +150,8 @@
           <h2 id="prepare-heading">Prepare installation</h2>
           <div class="actions" id="actions" aria-label="Action"></div>
           <fieldset id="compositors"><legend>Desktop sessions</legend></fieldset>
-          <details class="settings" open id="settings">
-            <summary>Configuration and optional components</summary>
+          <details class="settings" id="settings">
+            <summary>Advanced options</summary>
             <fieldset id="options" aria-label="Installation options"></fieldset>
             <label for="download-mode">Package download mode</label>
             <select id="download-mode">

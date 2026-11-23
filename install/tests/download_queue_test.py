@@ -11,7 +11,6 @@ import sys
 import tempfile
 import threading
 import time
-import types
 import unittest
 from unittest.mock import Mock, patch
 
@@ -316,61 +315,6 @@ class NativeAdapterTests(unittest.TestCase):
             self.assertIn("-Su", install.call_args.args[0])
             self.assertNotIn("-Sy", install.call_args.args[0])
 
-    def test_dnf5_solver_metadata_and_terra_exclusion(self):
-        pkg = Mock()
-        pkg.get_repo_id.return_value = "fedora"
-        pkg.get_name.return_value = "quickshell"
-        pkg.get_evr.return_value = "1.2-1.fc45"
-        pkg.get_location.return_value = "Packages/q/quickshell.rpm"
-        pkg.get_package_path.return_value = "/cache/fedora/packages/quickshell.rpm"
-        pkg.get_download_size.return_value = len(DATA)
-        pkg.get_checksum.return_value.get_checksum.return_value = hashlib.sha256(DATA).hexdigest()
-        pkg.get_checksum.return_value.get_type_str.return_value = "sha256"
-        pkg.get_remote_locations.return_value = ["https://fedora/Packages/q/quickshell.rpm"]
-        item = Mock()
-        item.get_package.return_value = pkg
-        base, goal, transaction, terra = Mock(), Mock(), Mock(), Mock()
-        terra.get_id.return_value = "terra"
-        goal.resolve.return_value = transaction
-        transaction.get_problems.return_value = 0
-        transaction.get_transaction_packages.return_value = [item]
-        module = types.ModuleType("libdnf5")
-        module.base = types.ModuleType("libdnf5.base")
-        module.repo = types.ModuleType("libdnf5.repo")
-        module.rpm = types.ModuleType("libdnf5.rpm")
-        module.base.Base = Mock(return_value=base)
-        module.base.Goal = Mock(return_value=goal)
-        module.repo.RepoQuery = Mock(return_value=[terra])
-        with tempfile.TemporaryDirectory() as temp, patch.dict(sys.modules, {
-            "libdnf5": module, "libdnf5.base": module.base, "libdnf5.repo": module.repo, "libdnf5.rpm": module.rpm
-        }):
-            backend = dq.Dnf(temp, temp, repo_options=["--disablerepo=terra*"])
-            packages = backend.resolve5(["quickshell"])
-        terra.disable.assert_called_once()
-        goal.add_rpm_install.assert_called_once_with("quickshell")
-        self.assertEqual(packages[0].repository, "fedora")
-        self.assertEqual(packages[0].size, len(DATA))
-        self.assertEqual(packages[0].checksum, hashlib.sha256(DATA).hexdigest())
-
-    def test_dnf4_solver_uses_full_install_set_and_checksum(self):
-        pkg = Mock()
-        pkg.name, pkg.evr, pkg.reponame = "quickshell", "1.2-1.fc45", "updates"
-        pkg.location, pkg.downloadsize = "Packages/q/quickshell.rpm", len(DATA)
-        pkg.chksum = (2, bytes.fromhex(hashlib.sha256(DATA).hexdigest()))
-        pkg.repo.baseurl = ["https://mirror-a", "https://mirror-b"]
-        pkg.remote_location.return_value = "https://mirror-a/Packages/q/quickshell.rpm"
-        pkg.localPkg.return_value = "/cache/quickshell.rpm"
-        base = Mock()
-        base.transaction.install_set = [pkg]
-        dnf, hawkey = types.ModuleType("dnf"), types.ModuleType("hawkey")
-        dnf.Base, hawkey.chksum_name = Mock(return_value=base), Mock(return_value="sha256")
-        with tempfile.TemporaryDirectory() as temp, patch.dict(sys.modules, {"dnf": dnf, "hawkey": hawkey}):
-            packages = dq.Dnf(temp, temp).resolve4(["quickshell"])
-        base.install.assert_called_once_with("quickshell", strict=True)
-        base.resolve.assert_called_once()
-        self.assertEqual(packages[0].repository, "updates")
-        self.assertEqual(len(packages[0].urls), 2)
-
     def test_cachyos_repositories_signatures_and_parallel_policy_preserved(self):
         config = "[options]\nParallelDownloads = 5\nSigLevel = Required DatabaseOptional\n[core]\nServer = https://core\n[cachyos-v3]\nSigLevel = Required\nServer = https://cachy\nCacheServer = https://configured-cache\n"
         with tempfile.TemporaryDirectory() as temp, patch.object(dq, "command") as command:
@@ -415,29 +359,6 @@ class NativeAdapterTests(unittest.TestCase):
                  patch.object(dq.tempfile, "mkdtemp", return_value=temp), patch.object(dq.Path, "rmdir"):
                 backend.install(q, ["quickshell"])
             self.assertIn("-S", install.call_args.args[0])
-
-    def test_dnf_uses_cacheonly_original_targets_and_native_gpg_policy(self):
-        with tempfile.TemporaryDirectory() as temp:
-            p = package()
-            p.filename = "quickshell.rpm"
-            backend = dq.Dnf(temp, temp, repo_options=["--disablerepo=terra"])
-            backend.native_paths[p.filename] = Path(temp) / "repo/packages/quickshell.rpm"
-            q = dq.Queue([p], temp, emit=lambda e: None)
-            (q.cache / p.filename).write_bytes(DATA)
-            with patch.object(dq, "install_command", return_value=0) as install:
-                self.assertEqual(backend.install(q, ["quickshell"]), 0)
-            args = install.call_args.args[0]
-            self.assertIn("--cacheonly", args)
-            self.assertIn("--disablerepo=terra", args)
-            self.assertEqual(args[-2:], ["install", "quickshell"])
-            self.assertNotIn("--nogpgcheck", args)
-            self.assertTrue(backend.native_paths[p.filename].exists())
-
-    def test_unsigned_rpm_is_rejected(self):
-        with tempfile.TemporaryDirectory() as temp, patch.object(dq, "command", return_value="digests OK"):
-            backend = dq.Dnf(temp, temp)
-            with self.assertRaisesRegex(dq.TransferError, "signature"):
-                backend.verify(dq.Queue([package()], temp), ["app"])
 
     def test_manager_consumes_structured_progress_and_exports(self):
         run = manager.Run.__new__(manager.Run)

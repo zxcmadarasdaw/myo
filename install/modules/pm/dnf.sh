@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 PM_BOOTSTRAP_TOOLS=(fzf jq curl git pciutils unzip fontconfig)
-PM_QUEUE_WORKER="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../download_queue.py"
+PM_QUEUE_WORKER="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../native_packages.py"
 source "$(dirname "$PM_QUEUE_WORKER")/modules/download_queue.sh"
 
 PM_EXTRA_PKGS=(jetbrains-mono-fonts fontawesome-6-free-fonts xdg-user-dirs xwayland-satellite pipewire-utils pulseaudio-utils)
@@ -97,12 +97,12 @@ pm_dnf_repo_opts() {
 pm_dnf() {
     local PM_DNF_OPTS
     pm_dnf_repo_opts
-    local operation="" item queue_targets=() queue_options=()
+    local operation="" item refresh=() queue_targets=() queue_options=()
     for item in "$@"; do
         case "$item" in
             install|upgrade) operation="$item" ;;
             -y|--assumeyes) ;;
-            --refresh) ;;
+            --refresh) refresh=(--refresh) ;;
             -*) queue_options+=("$item") ;;
             *) queue_targets+=("$item") ;;
         esac
@@ -110,7 +110,7 @@ pm_dnf() {
     if [ -n "$operation" ] && [ ${#queue_options[@]} -eq 0 ]; then
         local repo_args=()
         for item in "${PM_DNF_OPTS[@]}"; do repo_args+=("--repo-option=$item"); done
-        pm_queue_run dnf --operation "$operation" "${repo_args[@]}" -- "${queue_targets[@]}"
+        pm_queue_run dnf --operation "$operation" "${repo_args[@]}" "${refresh[@]}" -- "${queue_targets[@]}"
         return
     fi
     if [ "${MANAGED_INSTALL:-false}" = true ]; then
@@ -171,6 +171,19 @@ pm_full_upgrade() {
 
 pm_resolve_name() {
     echo "${PM_PKG_MAP[$1]:-$1}"
+}
+
+pm_dnf_target() {
+    local spec="$1" alternative available
+    if [[ "$spec" == *'|'* ]]; then
+        while IFS= read -r alternative; do
+            available="$(pm_dnf_query --setopt=assumeno=True repoquery --available --quiet "$alternative")" || return 1
+            if [ -n "$available" ]; then printf '%s\n' "$alternative"; return 0; fi
+        done < <(tr '|' '\n' <<< "$spec")
+        echo "No configured repository provides any of: $spec" >&2
+        return 1
+    fi
+    printf '%s\n' "$spec"
 }
 
 pm_matugen_major() {
@@ -294,13 +307,14 @@ pm_install_release_binary() {
 
 pm_install_batch() {
     PM_BATCH_LEFT=("$@")
-    local batch=() names=() rest=() pkg
+    local batch=() names=() rest=() pkg target
     for pkg in "$@"; do
         if [ -n "${PM_RELEASE_MAP[$pkg]:-}" ] || [ -n "${PM_COPR_MAP[$pkg]:-}" ] || [ -n "${PM_TERRA_MAP[$pkg]:-}" ]; then
             rest+=("$pkg")
         else
             batch+=("$pkg")
-            names+=("$(pm_resolve_name "$pkg" | cut -d'|' -f1)")
+            target="$(pm_dnf_target "$(pm_resolve_name "$pkg")")" || return 1
+            names+=("$target")
         fi
     done
     [ ${#batch[@]} -gt 0 ] || return 0
@@ -327,7 +341,7 @@ pm_install_pkg() {
         return
     fi
     spec="$(pm_resolve_name "$pkg")"
-    target="${spec%%|*}"
+    target="$(pm_dnf_target "$spec")" || return 1
 
     # Only PM_TERRA_MAP packages may use Terra; dynamic scope covers the
     # pm_dnf calls below.
@@ -386,10 +400,10 @@ pm_remove_conflicting_pkg() {
 # Try the COPR build, which tracks upstream releases.
 pm_upgrade_hyprland() {
     pm_enable_copr "${PM_COPR_MAP[hyprland]}" || return 1
-    pm_dnf upgrade -y --refresh hyprland || pm_dnf install -y --refresh hyprland
+    pm_dnf upgrade -y --refresh hyprland
 }
 
 pm_upgrade_quickshell() {
-    pm_enable_copr "${PM_COPR_MAP[quickshell]}" || true
-    pm_dnf upgrade -y --refresh quickshell || true
+    pm_enable_copr "${PM_COPR_MAP[quickshell]}" || return 1
+    pm_dnf upgrade -y --refresh quickshell
 }

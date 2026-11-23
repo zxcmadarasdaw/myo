@@ -341,7 +341,7 @@ EOF
             source "$ROOT/install/modules/pm/dnf.sh"
             python3() {
                 [ "$1" != -c ] || return 0
-                [[ "$1" == */download_queue.py ]] || return 2
+                [[ "$1" == */native_packages.py ]] || return 2
                 shift 2
                 local operation=install opts=() targets=()
                 while (( $# )); do
@@ -453,7 +453,7 @@ test_pacman_provider() (
     pacman-conf() { [ "$1" = DBPath ] && echo "$home/db"; }
     mkdir -p "$home/db"
     python3() {
-        [[ "$1" == */download_queue.py && "$2" == pacman && "$3" == -- ]] || return 2
+        [[ "$1" == */native_packages.py && "$2" == pacman && "$3" == -- ]] || return 2
         shift 3
         sudo pacman -S --needed "$@"
     }

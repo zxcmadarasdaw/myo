@@ -4,7 +4,7 @@ PM_BOOTSTRAP_TOOLS=(fzf jq curl git pciutils unzip fontconfig)
 PM_EXTRA_PKGS=(qt6-multimedia-ffmpeg polkit python-yaml iproute2 nftables)
 PM_AUDIO_BUILD_PKGS=(base-devel pkgconf pipewire)
 PM_PACMAN_SYNCED=false
-PM_QUEUE_WORKER="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../download_queue.py"
+PM_QUEUE_WORKER="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../native_packages.py"
 source "$(dirname "$PM_QUEUE_WORKER")/modules/download_queue.sh"
 
 pm_pacman_ready() {

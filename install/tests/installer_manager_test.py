@@ -11,7 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -105,9 +105,49 @@ class ManagerTests(unittest.TestCase):
                     headers["Origin"] = server.origin
                     with urlopen(Request(endpoint, data, headers), timeout=3) as response:
                         self.assertTrue(json.load(response)["approval"])
+                    with urlopen(Request(server.origin + "/updates/status", headers=headers), timeout=3) as response:
+                        self.assertEqual(json.load(response)["pm"], "dnf")
+                    with self.assertRaises(HTTPError) as rejected:
+                        urlopen(Request(server.origin + "/updates/upgrade", b'{"approval":"fake"}',
+                                        headers), timeout=3)
+                    with rejected.exception as response:
+                        self.assertEqual(response.code, 400)
                 finally:
                     server.shutdown()
                     thread.join(timeout=3)
+
+    def test_system_approval_is_separate_one_time_and_disallowed_on_live(self):
+        updates = installer.SystemUpdates("pacman")
+        with tempfile.TemporaryDirectory() as work, patch.object(installer, "Run") as run:
+            updates.work = type("Work", (), {"name": work})()
+            updates.plan = dict(live=True, snapshot=True, packages=[{"name": "example"}])
+            updates.approval = "system-plan"
+            with self.assertRaisesRegex(ValueError, "Live"):
+                updates.start("upgrade", {"approval": "system-plan"})
+            self.assertFalse(run.called)
+            updates.plan["live"] = False
+            with self.assertRaisesRegex(ValueError, "approve"):
+                updates.start("upgrade", {"approval": "desktop-plan"})
+            updates.start("upgrade", {"approval": "system-plan", "snapshot": True})
+            self.assertTrue(run.call_args.kwargs["system"])
+            self.assertIn("--snapshot", run.call_args.args[0])
+            self.assertIsNone(updates.approval)
+
+    def test_system_history_contains_the_plan_and_native_journal(self):
+        updates = installer.SystemUpdates("dnf")
+        path = installer.installer_state_dir() / "system-update.fixture.log"
+        path.write_text("Mirror unavailable\n", encoding="utf-8")
+        updates.operation = "upgrade"
+        updates.plan = {"packages": [{"name": "expat"}]}
+        updates.run = Mock(path=str(path), status="Failed", exit_code=1)
+        updates.run.report.return_value = {"exit_code": 1}
+        updates.update()
+        self.assertEqual(updates.history()[0]["code"], 1)
+        report = updates.report(path.name)
+        self.assertEqual(report["plan"], updates.plan)
+        self.assertEqual(report["journal"], "Mirror unavailable\n")
+        with self.assertRaises(ValueError):
+            updates.report("../fixture.log")
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "requires a Linux PTY")

@@ -15,7 +15,7 @@ manager_options() {
     local comps="$1" options="$2" comp
     OPT_SDDM=false SDDM_WAYLAND=false REPLACE_DM=false
     OPT_SERVICES=false OPT_CONFIG=false OPT_REPLACE_CONFIG=false OPT_BACKUP=false OPT_GLOBAL_LAUNCHERS=false
-    OPT_BUILD=false OPT_AUR=false OPT_SYNC=false OPT_VPN=false OPT_ENGINES=false
+    OPT_BUILD=false OPT_AUR=false OPT_SYNC=false OPT_VPN=false OPT_ENGINES=false OPT_EXTRAS=false
     OPT_FONTS=false OPT_WALLPAPERS=false INSTALL_FULL_WALLPAPERS=false ENABLE_TELEMETRY=false
     [[ ",$options," != *,sddm,* ]] || OPT_SDDM=true
     [[ ",$options," != *,wayland,* ]] || SDDM_WAYLAND=true
@@ -30,6 +30,7 @@ manager_options() {
     [[ ",$options," != *,sync,* ]] || OPT_SYNC=true
     [[ ",$options," != *,vpn,* ]] || OPT_VPN=true
     [[ ",$options," != *,engines,* ]] || OPT_ENGINES=true
+    [[ ",$options," != *,extras,* ]] || OPT_EXTRAS=true
     [[ ",$options," != *,fonts,* ]] || OPT_FONTS=true
     [[ ",$options," != *,wallpapers,* ]] || OPT_WALLPAPERS=true
     [[ ",$options," != *,full-wallpapers,* ]] || INSTALL_FULL_WALLPAPERS=true
@@ -72,6 +73,10 @@ manager_space() {
 
 manager_pacman_preflight() {
     local message pkg files bytes cache
+    if [ "$OPT_SYNC" = true ] && [ "${MANAGER_LIVE:-false}" = true ]; then
+        manager_record error 'Full upgrades are disabled in Live mode. Use an installed system or a current Live image with matching repository databases.'
+        return 1
+    fi
     [ "$OPT_SYNC" != true ] && [ ${#MANAGER_MISSING[@]} -gt 0 ] || return 0
     if ! message="$(pm_pacman_ready 2>&1)"; then
         manager_record error "${message:-Failed to read pacman repository databases.}"
@@ -89,15 +94,19 @@ manager_pacman_preflight() {
         fi
     done
     [ ${#official[@]} -gt 0 ] || return 0
-    if files="$(pacman -Sp --needed --print-format 'SP-SIZE:%s' "${official[@]}" </dev/null 2>/dev/null)"; then
-        bytes="$(awk -F: '/^SP-SIZE:[0-9]+$/ { sum += $2 } END { printf "%.0f", sum }' <<< "$files")"
-        if (( bytes > 0 )); then
-            cache="${XDG_CACHE_HOME:-$HOME/.cache}/serpantinum-installer/packages/pacman"
-            manager_record change "Pacman estimates $(( (bytes + 1048575) / 1048576 )) MiB of package downloads from current databases."
-            if ! manager_disk "$cache" "$(( (bytes + 1023) / 1024 ))"; then
-                manager_record error "The pacman cache at $cache has insufficient free space for the estimated downloads."
-                return 1
-            fi
+    if ! files="$(pacman -Sp --needed --print-format 'SP-SIZE:%s' "${official[@]}" </dev/null 2>&1)"; then
+        manager_record error "Pacman could not resolve all required dependencies. $files"
+        return 1
+    fi
+    bytes="$(awk -F: '/^SP-SIZE:[0-9]+$/ { sum += $2 } END { printf "%.0f", sum }' <<< "$files")"
+    if (( bytes > 0 )); then
+        cache="$(pacman-conf CacheDir)" || return 1
+        cache="${cache%%$'\n'*}"
+        cache="${cache:-/var/cache/pacman/pkg}"
+        manager_record change "Pacman estimates $(( (bytes + 1048575) / 1048576 )) MiB of package downloads from current databases."
+        if ! manager_disk "$cache" "$(( (bytes + 1023) / 1024 ))"; then
+            manager_record error "The pacman cache at $cache has insufficient free space for the estimated downloads."
+            return 1
         fi
     fi
 }
@@ -192,6 +201,18 @@ manager_dependency_plan() {
     local pkg tool result
     local targets=()
     collect_dependency_targets targets
+    if [ "${OPT_EXTRAS:-false}" != true ]; then
+        local required=()
+        for pkg in "${targets[@]}"; do
+            case "$pkg" in
+                zbar|tesseract|tesseract-data-eng|cliphist|ddcutil|fastfetch|satty|gpu-screen-recorder|wf-recorder) ;;
+                xwayland-satellite)
+                    if [[ " ${SELECTED_COMPOSITORS[*]} " == *" niri "* ]]; then required+=("$pkg"); fi ;;
+                *) required+=("$pkg") ;;
+            esac
+        done
+        targets=("${required[@]}")
+    fi
     local bootstrap=(jq curl git unzip fontconfig)
     for pkg in "${bootstrap[@]}"; do
         tool="$pkg"
@@ -202,10 +223,11 @@ manager_dependency_plan() {
     result="$(pm_missing_pkgs "${DEPENDENCY_TARGETS[@]}")" || return 1
     MANAGER_MISSING=()
     if [ -n "$result" ]; then mapfile -t MANAGER_MISSING <<< "$result"; fi
-    if command -v quickshell >/dev/null && ! quickshell_is_current; then
+    if [[ " ${MANAGER_MISSING[*]} " != *" quickshell "* ]] &&
+        command -v quickshell >/dev/null && ! quickshell_is_current; then
         MANAGER_MISSING+=(quickshell)
     fi
-    if [[ " ${SELECTED_COMPOSITORS[*]} " == *" hyprland "* ]] &&
+    if [[ " ${SELECTED_COMPOSITORS[*]} " == *" hyprland "* && " ${MANAGER_MISSING[*]} " != *" hyprland "* ]] &&
         hyprland_binary >/dev/null && ! version_at_least "$(hyprland_version)" "$MIN_HYPRLAND_LUA_VERSION"; then
         MANAGER_MISSING+=(hyprland)
     fi
@@ -217,6 +239,7 @@ manager_probe() {
     manager_record selected "${SELECTED_COMPOSITORS[*]}"
     manager_record display "$(active_display_manager)"
     if [ "$MANAGER_LIVE" = true ]; then
+        manager_record session live
         manager_record warning 'Live/overlay session detected. Verify persistence and space before system changes.'
     fi
     if [ "$PACKAGED_INSTALL" = true ]; then
@@ -334,16 +357,17 @@ manager_dnf_packages() {
     pm_install_batch "${MANAGER_MISSING[@]}" </dev/tty || return 1
     for pkg in "${PM_BATCH_LEFT[@]}"; do
         printf '@@activity\tInstalling\t%s\n' "$pkg"
-        if [ "$pkg" = hyprland ] && hyprland_binary >/dev/null &&
-            ! version_at_least "$(hyprland_version)" "$MIN_HYPRLAND_LUA_VERSION"; then
-            pm_upgrade_hyprland </dev/tty || return 1
-            continue
+        if ! pm_is_installed "$pkg" || [[ "$pkg" != hyprland && "$pkg" != quickshell ]]; then
+            pm_install_pkg "$pkg" 1 </dev/tty || return 1
         fi
-        if [ "$pkg" = quickshell ] && command -v quickshell >/dev/null && ! quickshell_is_current; then
-            pm_upgrade_quickshell </dev/tty || return 1
-            continue
-        fi
-        pm_install_pkg "$pkg" 1 </dev/tty || return 1
+        case "$pkg" in
+            hyprland)
+                if ! version_at_least "$(hyprland_version)" "$MIN_HYPRLAND_LUA_VERSION"; then
+                    pm_upgrade_hyprland </dev/tty || return 1
+                fi ;;
+            quickshell)
+                if ! quickshell_is_current; then pm_upgrade_quickshell </dev/tty || return 1; fi ;;
+        esac
     done
 }
 

@@ -13,6 +13,8 @@ from download_queue import Package
 
 DESKTOP = Path(__file__).resolve().parents[1] / "desktop"
 mode = "failed"
+update_started = False
+live = "--live" in sys.argv
 
 
 def state():
@@ -62,21 +64,39 @@ class Handler(BaseHTTPRequestHandler):
                            actions={"install": "Install"}, compositors=["hyprland"], options={}))
         elif path == "/status":
             self.send(state())
+        elif path == "/updates/status":
+            run = None
+            if update_started:
+                run = dict(state()["run"], path="/tmp/system-update.fixture.log", phase=0, total=None)
+            self.send(dict(pm="pacman", mode="balanced", checking=False, run=run, operation="upgrade",
+                           approval=None if live or update_started else "preview-only",
+                           plan=dict(os="CachyOS · VISUAL TEST", live=live, reboot="kernel_changed",
+                                     download=3 * 1048576, change=225 * 1024, repos=["fixture-repository"],
+                                     disks=[dict(paths=["/var", "/usr"], free=32 * 1048576, required=10 * 1048576)],
+                                     packages=[dict(name="linux-cachyos", old="1", version="2", repo="fixture-repository")],
+                                     snapshot=not live, actions=["aur", "flatpak-user"])))
+        elif path == "/updates/history":
+            self.send([dict(id="system-update.fixture.log", date=1700000000, operation="upgrade", status="Completed")])
+        elif path == "/updates/report":
+            self.send(dict(id="system-update.fixture.log", journal="VISUAL TEST REPORT"))
         elif path == "/report.json":
             self.send(state()["run"])
         elif path == "/report.txt":
             self.send(b"VISUAL TEST REPORT - synthetic fixture", "text/plain")
-        elif path in {"/", "/installer.js", "/installer.css"}:
+        elif path in {"/", "/installer.js", "/installer.css", "/system-updates.js"}:
             file = DESKTOP / ("index.html" if path == "/" else path[1:])
-            self.send(file.read_bytes(), {".html": "text/html", ".js": "text/javascript", ".css": "text/css"}[file.suffix])
+            self.send(file.read_bytes(), {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+                                          ".css": "text/css; charset=utf-8"}[file.suffix])
         else:
             self.send_error(404)
 
     def do_POST(self):
-        global mode
+        global mode, update_started
         self.rfile.read(int(self.headers.get("Content-Length", "0")))
-        if self.path == "/retry":
+        if self.path in {"/retry", "/updates/upgrade"}:
             mode = "downloading"
+        if self.path == "/updates/upgrade":
+            update_started = True
         self.send({})
 
 

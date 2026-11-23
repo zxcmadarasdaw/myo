@@ -114,7 +114,7 @@ set -e
 
 case "${1:-}" in
     -h|--help)
-        echo 'Usage: bash install.sh [--tui | --check | --vpn-check | --vpn-only | --legacy-tui | --session-check | --return-session ID]'
+        echo 'Usage: bash install.sh [--tui | --check | --system-updates | --vpn-check | --vpn-only | --legacy-tui | --session-check | --return-session ID]'
         exit 0 ;;
 esac
 
@@ -165,10 +165,10 @@ if [[ -z "$PROJECT_ROOT" || ! -f "$PROJECT_ROOT/install/modules/deps.sh" || ! -d
     exit
 fi
 
-if [[ "$PM_NAME" != void ]]; then
+if [[ "$PM_NAME" != void || "${1:-}" == --system-updates ]]; then
     case "${1:-}" in
         --manager-probe|--manager-run|--legacy-tui|--vpn-check|--vpn-only) ;;
-        ''|--tui|--check)
+        ''|--tui|--check|--system-updates)
             if ! command -v python3 >/dev/null; then
                 if [[ "${1:-}" == --check ]]; then
                     exec bash "${BASH_SOURCE[0]}" --manager-probe inspect auto

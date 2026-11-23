@@ -4,7 +4,6 @@
 No package operation runs as part of an individual download. JSON events carry
 measured bytes; command output is used only for diagnostics, never progress.
 """
-import argparse
 import base64
 from collections import deque
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
@@ -47,7 +46,7 @@ def reason(message, code=None):
         ("could not resolve|name or service|dns", "DNS resolution failure"),
         ("reset by peer|connection reset", "Connection reset"),
         ("404", "HTTP 404"), ("403", "HTTP 403"),
-        (r"\b(?:ssl|tls|certificate)\b", "SSL/TLS error"),
+        (r"\b(?:ssl|tls)(?:\b|_)|\bcertificate\b", "SSL/TLS error"),
         ("timeout|timed out|too slow", "Connection timeout"),
         ("conflict|unsatisfied|nothing provides|dependencies", "Dependency conflict"),
         ("target not found|no match|package not found", "Package not found"),
@@ -437,8 +436,9 @@ def install_command(args, queue):
 
 
 class Pacman:
-    def __init__(self, cache, work, upgrade=False, repo_options=(), parallel=4):
+    def __init__(self, cache, work, upgrade=False, repo_options=(), parallel=4, dbpath=None):
         self.cache = Path(cache)
+        self.db_args = ["--dbpath", str(dbpath)] if dbpath else []
         self.config = Path(work) / "pacman.conf"
         self.offline = Path(work) / "cache-only.conf"
         self.empty = Path(work) / "resolve"
@@ -466,7 +466,7 @@ class Pacman:
     def resolve(self, targets):
         # %s is bytes left to download, so resolve against an empty cache to
         # obtain the full archive size even when the real cache already has it.
-        output = command(["pacman", "--config", str(self.config), "--cachedir", str(self.empty),
+        output = command(["pacman", "--config", str(self.config), *self.db_args, "--cachedir", str(self.empty),
                           "-Spu" if self.upgrade else "-Sp", "--needed", "--print-format",
                           "SPQ:%n\t%v\t%r\t%s\t%f\t%h\t%l\t%g", "--", *targets])
         packages = []
@@ -539,7 +539,7 @@ class Pacman:
         scratch = Path(tempfile.mkdtemp(prefix="serpantinum-alpm-", dir="/var/tmp"))
         try:
             scratch.chmod(0o711)
-            args = ["sudo", "pacman", "--config", str(self.offline), "--cachedir", str(scratch),
+            args = ["sudo", "pacman", "--config", str(self.offline), *self.db_args, "--cachedir", str(scratch),
                     "--cachedir", str(self.staged), *flags, "--needed", "--", *targets]
             return command(args) if download_only else install_command(args, queue)
         finally:
@@ -565,134 +565,6 @@ class Pacman:
 
     def install(self, queue, targets):
         return self.native(queue, targets, download_only=False)
-
-
-class Dnf:
-    """Use the host's matching DNF solver; curl consumes its repository metadata."""
-    def __init__(self, cache, work, upgrade=False, repo_options=()):
-        self.cache = Path(cache)
-        self.repo_options = list(repo_options)
-        self.disabled = [s.split("=", 1)[1] for s in repo_options if s.startswith("--disablerepo=")]
-        self.api = None
-        self.native_paths = {}
-        self.operation = "install"
-        self.metadata = self.cache / ("metadata5" if shutil.which("dnf5") else "metadata4")
-
-    def resolve(self, targets):
-        if shutil.which("dnf5"):
-            return self.resolve5(targets)
-        return self.resolve4(targets)
-
-    def resolve5(self, targets):
-        try:
-            import libdnf5
-            import libdnf5.base
-            import libdnf5.repo
-            import libdnf5.rpm
-        except ImportError as exc:
-            raise TransferError("DNF5 Python API unavailable; install python3-libdnf5 with the native package manager and retry") from exc
-        import fnmatch
-        self.api = base = libdnf5.base.Base()
-        base.load_config()
-        config = base.get_config()
-        config.cachedir = str(self.metadata)
-        config.max_parallel_downloads = 1
-        config.timeout = 15
-        config.retries = 1
-        base.setup()
-        sack = base.get_repo_sack()
-        sack.create_repos_from_system_configuration()
-        for repo in libdnf5.repo.RepoQuery(base):
-            if any(fnmatch.fnmatch(repo.get_id(), pattern) for pattern in self.disabled):
-                repo.disable()
-        sack.update_and_load_enabled_repos(True)
-        goal = libdnf5.base.Goal(base)
-        for target in targets:
-            (goal.add_rpm_upgrade if self.operation == "upgrade" else goal.add_rpm_install)(target)
-        transaction = goal.resolve()
-        if transaction.get_problems():
-            raise TransferError("Dependency conflict: " + str(transaction.get_resolve_logs_as_strings()))
-        packages = []
-        for item in transaction.get_transaction_packages():
-            pkg = item.get_package()
-            if pkg.get_repo_id() == "@System":
-                continue
-            checksum = pkg.get_checksum()
-            self.native_paths[Path(pkg.get_location()).name] = Path(pkg.get_package_path())
-            packages.append(Package(pkg.get_name(), pkg.get_evr(), pkg.get_repo_id(), pkg.get_download_size(),
-                                    Path(pkg.get_location()).name, checksum.get_checksum(),
-                                    list(pkg.get_remote_locations()), checksum.get_type_str().lower()))
-        return packages
-
-    def resolve4(self, targets):
-        try:
-            import dnf
-            import hawkey
-        except ImportError as exc:
-            raise TransferError("DNF Python API unavailable; install python3-dnf with the native package manager and retry") from exc
-        self.api = base = dnf.Base()
-        base.conf.read()
-        base.conf.cachedir = str(self.metadata)
-        base.conf.max_parallel_downloads = 1
-        base.conf.timeout = 15
-        base.conf.retries = 1
-        base.read_all_repos()
-        for pattern in self.disabled:
-            for repo in base.repos.get_matching(pattern):
-                repo.disable()
-        base.fill_sack(load_system_repo=True)
-        for target in targets:
-            if self.operation == "upgrade":
-                base.upgrade(target)
-            else:
-                base.install(target, strict=True)
-        base.resolve()
-        packages = []
-        for pkg in base.transaction.install_set:
-            algorithm, digest = pkg.chksum
-            self.native_paths[Path(pkg.location).name] = Path(pkg.localPkg())
-            urls = [pkg.remote_location()]
-            urls += [s.rstrip("/") + "/" + pkg.location for s in pkg.repo.baseurl]
-            packages.append(Package(pkg.name, pkg.evr, pkg.reponame, pkg.downloadsize,
-                                    Path(pkg.location).name, bytes(digest).hex(), list(dict.fromkeys(urls)),
-                                    hawkey.chksum_name(algorithm)))
-        return packages
-
-    def seed(self, queue):
-        # DNF's own caches are searched without modifying them. Every candidate is hashed.
-        queue.extra_space = sum(p.size or 0 for p in queue.packages
-                                if p.filename in self.native_paths and not queue.valid(p, self.native_paths[p.filename]))
-        roots = [Path("/var/cache/libdnf5"), Path("/var/cache/dnf"), self.cache]
-        for pkg in queue.packages:
-            target = self.cache / pkg.filename
-            if queue.valid(pkg, target):
-                continue
-            for root in roots:
-                match = next((p for p in root.glob("**/" + pkg.filename) if queue.valid(pkg, p)), None)
-                if match:
-                    queue.copy_verified(pkg, match, target)
-                    break
-
-    def verify(self, queue, targets):
-        for pkg in queue.packages:
-            # rpm checks both embedded digests and signatures against the system keyring.
-            output = command(["rpmkeys", "--checksig", str(queue.cache / pkg.filename)])
-            if "signatures OK" not in output:
-                raise TransferError(f"Invalid package signature: {pkg.name}; {output}")
-
-    def install(self, queue, targets):
-        # Feed the host's native cache layout, then execute the original targets.
-        # This preserves install reasons, repository GPG policy and native solving.
-        # cacheonly forbids fetching an additional dependency after the queue.
-        for pkg in queue.packages:
-            target = self.native_paths[pkg.filename]
-            if queue.valid(pkg, target):
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            queue.copy_verified(pkg, queue.cache / pkg.filename, target)
-        return install_command(["sudo", "dnf", *self.repo_options, "--cacheonly",
-                                "--setopt=cachedir=" + str(self.metadata), "--setopt=keepcache=True",
-                                "--setopt=max_parallel_downloads=1", self.operation, *targets], queue)
 
 
 def identity(packages):
@@ -759,73 +631,8 @@ def run_transaction(backend, queue, targets):
     return code
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("backend", choices=["pacman", "dnf"])
-    parser.add_argument("--upgrade", action="store_true")
-    parser.add_argument("--operation", choices=["install", "upgrade"], default="install")
-    parser.add_argument("--repo-option", action="append", default=[])
-    parser.add_argument("--download-mode", choices=DOWNLOAD_MODES,
-                        default=os.getenv("SERP_DOWNLOAD_MODE", "balanced"))
-    parser.add_argument("--attempts", type=int, default=int(os.getenv("SERP_DOWNLOAD_ATTEMPTS", "3")))
-    parser.add_argument("--warning", type=float, default=float(os.getenv("SERP_DOWNLOAD_WARNING", "30")))
-    parser.add_argument("--timeout", type=float, default=float(os.getenv("SERP_DOWNLOAD_TIMEOUT", "60")))
-    parser.add_argument("targets", nargs="*")
-    args = parser.parse_intermixed_args()
-    settings = Settings(args.warning, args.timeout, args.attempts, mode=args.download_mode)
-    cache = Path(os.getenv("XDG_CACHE_HOME") or Path.home() / ".cache").resolve() / "serpantinum-installer/packages" / args.backend
-    queue = Queue([], cache, settings)
-    queue.emit({"reset": True, "stage": "RESOLVING", "total": 0})
-    try:
-        import fcntl
-        cache.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with (cache / ".lock").open("a") as lock, tempfile.TemporaryDirectory(prefix="serpantinum-pm-") as work:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as exc:
-                raise TransferError("Another Serpantinum package operation is using this cache") from exc
-            for pattern in (".download-*", ".signature-*"):
-                for orphan in cache.glob(pattern):
-                    if orphan.is_dir() and not orphan.is_symlink():
-                        shutil.rmtree(orphan)
-
-            if args.backend == "pacman":
-                backend = Pacman(cache, work, args.upgrade, parallel=DOWNLOAD_MODES[settings.mode])
-            else:
-                backend = Dnf(cache, work, repo_options=args.repo_option)
-                backend.operation = args.operation
-            if args.upgrade:
-                # Only reached from the user's explicit full-upgrade option. Refresh
-                # then resolve/install ALL upgrades, never a per-target partial upgrade.
-                if args.backend != "pacman":
-                    raise ValueError("Full upgrade option is pacman-only")
-                if subprocess.call(["sudo", "pacman", "--config", str(backend.config), "-Sy"]):
-                    raise TransferError("Repository metadata refresh failed")
-            queue.packages = backend.resolve(args.targets)
-            for pkg in queue.packages:
-                if not pkg.filename or Path(pkg.filename).name != pkg.filename or pkg.filename in {".", ".."}:
-                    raise ValueError("Unsafe repository filename")
-            if len({p.filename for p in queue.packages}) != len(queue.packages):
-                raise TransferError("Repository archive filenames collide in the transaction cache")
-            return run_transaction(backend, queue, args.targets)
-    except KeyboardInterrupt:
-        queue.stage, queue.error = "CANCELLED", "Cancelled by user"
-        for phase, status in queue.outcomes.items():
-            if status == "RUNNING":
-                queue.outcomes[phase] = "CANCELLED"
-        return 130
-    except Exception as exc:
-        queue.stage, queue.error = "BLOCKED", redact(exc)[:2048]
-        for phase, status in queue.outcomes.items():
-            if status == "RUNNING":
-                queue.outcomes[phase] = "FAILED"
-        return 1
-    finally:
-        queue.notify()
-        report = queue.report()
-        report.pop("packages")  # packages were streamed individually; keep PTY frames bounded
-        print("@@report\t" + json.dumps(report), flush=True)
-
-
 if __name__ == "__main__":
+    # Compatibility for older installer entry points.
+    from native_packages import main
+
     raise SystemExit(main())
