@@ -166,13 +166,17 @@ install_vpn_components() (
     if [[ "$DISTRO_ID" != fedora && "$PM_NAME" != pacman ]]; then
         # Keep the pre-existing service and optional local bundle on other distros.
         # The payload shipped in a Git checkout is for Fedora.
-        install_vpn_service || true
+        if [ "$(detect_init_system)" = systemd ]; then
+            install_vpn_service || return 1
+        fi
         if bundle="$(vpn_source_bundle --skip-shipped)"; then
             if [ -x "$VPN_PACKAGES_DST" ] && [ -f "$VPN_UNIT_DST" ]; then
                 install_vpn_bundle "$bundle" --system || return 1
             else
                 install_vpn_bundle "$bundle" || return 1
             fi
+        else
+            echo "VPN components: no compatible offline payload is shipped for $DISTRO_ID."
         fi
         return 0
     fi

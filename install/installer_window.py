@@ -6,7 +6,7 @@ import signal
 import subprocess
 import sys
 
-from manager import COMPOSITORS, OPTIONS, OPTIONS_RU
+from manager import COMPOSITORS, DEFAULT_OPTIONS, OPTIONS, OPTIONS_RU
 
 
 def desktop(manager_factory):
@@ -85,7 +85,7 @@ def desktop(manager_factory):
             self.options = {}
             for index, name in enumerate(OPTIONS):
                 box = self.options[name] = QtWidgets.QCheckBox()
-                box.setChecked(name in {"config", "backup"})
+                box.setChecked(name in DEFAULT_OPTIONS)
                 form.addWidget(box, 1 + index // 2, index % 2 * 2, 1, 2)
             self.mode = QtWidgets.QComboBox()
             self.mode.addItems(["stable", "balanced", "fast", "adaptive"])
@@ -198,7 +198,7 @@ def desktop(manager_factory):
             advanced = self.advanced.isChecked()
             plan = dict(action="install" if action == "prepare" else action,
                         compositors=[name for name, box in self.compositors.items() if box.isChecked()] if advanced else self.default_compositors,
-                        options=[name for name, box in self.options.items() if box.isChecked() and box.isEnabled() and not box.isHidden()] if advanced else ["config", "backup"],
+                        options=[name for name, box in self.options.items() if box.isChecked() and box.isEnabled() and not box.isHidden()] if advanced else list(DEFAULT_OPTIONS),
                         download_mode=self.mode.currentText() if advanced else "balanced")
             self.submit(lambda: self.manager.review(plan, saved=action == "saved"),
                         lambda records: self.show_review(action, records))

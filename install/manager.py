@@ -44,7 +44,7 @@ OPTIONS = {
     "extras": "Install optional capture, OCR and desktop utilities",
     "vpn": "Install offline VPN and system TUN integration",
     "fonts": "Install Iosevka Nerd Fonts",
-    "wallpapers": "Download a small wallpaper selection",
+    "wallpapers": "Download wallpapers",
     "full-wallpapers": "Download the full wallpaper collection",
     "sync": "Refresh pacman databases and upgrade all system packages",
     "aur": "Allow reviewed AUR builds for Quickshell or Umbriel",
@@ -74,6 +74,7 @@ OPTIONS_RU = {
     "launch": "Запустить оболочку после проверки",
 }
 ANSI = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[()][0-9A-Z]")
+DEFAULT_OPTIONS = ("config", "backup", "engines", "extras", "vpn", "fonts", "wallpapers", "full-wallpapers", "build")
 CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 PROMPT = re.compile(
     r"@@ask\b|\[\s*(?:[yn]/[yn]|[yn]/[yn]/[?])\s*\]|"
@@ -957,7 +958,7 @@ def terminal(manager):
                 action = "install" if value == "p" else actions[int(value) - 1]
                 defaults = manager.inventory["selected"][0][0].split() or ["hyprland"]
                 plan = terminal_plan(manager, action, tr) if advanced else dict(
-                    action=action, compositors=defaults, options=["config", "backup"])
+                    action=action, compositors=defaults, options=list(DEFAULT_OPTIONS))
                 records = manager.review(plan)
             else:
                 continue
@@ -990,10 +991,10 @@ def terminal_plan(manager, action, tr):
         available = [name for name in OPTIONS if name not in {"aur", "sync"} or manager.inventory["meta"][0][2] == "pacman"]
         for i, name in enumerate(available, 1):
             print(f"  {i:2}. {tr(OPTIONS[name], OPTIONS_RU[name])}")
-        suggested = [str(available.index(name) + 1) for name in ("config", "backup")]
-        print(tr("  Suggested for the first install: configuration and snapshot",
-                 "  Для первой установки подходят конфиги и резервная копия") + f" ({' '.join(suggested)}).")
-        options = [available[int(n) - 1] for n in input(tr("Option numbers [none]: ", "Номера параметров [нет]: ")).split()
+        suggested = [str(available.index(name) + 1) for name in DEFAULT_OPTIONS]
+        print(tr("  Full installation defaults", "  Параметры полной установки") + f" ({' '.join(suggested)}).")
+        numbers = input(tr("Option numbers [default]: ", "Номера параметров [по умолчанию]: ")).split() or suggested
+        options = [available[int(n) - 1] for n in numbers
                    if n.isdecimal() and 1 <= int(n) <= len(available)]
         download_mode = input(tr("Download mode", "Режим загрузки") +
                               " (stable 1, balanced 4, fast 8, adaptive 1–8) [balanced]: ").strip().lower() or "balanced"
@@ -1055,7 +1056,7 @@ class Handler(BaseHTTPRequestHandler):
         manager = self.server.manager
         if path == "/inventory":
             self.server.connected = True
-            self.send(200, dict(inventory=manager.inventory, actions=ACTIONS, options=OPTIONS,
+            self.send(200, dict(inventory=manager.inventory, actions=ACTIONS, options=OPTIONS, default_options=DEFAULT_OPTIONS,
                                 compositors=COMPOSITORS, saved=manager.saved(), updatesOnly=manager.updates_only))
         elif path == "/updates/status":
             after = int(query) if query.isdecimal() and len(query) < 12 else 0

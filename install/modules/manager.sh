@@ -225,7 +225,9 @@ manager_components() {
         label="${job%%|*}" path="${job#*|}"
         if [ "$ready" = true ] && [ -f "$qml/$path" ] &&
             { [[ "$label" != Wallpaper* ]] || command -v ffmpeg >/dev/null; } &&
-            { [ "$label" != 'Music Studio' ] || { command -v playerctl >/dev/null && command -v wpctl >/dev/null; }; }; then
+            { [ "$label" != 'Music Studio' ] || {
+                command -v playerctl >/dev/null && command -v wpctl >/dev/null && audio_installed_version >/dev/null;
+            }; }; then
             manager_record component "$label" Ready 'Installed implementation and local runtime prerequisites found.'
         elif [ -f "$PROJECT_ROOT/src/quickshell/$path" ]; then
             manager_record component "$label" Missing 'Available in checkout. Deployment or runtime dependencies required.'
@@ -234,7 +236,11 @@ manager_components() {
         fi
     done
     manager_command_status 'Terminal / Kitty' kitty
-    manager_command_status 'Audio DSP' serpantinum-audio
+    if version="$(audio_installed_version)"; then
+        manager_record component 'Audio DSP' Installed "$version · verify routing in the PipeWire session"
+    else
+        manager_record component 'Audio DSP' Missing 'The executable is missing or cannot run.'
+    fi
     manager_command_status 'Ski file manager' ski
     manager_command_status 'Core daemon' serpantinum-core
     manager_command_status 'Gamma daemon' serpantinum-gamma
@@ -368,7 +374,7 @@ manager_probe() {
         fi
     fi
     if [ "$OPT_SERVICES" = true ]; then manager_record change 'Set up PAM, NetworkManager, power profiles and PipeWire services.'; fi
-    if [ "$OPT_VPN" = true ]; then manager_record change 'Install the checked offline VPN bundle, TUN systemd unit and local polkit rules.'; fi
+    if [ "$OPT_VPN" = true ]; then manager_record change 'Install compatible VPN components and applicable systemd/polkit integration. No VPN connection is started.'; fi
     if [ "$OPT_ENGINES" = true ]; then manager_record change 'Install Ski and the audio, gamma and core daemons from Serpantinum upstream releases. Update mode checks for newer releases.'; fi
     if [[ " ${SELECTED_COMPOSITORS[*]} " == *" umbriel "* ]]; then
         manager_record change "Umbriel requires Serpantinum Core $CORE_VERSION for workspace IPC."
@@ -454,7 +460,7 @@ manager_dependencies() {
 }
 
 manager_engines() {
-    local job command fn
+    local job command fn before
     if [ "$OPT_ENGINES" != true ]; then
         if [[ " ${SELECTED_COMPOSITORS[*]} " == *" umbriel "* ]] &&
             ! version_at_least "$(core_installed_version)" "$CORE_VERSION"; then
@@ -469,15 +475,30 @@ manager_engines() {
     for job in 'ski:install_ski' 'serpantinum-audio:install_audio_daemon' \
         'serpantinum-gamma:install_gamma_daemon' 'serpantinum-core:install_core_daemon'; do
         command="${job%%:*}" fn="${job#*:}"
-        if [ "$MANAGER_ACTION" != update ] && command -v "$command" >/dev/null; then continue; fi
-        printf '@@activity\tDownloading\t%s\n' "$command"
-        "$fn"
-        hash -r
-        if ! command -v "$command" >/dev/null; then FAILED_PKGS+=("$command"); fi
+        before=${#FAILED_PKGS[@]}
+        if [ "$MANAGER_ACTION" = update ] || ! manager_engine_ready "$command"; then
+            printf '@@activity\tDownloading\t%s\n' "$command"
+            if ! "$fn"; then FAILED_PKGS+=("$command"); fi
+            hash -r
+        fi
+        if manager_engine_ready "$command" && [ "${#FAILED_PKGS[@]}" -eq "$before" ]; then
+            manager_record '@@component' "$command" Installed 'Executable verified.'
+        else
+            if [ "${#FAILED_PKGS[@]}" -eq "$before" ]; then FAILED_PKGS+=("$command"); fi
+            manager_record '@@component' "$command" Failed 'See the release, package manager or build output above.'
+        fi
     done
     if [ ${#FAILED_PKGS[@]} -gt 0 ]; then
-        printf 'Optional engine setup failed: %s\n' "${FAILED_PKGS[*]}"
+        printf 'Component setup failed: %s\n' "${FAILED_PKGS[*]}"
         return 1
+    fi
+}
+
+manager_engine_ready() {
+    if [ "$1" = serpantinum-audio ]; then
+        audio_installed_version >/dev/null
+    else
+        command -v "$1" >/dev/null
     fi
 }
 
@@ -494,7 +515,11 @@ manager_deploy() {
     mkdir -p -- "$wallpapers"
     if [ "$OPT_WALLPAPERS" = true ]; then
         printf '@@activity\tDownloading\tWallpaper collection\n'
-        install_wallpapers "$INSTALL_FULL_WALLPAPERS"
+        if ! install_wallpapers "$INSTALL_FULL_WALLPAPERS"; then
+            manager_record '@@component' 'Wallpaper collection' Failed 'Check the upstream checkout and wallpaper directory.'
+            return 1
+        fi
+        manager_record '@@component' 'Wallpaper collection' Installed "$wallpapers"
     else
         install_bundled_wallpapers "$wallpapers"
     fi
@@ -503,7 +528,13 @@ manager_deploy() {
         configure_qt_icon_theme
         configure_ski_defaults "$SERP_NEW_SETTINGS"
     fi
-    if [ "$OPT_FONTS" = true ]; then install_fonts; fi
+    if [ "$OPT_FONTS" = true ]; then
+        if ! install_fonts; then
+            manager_record '@@component' 'Iosevka Nerd Font' Failed 'Download, extraction or font cache update failed.'
+            return 1
+        fi
+        manager_record '@@component' 'Iosevka Nerd Font' Installed
+    fi
     if [ "$OPT_GLOBAL_LAUNCHERS" = true ]; then
         local launcher
         for launcher in serpantinum serpantinumd; do
@@ -515,15 +546,23 @@ manager_deploy() {
 manager_services() {
     setup_sddm "$PROJECT_ROOT"
     if [ "$OPT_SERVICES" = true ]; then setup_services; fi
+    if [ "$OPT_ENGINES" = true ]; then hand_over_from_easyeffects || return 1; fi
     if [ "$OPT_VPN" = true ]; then
         if [ "$MANAGER_ACTION" = missing ] && [ -f "$VPN_UNIT_DST" ] && [ -x "$VPN_HELPER_DST" ] &&
             timeout 5s python3 "$PROJECT_ROOT/src/scripts/system/serp_vpn.py" system-engine-check >/dev/null 2>&1; then
             echo 'Existing VPN engine and service kept.'
         else
-            install_vpn_components || return 1
+            if ! install_vpn_components; then
+                manager_record '@@component' 'VPN' Failed 'See the VPN component log and the detected platform.'
+                return 1
+            fi
+        fi
+        if [[ "$DISTRO_ID" = fedora || "$PM_NAME" = pacman ]]; then
+            manager_record '@@component' 'VPN' Installed 'System engine and service present.'
+        else
+            manager_record '@@component' 'VPN' 'Platform limited' 'Only compatible local bundles and applicable service files are included.'
         fi
     fi
-    if [ "$OPT_CONFIG" = true ] && [ "$OPT_SERVICES" = true ]; then hand_over_from_easyeffects; fi
 }
 
 manager_verify() {
@@ -609,7 +648,7 @@ manager_run() {
     export SERPANTINUM_MANAGED_VPN=true
     manager_step 1 Configuring 'Settings snapshot' manager_backup
     manager_step 2 Installing 'Distribution packages' manager_dependencies
-    manager_step 3 Installing 'Optional desktop engines' manager_engines
+    manager_step 3 Installing 'Desktop engines' manager_engines
     manager_step 4 Configuring 'Shell and configuration' manager_deploy
     manager_step 5 Configuring 'Services and VPN' manager_services
     manager_step 6 Verifying 'Installed environment' manager_verify

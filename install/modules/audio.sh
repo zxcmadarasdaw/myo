@@ -8,8 +8,15 @@ audio_release_json() {
 }
 
 audio_installed_version() {
-    command -v serpantinum-audio >/dev/null 2>&1 || return 0
-    serpantinum-audio version 2>/dev/null | awk '{print $2}'
+    local version
+    version="$(serpantinum-audio version 2>/dev/null)" || return 1
+    awk 'NR == 1 && $2 ~ /^[0-9]+\.[0-9]+/ {print $2; found=1} END {exit !found}' <<< "$version"
+}
+
+audio_sink_ready() {
+    local graph
+    graph="$(timeout 4s pw-dump)" || return 1
+    jq -e 'any(.[]; .info.props["node.name"] == "serpantinum_sink")' <<< "$graph" >/dev/null
 }
 
 audio_arch() {
@@ -21,7 +28,7 @@ audio_arch() {
 }
 
 audio_install_prebuilt() {
-    local json="$1" work="$2" arch tarball_url sums_url archive
+    local json="$1" work="$2" arch tarball_url sums_url archive checksum
 
     arch="$(audio_arch)" || return 1
     tarball_url="$(jq -r --arg re "-${arch}-linux\\.tar\\.gz$" '[.assets[] | select(.name | test($re))][0].browser_download_url // empty' <<< "$json")"
@@ -31,7 +38,9 @@ audio_install_prebuilt() {
     archive="$work/${tarball_url##*/}"
     curl -fsSL --connect-timeout 15 --retry 3 "$tarball_url" -o "$archive" || return 1
     curl -fsSL --connect-timeout 15 --retry 3 "$sums_url" -o "$work/SHA256SUMS" || return 1
-    if ! (cd "$work" && grep -F " ${archive##*/}" SHA256SUMS | sha256sum -c --quiet -); then
+    checksum="$(awk -v asset="${archive##*/}" '$2 == asset || $2 == "*" asset {print $1}' "$work/SHA256SUMS")"
+    if [[ ! "$checksum" =~ ^[[:xdigit:]]{64}$ ]] ||
+        ! printf '%s  %s\n' "$checksum" "$archive" | sha256sum -c --quiet -; then
         echo -e "\e[31m[ FAILED ]\e[0m $(t "installer.audio.checksum_failed")"
         return 1
     fi
@@ -83,16 +92,32 @@ audio_build_from_source() {
 }
 
 hand_over_from_easyeffects() {
-    command -v serpantinum-audio >/dev/null 2>&1 || return 0
-    bash "$SERPANTINUM_DIR/scripts/migrate_easyeffects.sh" 2>/dev/null || true
-    serpantinum-audio start >/dev/null 2>&1 || true
+    local attempt
+    audio_installed_version >/dev/null || return 0
+    if ! timeout 4s pw-dump >/dev/null 2>&1; then
+        echo 'Audio DSP: PipeWire session unavailable. serpantinumd will start it at login.'
+        return 0
+    fi
+    bash "$SERPANTINUM_DIR/scripts/migrate_easyeffects.sh" || return 1
+    if ! audio_sink_ready; then
+        timeout 10s serpantinum-audio start || return 1
+    fi
+    for attempt in 1 2 3 4 5; do
+        if audio_sink_ready; then
+            echo 'Audio DSP: serpantinum_sink is available in PipeWire.'
+            return 0
+        fi
+        sleep 0.2
+    done
+    echo 'Audio DSP: PipeWire did not expose serpantinum_sink.' >&2
+    return 1
 }
 
 install_audio_daemon() {
     local current json tag work
 
     echo -e "\n\e[36m[ INFO ]\e[0m $(t "installer.audio.installing")"
-    current="$(audio_installed_version)"
+    current="$(audio_installed_version)" || current=''
 
     if ! json="$(audio_release_json)" || [ -z "$json" ]; then
         echo -e "\e[33m[ WARN ]\e[0m $(t "installer.audio.download_failed")"
@@ -112,8 +137,11 @@ install_audio_daemon() {
     fi
 
     local cache="${XDG_CACHE_HOME:-$HOME/.cache}"
-    mkdir -p "$cache"
-    work="$(mktemp -d "$cache/serpantinum-audio.XXXXXX")"
+    if ! mkdir -p "$cache" || ! work="$(mktemp -d "$cache/serpantinum-audio.XXXXXX")"; then
+        echo "Audio DSP: could not create temporary files in $cache." >&2
+        FAILED_PKGS+=("serpantinum-audio")
+        return 0
+    fi
 
     if audio_install_prebuilt "$json" "$work" ||
         { { [ "${MANAGED_INSTALL:-false}" != true ] || [ "$OPT_BUILD" = true ]; } &&

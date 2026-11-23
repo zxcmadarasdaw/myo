@@ -311,7 +311,7 @@ INSTALL_PHASE=deployment
 installer_phase "Deploying shell and configuration"
 deploy_package "$PROJECT_ROOT" "$OLD_COMMIT" "$TARGET_COMMIT" "$IS_REINSTALL" "$INSTALL_STATE" "${SELECTED_COMPOSITORS[@]}"
 setup_sddm "$PROJECT_ROOT"
-install_wallpapers "$INSTALL_FULL_WALLPAPERS"
+install_wallpapers "$INSTALL_FULL_WALLPAPERS" || FAILED_PKGS+=("Wallpaper collection")
 
 WALLPAPER_DIR=$(get_wallpaper_dir)
 init_serpantinum_config "$PROJECT_ROOT" "$WALLPAPER_DIR"
@@ -325,7 +325,7 @@ if ! install_vpn_components; then
     FAILED_PKGS+=("VPN components")
     VPN_INSTALL_FAILED=true
 fi
-hand_over_from_easyeffects
+hand_over_from_easyeffects || FAILED_PKGS+=("Audio DSP / PipeWire")
 
 INSTALL_PHASE=verification
 installer_phase "Verifying installation"

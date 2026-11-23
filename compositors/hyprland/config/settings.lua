@@ -41,17 +41,6 @@ hl.config({
   },
 })
 
--- Apply after the client and its window rules have had a chance to set fullscreen.
-hl.on("window.open", function(window)
-  local workspace = window.workspace
-  if not window.active or window.floating or window.pinned or window.hidden
-      or not workspace or workspace.special or workspace.fullscreen_mode ~= 0
-      or window.fullscreen ~= 0 or window.fullscreen_client ~= 0 then
-    return
-  end
-  hl.dispatch(hl.dsp.window.fullscreen({ window = window, mode = "maximized", action = "set", layout_aware = false }))
-end)
-
 hl.curve("myBezier", { type = "bezier", points = { {0.05, 0.9}, {0.1, 1.05} } })
 
 hl.animation({ leaf = "windows", enabled = true, speed = 5, bezier = "myBezier", style = "popin 80%" })

@@ -356,6 +356,7 @@ EOF
             }
             # shellcheck source=/dev/null
             source "$ROOT/install/modules/deps.sh"
+            install_fonts() { :; } # This fixture covers DNF/Terra, not upstream font downloads.
             OPT_SDDM=false
             install_dependencies fresh false "$@" >/dev/null 2>&1
             echo "${FAILED_PKGS[*]}"
@@ -591,7 +592,35 @@ test_maintenance_round_trip() (
     rm -rf "$home"
 )
 
+test_full_wallpaper_pack() (
+    local home upstream source_url destination
+    home="$(new_home)" || return 1
+    trap 'rm -rf -- "$home"' EXIT
+    export HOME="$home" XDG_CACHE_HOME="$home/cache"
+    source_url=https://github.com/ilyamiro/shell-wallpapers.git
+    source "$ROOT/install/modules/deploy.sh"
+    get_wallpaper_dir() { printf '%s\n' "$home/wallpapers"; }
+    upstream="$home/upstream"
+    destination="$(get_wallpaper_dir)"
+    mkdir -p "$upstream/images/other" "$destination"
+    printf 'user wallpaper\n' > "$destination/shared.png"
+    printf 'shipped wallpaper\n' > "$upstream/images/shared.png"
+    printf 'other shipped wallpaper\n' > "$upstream/images/other/shared.png"
+    printf 'shipped video\n' > "$upstream/images/animated.webm"
+    git -C "$upstream" init -q &&
+        git -C "$upstream" add images &&
+        git -C "$upstream" -c user.name=Test -c user.email=test@example.org commit -qm wallpapers || return 1
+    git config --global "url.file://$upstream.insteadOf" "$source_url" || return 1
+    if GIT_ALLOW_PROTOCOL=https install_wallpapers true >/dev/null 2>&1; then return 1; fi
+    export GIT_ALLOW_PROTOCOL=file
+    install_wallpapers true >/dev/null 2>&1 && install_wallpapers true >/dev/null 2>&1 || return 1
+    [ "$(cat "$destination/shared.png")" = 'user wallpaper' ] &&
+        [ -f "$destination/animated.webm" ] &&
+        [ "$(find "$destination" -name 'shared-*.png' | wc -l)" -eq 2 ]
+)
+
 test_first_launch
+test_full_wallpaper_pack && ok "full wallpaper pack retries a failed download, retains local files and includes duplicates and video" || bad "full wallpaper pack recovery"
 test_deploy_sync
 test_window_config_update
 test_verify

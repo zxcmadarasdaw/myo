@@ -40,28 +40,36 @@ bootstrap_installer_deps() {
     fi
 }
 
-install_fonts() {
+install_fonts() (
     local target_fonts_dir="$HOME/.local/share/fonts/IosevkaNerdFont"
-    if [ ! -d "$target_fonts_dir" ] || [ -z "$(ls -A "$target_fonts_dir" 2>/dev/null | grep -i "\.ttf")" ]; then
-        local font_cache="${XDG_CACHE_HOME:-"$HOME/.cache"}/serpantinum-fonts"
-        mkdir -p "$font_cache" "$target_fonts_dir"
-        echo -e "\n\e[36m[ INFO ]\e[0m Downloading Iosevka Nerd Font..."
-        if curl -# -L --connect-timeout 15 --retry 3 "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Iosevka.zip" -o "$font_cache/Iosevka.zip"; then
-            if [ -f "$font_cache/Iosevka.zip" ]; then
-                echo -e "\e[36m[ INFO ]\e[0m Unpacking fonts..."
-                unzip -qo "$font_cache/Iosevka.zip" -d "$font_cache/" 2>/dev/null || true
-                mv "$font_cache"/*.ttf "$target_fonts_dir/" 2>/dev/null || true
+    local font_cache font manifest="$target_fonts_dir/.serpantinum-fonts" complete=false
+    if [ -s "$manifest" ] && [ ! -L "$manifest" ]; then
+        complete=true
+        while IFS= read -r font; do
+            if [[ "$font" = */* || "$font" != *.ttf ]] || [ ! -s "$target_fonts_dir/$font" ]; then
+                complete=false
+                break
             fi
-        else
-            echo -e "\e[33m[ WARN ]\e[0m Failed to download fonts, skipping..."
-        fi
-        rm -rf "$font_cache"
+        done < "$manifest"
     fi
-
-    if command -v fc-cache &>/dev/null; then
-        fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || true
+    if [ "$complete" = false ]; then
+        font_cache="$(mktemp -d)" || return 1
+        trap 'rm -rf -- "$font_cache"' EXIT
+        echo -e "\n\e[36m[ INFO ]\e[0m Downloading Iosevka Nerd Font..."
+        curl -fL --connect-timeout 15 --retry 3 "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Iosevka.zip" -o "$font_cache/Iosevka.zip" || return 1
+        unzip -q "$font_cache/Iosevka.zip" '*.ttf' -d "$font_cache" || return 1
+        shopt -s nullglob
+        local fonts=("$font_cache"/*.ttf)
+        [ "${#fonts[@]}" -gt 0 ] || { echo 'Iosevka archive did not contain fonts.' >&2; return 1; }
+        mkdir -p "$target_fonts_dir" || return 1
+        for font in "${fonts[@]}"; do
+            cp -n -- "$font" "$target_fonts_dir/" || return 1
+            printf '%s\n' "${font##*/}" >> "$font_cache/fonts" || return 1
+        done
+        replace_config_file "$font_cache/fonts" "$manifest" || return 1
     fi
-}
+    fc-cache -f "$HOME/.local/share/fonts"
+)
 
 configure_qt_icon_theme() {
     local icon_theme="Adwaita"
@@ -202,6 +210,6 @@ install_dependencies() {
     fi
 
     ensure_quickshell_version
-    install_fonts
+    install_fonts || FAILED_PKGS+=("Iosevka Nerd Font")
     configure_qt_icon_theme
 }

@@ -19,6 +19,7 @@ t() { printf '%s' "$1"; }
 source "$repo/install/modules/ui.sh"
 source "$repo/install/modules/verify.sh"
 source "$repo/install/modules/vpn.sh"
+source "$repo/install/modules/audio.sh"
 source "$repo/install/modules/manager.sh"
 source "$repo/install/modules/pm/aur.sh"
 
@@ -103,6 +104,33 @@ install_config_tree "$work/template" "$work/player-config"
 grep -Fxq 'new default' "$work/player-config/settings"
 grep -Fxq 'local edit' "$work/player-config_backup"/backup_*/settings
 printf 'PASS: managed config changes require approval and keep a backup\n'
+
+(
+    OPT_ENGINES=true
+    MANAGER_ACTION=missing
+    FAILED_PKGS=()
+    export PATH="$work/engine-bin:$PATH"
+    mkdir "$work/engine-bin"
+    for executable in ski serpantinum-gamma serpantinum-core; do
+        printf '#!/bin/sh\nexit 0\n' > "$work/engine-bin/$executable"
+    done
+    printf '#!/bin/sh\nexit 1\n' > "$work/engine-bin/serpantinum-audio"
+    chmod +x "$work/engine-bin/"*
+
+    install_audio_daemon() { return 1; }
+    if manager_engines > "$work/bad-engine"; then exit 1; fi
+    grep -q $'@@component\tserpantinum-audio\tFailed' "$work/bad-engine"
+    FAILED_PKGS=()
+    install_audio_daemon() {
+        printf '#!/bin/sh\necho "serpantinum-audio 0.4.0"\n' > "$work/engine-bin/serpantinum-audio"
+        printf 'install\n' >> "$work/audio-repair"
+    }
+    manager_engines > "$work/repaired-engine"
+    manager_engines >> "$work/repaired-engine"
+    grep -q $'@@component\tserpantinum-audio\tInstalled' "$work/repaired-engine"
+    [ "$(wc -l < "$work/audio-repair")" -eq 1 ]
+)
+printf 'PASS: Install Missing reports a broken DSP, retries it and keeps a working copy on a repeat run\n'
 
 source "$repo/install/modules/pm/dnf.sh"
 PM_YUM_REPOS_DIR="$work/repos"

@@ -220,6 +220,17 @@ verify_installation() {
     for pkg in pw-dump wpctl pactl ffprobe; do
         command -v "$pkg" >/dev/null 2>&1 || verify_warning "$pkg missing: audio or media features may be unavailable"
     done
+    if [ "${OPT_ENGINES:-false}" = true ] || [ "${MANAGER_ACTION:-}" = verify ]; then
+        if ! audio_installed_version >/dev/null; then
+            verify_error "Audio DSP is missing or cannot run. Use Install Missing with Desktop engines enabled."
+        elif [ "${MANAGER_ACTION:-}" = verify ]; then
+            if ! timeout 4s pw-dump >/dev/null 2>&1; then
+                verify_warning "Audio DSP binary is runnable. No PipeWire session is available for the routing check."
+            elif ! audio_sink_ready; then
+                verify_warning "Audio DSP binary is runnable. Log into MYO and verify that PipeWire exposes serpantinum_sink."
+            fi
+        fi
+    fi
     if command -v ffmpeg >/dev/null 2>&1 && ! ffmpeg -hide_banner -decoders 2>/dev/null | awk '$2=="h264" {found=1} END {exit !found}'; then
         verify_warning "The installed ffmpeg CLI does not report an H.264 decoder. Check H.264 and WebM playback separately in Qt Multimedia."
     fi

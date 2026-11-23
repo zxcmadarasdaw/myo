@@ -86,7 +86,7 @@ const installerRussian = new Map(Object.entries({
   "Install Ski, Audio DSP, Core and Gamma": "Установить Ski, Audio DSP, Core и Gamma",
   "Install offline VPN and system TUN integration": "Установить офлайн-VPN и интеграцию TUN",
   "Download Iosevka Nerd Fonts": "Скачать Iosevka Nerd Fonts",
-  "Download a small wallpaper selection": "Скачать небольшую подборку обоев",
+  "Download wallpapers": "Скачать обои",
   "Download the full wallpaper collection": "Скачать полную коллекцию обоев",
   "Refresh pacman databases and upgrade all system packages": "Обновить базы pacman и все системные пакеты",
   "Allow reviewed AUR builds for Quickshell or Umbriel": "Разрешить проверенные сборки Quickshell или Umbriel из AUR",
@@ -212,7 +212,7 @@ function openPreparation(state) {
   }
   for (const [value, label] of Object.entries(state.options)) {
     if (["sync", "aur"].includes(value) && state.inventory.meta[0][2] !== "pacman") continue;
-    $("options").append(choice("checkbox", "option", value, installerText(label), ["config", "backup"].includes(value)));
+    $("options").append(choice("checkbox", "option", value, installerText(label), state.default_options.includes(value)));
   }
   changeSelection();
 }

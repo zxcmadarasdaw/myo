@@ -53,11 +53,19 @@ install_bundled_wallpapers() {
     [ -n "$(find -L "$wallpaper_dir" -maxdepth 1 -type f 2>/dev/null | head -n 1)" ] && return 0
     while IFS= read -r f; do
         [ -n "$f" ] || continue
-        cp -n "$f" "$wallpaper_dir/" 2>/dev/null && copied=$((copied + 1))
+        cp -n "$f" "$wallpaper_dir/" && copied=$((copied + 1))
     done < <(find -L "$HOME/.local/share/serpantinum/themess" -maxdepth 3 -type f -path "*/wallpapers/*" \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.gif" -o -iname "*.webm" \) 2>/dev/null)
     [ "$copied" -gt 0 ] && echo -e "\e[36m[ INFO ]\e[0m Installed $copied bundled wallpaper(s) into $wallpaper_dir"
     return 0
 }
+
+clone_wallpaper_collection() (
+    local repo="$1" destination="$2" stage
+    stage="$(mktemp -d -- "${destination}.new.XXXXXX")" || return 1
+    trap 'rm -rf -- "$stage"' EXIT
+    git -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=45 clone --depth 1 "$repo" "$stage/collection" &&
+        mv -T -- "$stage/collection" "$destination"
+)
 
 install_wallpapers() {
     local full_pack="${1:-true}"
@@ -66,24 +74,22 @@ install_wallpapers() {
     local wallpaper_repo="https://github.com/ilyamiro/shell-wallpapers.git"
     local clone_dir="${XDG_CACHE_HOME:-"$HOME/.cache"}/serpantinum-wallpapers"
 
-    mkdir -p "$wallpaper_dir"
+    mkdir -p "$wallpaper_dir" "$(dirname "$clone_dir")" || return 1
 
-    local sync_success=false
-    if [ -d "$clone_dir/.git" ]; then
-        if git -C "$clone_dir" fetch --depth 1 origin 2>/dev/null; then
-            if git -C "$clone_dir" reset --hard FETCH_HEAD 2>/dev/null || \
-               git -C "$clone_dir" reset --hard origin/HEAD 2>/dev/null || \
-               git -C "$clone_dir" reset --hard origin/main 2>/dev/null || \
-               git -C "$clone_dir" reset --hard origin/master 2>/dev/null; then
-                sync_success=true
-            fi
+    if [ ! -L "$clone_dir" ] && [ -d "$clone_dir/.git" ] &&
+        [ "$(git -C "$clone_dir" config --get remote.origin.url)" = "$wallpaper_repo" ]; then
+        if git -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=45 -C "$clone_dir" fetch --depth 1 origin HEAD; then
+            git -C "$clone_dir" checkout --detach FETCH_HEAD || return 1
+        else
+            echo "Wallpaper download unavailable. Using the previously cached upstream collection."
         fi
-    fi
-
-    if [ "$sync_success" != true ]; then
-        rm -rf "$clone_dir"
-        echo -e "\n\e[36m[ INFO ]\e[0m Cloning wallpapers repository..."
-        git clone --depth 1 "$wallpaper_repo" "$clone_dir" 2>/dev/null || true
+    elif [ -e "$clone_dir" ] || [ -L "$clone_dir" ]; then
+        echo "Wallpaper cache at $clone_dir is not an upstream checkout. Move it aside and retry." >&2
+        return 1
+    elif ! clone_wallpaper_collection "$wallpaper_repo" "$clone_dir"; then
+        install_bundled_wallpapers "$wallpaper_dir"
+        echo "Could not download the requested wallpaper collection." >&2
+        return 1
     fi
 
     local src_dir="$clone_dir"
@@ -91,53 +97,42 @@ install_wallpapers() {
         src_dir="$clone_dir/images"
     fi
 
-    if [ ! -d "$src_dir" ]; then
-        echo -e "\n\e[33m[ WARN ]\e[0m Wallpaper pack could not be downloaded (network?)."
-        install_bundled_wallpapers "$wallpaper_dir"
+    local paths
+    local formats=( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.gif'
+        -o -iname '*.webp' -o -iname '*.avif' -o -iname '*.webm' -o -iname '*.mp4' )
+    paths="$(find "$src_dir" -name .git -prune -o -type f \( "${formats[@]}" \) -print)" || return 1
+    if [ -z "$paths" ]; then
+        echo "No supported wallpapers found in $src_dir." >&2
+        return 1
+    fi
+    if [ "$full_pack" = true ]; then
+        echo "Installing full wallpaper collection from $src_dir."
+    elif [ -z "$(find -L "$wallpaper_dir" -maxdepth 1 -type f \( "${formats[@]}" \) -print -quit)" ]; then
+        paths="$(shuf -n 3 <<< "$paths")" || return 1
+    else
         return 0
     fi
 
-    if [ "$full_pack" = true ]; then
-        local files=()
-        while IFS= read -r f; do
-            [[ -n "$f" ]] && files+=("$f")
-        done < <(find "$src_dir" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.gif" -o -iname "*.webp" \) 2>/dev/null)
-
-        local total=${#files[@]}
-        local count=0
-
-        if [ "$total" -gt 0 ]; then
-            for file in "${files[@]}"; do
-                cp -n "$file" "$wallpaper_dir/" 2>/dev/null || true
-                count=$((count + 1))
-                render_wallpaper_progress "$count" "$total" "Installing wallpapers"
-            done
-            echo ""
-        else
-            find "$src_dir" -type f ! -name "README.md" ! -name "LICENSE" ! -path "*/.git/*" -exec cp -n {} "$wallpaper_dir/" \; 2>/dev/null || true
-        fi
-    else
-        if [ -z "$(ls -A "$wallpaper_dir" 2>/dev/null | grep -iE '\.(jpg|jpeg|png|gif|webp)$')" ]; then
-            local random_pics=()
-            while IFS= read -r pic; do
-                [[ -n "$pic" ]] && random_pics+=("$pic")
-            done < <(find "$src_dir" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.gif" -o -iname "*.webp" \) 2>/dev/null | shuf -n 3)
-
-            local total=${#random_pics[@]}
-            local count=0
-
-            if [ "$total" -gt 0 ]; then
-                for pic in "${random_pics[@]}"; do
-                    cp -n "$pic" "$wallpaper_dir/" 2>/dev/null || true
-                    count=$((count + 1))
-                    render_wallpaper_progress "$count" "$total" "Installing wallpapers"
-                done
-                echo ""
+    local files=() file name destination digest count=0
+    mapfile -t files <<< "$paths"
+    for file in "${files[@]}"; do
+        name="${file##*/}"
+        destination="$wallpaper_dir/$name"
+        if [ -e "$destination" ] || [ -L "$destination" ]; then
+            if [ -L "$destination" ] || ! cmp -s -- "$file" "$destination"; then
+                digest="$(sha256sum < "$file")" || return 1
+                destination="$wallpaper_dir/${name%.*}-${digest:0:12}.${name##*.}"
             fi
         fi
-    fi
-
-    install_bundled_wallpapers "$wallpaper_dir"
+        if [ -L "$destination" ] || { [ -e "$destination" ] && ! cmp -s -- "$file" "$destination"; }; then
+            echo "Wallpaper destination is occupied: $destination" >&2
+            return 1
+        fi
+        if [ ! -e "$destination" ]; then replace_config_file "$file" "$destination" || return 1; fi
+        count=$((count + 1))
+        render_wallpaper_progress "$count" "${#files[@]}" "Installing wallpapers"
+    done
+    printf '\nWallpaper collection: %s image or video files verified.\n' "$count"
 }
 
 resolve_sddm_backend() {
