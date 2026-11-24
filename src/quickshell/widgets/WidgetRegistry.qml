@@ -783,7 +783,9 @@ QtObject {
                 "lush":           { file: "faces/clock/ClockFaceLush.qml",           icon: "10", label: I18n.t("widgets.variants.lush", "Lush") },
                 "atelier": registry.atelierVariant("faces/clock/ClockFaceAtelier.qml")
             },
-            additionalSettings: registry.atelierSettings
+            additionalSettings: registry.atelierSettings.concat([
+                _setting("showSeconds", "toggle", "bottom", { name: qsTr("Show seconds"), variants: ["atelier"] })
+            ])
         },
         "music": {
             name: I18n.t("widgets.types.music"),
@@ -890,7 +892,9 @@ QtObject {
                 "lush":    { file: "faces/weather/WeatherFaceLush.qml",       icon: "5", label: I18n.t("widgets.variants.lush", "Lush") },
                 "atelier": registry.atelierVariant("faces/weather/WeatherFaceAtelier.qml")
             },
-            additionalSettings: registry.atelierSettings
+            additionalSettings: registry.atelierSettings.concat([
+                _setting("showForecast", "toggle", "bottom", { name: qsTr("Show daily forecast"), variants: ["atelier"] })
+            ])
         },
         "image": {
             name: I18n.t("widgets.types.image"),
@@ -1113,6 +1117,18 @@ QtObject {
             defaultVariant: "atelier",
             variants: {
                 "atelier": registry.atelierVariant("faces/calendar/CalendarFaceAtelier.qml")
+            },
+            additionalSettings: registry.atelierSettings
+        },
+        "quickactions": {
+            name: qsTr("Quick actions"),
+            icon: String.fromCodePoint(0xF0493),
+            category: "system",
+            defaultWidth: 480,
+            defaultHeight: 110,
+            defaultVariant: "atelier",
+            variants: {
+                "atelier": registry.atelierVariant("faces/common/QuickActionsFace.qml")
             },
             additionalSettings: registry.atelierSettings
         },

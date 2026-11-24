@@ -29,32 +29,40 @@ Item {
     readonly property bool glassActive: blurBackground && elementOpacity < 0.999
     readonly property bool liquidGlass: blurBackground && blurStyle === "liquid"
 
-    property color base: "#1e1e2e"
-    property color mantle: "#181825"
-    property color crust: "#11111b"
-    property color _text: "#cdd6f4"
-    property color _subtext0: "#a6adc8"
-    property color _subtext1: "#bac2de"
+    readonly property var defaultColors: ({
+        base: "#1e1e2e", mantle: "#181825", crust: "#11111b",
+        text: "#cdd6f4", subtext0: "#a6adc8", subtext1: "#bac2de",
+        surface0: "#313244", surface1: "#45475a", surface2: "#585b70",
+        overlay0: "#6c7086", overlay1: "#7f849c", overlay2: "#9399b2",
+        blue: "#89b4fa", sapphire: "#74c7ec", peach: "#fab387", green: "#a6e3a1", red: "#f38ba8",
+        mauve: "#cba6f7", pink: "#f5c2e7", yellow: "#f9e2af", maroon: "#eba0ac", teal: "#94e2d5"
+    })
+    property color base: defaultColors.base
+    property color mantle: defaultColors.mantle
+    property color crust: defaultColors.crust
+    property color _text: defaultColors.text
+    property color _subtext0: defaultColors.subtext0
+    property color _subtext1: defaultColors.subtext1
     readonly property color text: liquidGlass ? "#ffffff" : _text
     readonly property color subtext0: liquidGlass ? "#ffffff" : _subtext0
     readonly property color subtext1: liquidGlass ? "#ffffff" : _subtext1
-    property color surface0: "#313244"
-    property color surface1: "#45475a"
-    property color surface2: "#585b70"
-    property color overlay0: "#6c7086"
-    property color overlay1: "#7f849c"
-    property color overlay2: "#9399b2"
-    property color blue: "#89b4fa"
+    property color surface0: defaultColors.surface0
+    property color surface1: defaultColors.surface1
+    property color surface2: defaultColors.surface2
+    property color overlay0: defaultColors.overlay0
+    property color overlay1: defaultColors.overlay1
+    property color overlay2: defaultColors.overlay2
+    property color blue: defaultColors.blue
     readonly property color primary: blue
-    property color sapphire: "#74c7ec"
-    property color peach: "#fab387"
-    property color green: "#a6e3a1"
-    property color red: "#f38ba8"
-    property color mauve: "#cba6f7"
-    property color pink: "#f5c2e7"
-    property color yellow: "#f9e2af"
-    property color maroon: "#eba0ac"
-    property color teal: "#94e2d5"
+    property color sapphire: defaultColors.sapphire
+    property color peach: defaultColors.peach
+    property color green: defaultColors.green
+    property color red: defaultColors.red
+    property color mauve: defaultColors.mauve
+    property color pink: defaultColors.pink
+    property color yellow: defaultColors.yellow
+    property color maroon: defaultColors.maroon
+    property color teal: defaultColors.teal
 
     property string configPath: Quickshell.env("QS_COLORS_JSON") ?? "~/.local/state/serpantinum/qs_colors.json"
     property string matugenConfigPath: (typeof Caching !== "undefined" && Caching.stateDir ? Caching.stateDir : ((Quickshell.env("HOME") ?? "") + "/.local/state/serpantinum")) + "/qs_matugen_colors.json"
@@ -267,10 +275,15 @@ Item {
         let customColors = themeConfig.colors || themeConfig.palette || (themeConfig.base !== undefined ? themeConfig : null);
 
         if (root.isMatugenTheme()) {
-            root.applyMatugenColors();
-            let wp = themeConfig.wallpaper || Config.getSetting("wallpaper", "");
+            const fallback = root.matugenColors || root.defaultColors;
+            root.applyColorObject(fallback);
+            const wp = themeConfig.wallpaper || Config.getSetting("wallpaper", "");
             if (typeof Matugen !== "undefined" && typeof Matugen.generate === "function") {
-                Matugen.generate(wp, themeConfig.mode, themeConfig.schemeType);
+                if (typeof wp === "string" && wp !== "") {
+                    Matugen.generate(wp, themeConfig.mode, themeConfig.schemeType);
+                } else if (Config.dataReady && !Matugen.generatingWallpaper) {
+                    Matugen.generateFromStatic(fallback, themeConfig.mode);
+                }
             }
             root._readInProgress = false;
         } else {
@@ -369,15 +382,13 @@ Item {
 
         onLoaded: {
             root._readInProgress = false;
+            if (root.isMatugenTheme()) return;
             let txt = text().trim();
             if (txt !== "") {
                 try {
                     let c = JSON.parse(txt);
                     let target = c && c.colors ? c.colors : c;
                     if (target) {
-                        if (root.isMatugenTheme()) {
-                            root.matugenColors = target;
-                        }
                         root.applyColorObject(target);
                     }
                 } catch(e) {}

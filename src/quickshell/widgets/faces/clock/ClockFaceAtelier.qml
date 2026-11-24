@@ -14,6 +14,7 @@ Item {
 
     property bool previewMode: false
     property string faceStyle: "elegant"
+    property bool showSeconds: false
     property real minWidth: 120
     property real minHeight: 48
     property real maxWidth: 1600
@@ -28,7 +29,7 @@ Item {
     readonly property string look: kit.styleId
     readonly property bool compact: look === "compact" || height < Scaler.s(70)
     readonly property bool centered: look === "elegant" || look === "borderless"
-    readonly property bool withSeconds: look === "technical"
+    readonly property bool withSeconds: look === "technical" || showSeconds
 
     // Seconds only where they are shown; one 1 s timer while visible.
     property int second: new Date().getSeconds()
@@ -49,6 +50,7 @@ Item {
         }
         case "elegant": return DateTime.dayName + ", " + DateTime.fullDate;
         case "compact": return DateTime.dayNameShort + " " + DateTime.shortDate;
+        case "abyss": return kit.label(DateTime.fullDate);
         default: return kit.label(DateTime.dayName + "  ·  " + DateTime.fullDate);
         }
     }
@@ -72,11 +74,18 @@ Item {
 
         Text {
             id: timeText
+            property string minuteStamp: DateTime.hour + DateTime.minute
+            onMinuteStampChanged: if (root.visible && kit.transitions && !root.previewMode) minuteFade.restart()
+            SequentialAnimation {
+                id: minuteFade
+                NumberAnimation { target: timeText; property: "opacity"; to: 0.7; duration: 70 }
+                NumberAnimation { target: timeText; property: "opacity"; to: 1; duration: 170; easing.type: Easing.OutCubic }
+            }
             Layout.fillWidth: !root.compact
             Layout.fillHeight: true
             Layout.preferredWidth: root.compact ? implicitWidth : -1
             text: DateTime.hour
-                  + "<font color='" + (root.colonOn ? (root.look === "editorial" || root.look === "premium" ? kit.accent : kit.faint) : "transparent") + "'>:</font>"
+                  + "<font color='" + (root.colonOn ? (["editorial", "premium", "abyss"].includes(root.look) ? kit.accent : kit.faint) : "transparent") + "'>:</font>"
                   + DateTime.minute
                   + (root.withSeconds ? "<font color='" + kit.faint + "'><small>:" + (root.second < 10 ? "0" : "") + root.second + "</small></font>" : "")
                   + (DateTime.amPm !== "" ? "<font color='" + kit.muted + "'><small> " + DateTime.amPm + "</small></font>" : "")

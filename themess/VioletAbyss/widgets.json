@@ -1,0 +1,53 @@
+[
+  {
+    "id": "abyss_clock", "type": "time", "variant": "atelier", "faceStyle": "abyss",
+    "anchor": "top left", "x": 56, "y": 82, "w": 545, "h": 174, "showSeconds": false
+  },
+  {
+    "id": "abyss_weather", "type": "weather", "variant": "atelier", "faceStyle": "abyss",
+    "anchor": "top left", "x": 56, "y": 276, "w": 545, "h": 248, "showForecast": true
+  },
+  {
+    "id": "abyss_calendar", "type": "calendar", "variant": "atelier", "faceStyle": "abyss",
+    "anchor": "top left", "x": 56, "y": 544, "w": 370, "h": 265
+  },
+  {
+    "id": "abyss_actions", "type": "quickactions", "variant": "atelier", "faceStyle": "abyss",
+    "anchor": "top left", "x": 56, "y": 856, "w": 545, "h": 112
+  },
+  {
+    "id": "abyss_terminal", "type": "terminal", "variant": "atelier", "faceStyle": "abyss",
+    "anchor": "bottom left", "x": 56, "y": 92, "w": 588, "h": 300,
+    "mode": "fetchShell", "shell": "auto", "colorScheme": "theme", "backgroundOpacity": 0.93,
+    "appearAnimation": "fade", "fontFamily": "JetBrains Mono", "fontSize": 12, "cornerRadius": 18
+  },
+  {
+    "id": "abyss_music", "type": "music", "variant": "atelier", "faceStyle": "abyss",
+    "anchor": "top right", "x": 56, "y": 82, "w": 575, "h": 300,
+    "musicDrawer": true, "musicAnimations": true, "musicMaterial": "mica", "musicVisualizer": false
+  },
+  {
+    "id": "abyss_cpu", "type": "cpu", "variant": "atelier", "faceStyle": "abyss",
+    "anchor": "top right", "x": 354, "y": 434, "w": 277, "h": 128
+  },
+  {
+    "id": "abyss_gpu", "type": "gpu", "variant": "atelier", "faceStyle": "abyss",
+    "anchor": "top right", "x": 56, "y": 434, "w": 277, "h": 128
+  },
+  {
+    "id": "abyss_ram", "type": "ram", "variant": "atelier", "faceStyle": "abyss",
+    "anchor": "top right", "x": 354, "y": 582, "w": 277, "h": 112
+  },
+  {
+    "id": "abyss_disk", "type": "disk", "variant": "atelier", "faceStyle": "abyss",
+    "anchor": "top right", "x": 56, "y": 582, "w": 277, "h": 112
+  },
+  {
+    "id": "abyss_network", "type": "network", "variant": "atelier", "faceStyle": "abyss",
+    "anchor": "top right", "x": 56, "y": 714, "w": 575, "h": 198, "showTotals": true
+  },
+  {
+    "id": "abyss_temp", "type": "temp", "variant": "atelier", "faceStyle": "compact",
+    "anchor": "top right", "x": 56, "y": 932, "w": 277, "h": 85
+  }
+]

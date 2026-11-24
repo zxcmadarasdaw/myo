@@ -1,5 +1,6 @@
 """Themess package validation and native-store transaction tests."""
 import argparse
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -40,6 +41,7 @@ class ThemessTest(unittest.TestCase):
         patch("themess.Path.home", return_value=self.home).start()
         patch.dict(os.environ, {
             "HOME": str(self.home), "USERPROFILE": str(self.home),
+            "XDG_CONFIG_HOME": str(self.home / ".config"),
             "QS_SETTINGS": "", "QS_STATE_DIR": "", "QS_CACHE_DIR": "",
             "QS_CACHE_WALLPAPER": "", "QS_STATE_THEMESS": "",
         }).start()
@@ -335,6 +337,78 @@ class ThemessTest(unittest.TestCase):
         self.assertTrue(self.report()["errors"])
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg and ffprobe required")
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "requires FFmpeg and FFprobe")
+    def test_violet_abyss_catalog_apply_switch_restore_and_reload(self):
+        violet = ROOT / "themess/VioletAbyss"
+        caps = dict(CAPS, widgetSize={"w": 1920, "h": 1080},
+                    widgetTypes=dict.fromkeys(("time", "weather", "calendar", "quickactions", "terminal", "music",
+                                               "cpu", "gpu", "ram", "disk", "network", "temp"), ["atelier"]),
+                    barModules=CAPS["barModules"] + ["focus", "media", "bt"])
+        self.stores = themess.Stores(caps)
+        original_widgets = self.set_store(self.stores.widget_path("DP-1"), [{"wId": "original"}])
+        self.set_store(self.stores.settings, {"theme": {"matugen": True}, "general": {"keep": "before"},
+                                             "lockscreen": {"fingerprintEnabled": False}})
+        motion = themess.motion
+        motion_path = self.stores.motion_path()
+        classic = motion.generate(motion.preset("classic"))[0].encode()
+        themess.write_atomic(motion_path, classic)
+        for screen in caps["wallpaperScreens"]:
+            themess.write_atomic(self.stores.wallpaper_paths(screen)[0], b"/previous.png")
+        self.package_file("dock.json", {"floating": False})
+
+        def scan(folder):
+            plan = themess.scan(folder, caps)
+            self.assertFalse(plan.errors, plan.errors)
+            return themess.report(plan, self.stores)[0]
+
+        catalog = themess.catalog(self.stores, themess.metadata(self.stores))
+        card = next(item for item in catalog["packages"] if item["name"] == "Violet Abyss")
+        self.assertTrue(card["image"].startswith("data:image/png;base64,"))
+        self.assertEqual(card["packageToken"], scan(violet)["packageToken"])
+        with patch.object(themess, "video_snapshot", side_effect=ValueError("video decoder unavailable")):
+            fallback = themess.scan(violet, caps)
+        self.assertFalse(fallback.errors, fallback.errors)
+        self.assertEqual(fallback.image[1], ".png")
+        self.assertEqual(fallback.media[0], ".png")
+        self.assertEqual(len(fallback.warnings), 2)
+        with patch.dict(os.environ, {"HYPRLAND_INSTANCE_SIGNATURE": "qa"}), \
+                patch.object(motion, "profile_lock", side_effect=lambda path: contextlib.nullcontext()), \
+                patch.object(motion, "check_integration"), patch.object(motion, "hyprctl", return_value=""), \
+                patch.object(motion, "reload_profile") as reload_profile:
+            violet_info = scan(violet)
+            self.assertEqual(violet_info["widgetCount"], 12)
+            self.assertEqual(self.apply(violet_info["token"], violet)["active"]["name"], "Violet Abyss")
+            current = json.loads(self.stores.settings.read_bytes())
+            self.assertEqual(current["theme"]["colors"]["crust"], "#07050D")
+            self.assertEqual(current["terminalStyle"]["backgroundOpacity"], 0.93)
+            self.assertFalse(current["lockscreen"]["fingerprintEnabled"])
+            for screen in caps["wallpaperScreens"]:
+                wallpaper = Path(self.stores.wallpaper_paths(screen)[0].read_text(encoding="utf-8"))
+                self.assertTrue(wallpaper.is_file())
+                self.assertEqual(wallpaper.suffix, ".webm")
+            layout = json.loads(self.stores.widget_path("DP-1").read_bytes())
+            self.assertEqual(layout[0]["wWidth"], 408.75)
+            self.assertEqual(motion.read_profile(motion_path)[0]["preset"], "violet-abyss")
+
+            self.stores = themess.Stores(caps)
+            self.assertEqual(themess.status(themess.metadata(self.stores))["active"]["name"], "Violet Abyss")
+            current["general"]["keep"] = "updated while active"
+            self.set_store(self.stores.settings, current)
+            self.apply(scan(self.folder)["token"])
+            current = json.loads(self.stores.settings.read_bytes())
+            self.assertEqual(current, {"theme": {"matugen": True}, "dock": {"floating": False},
+                                       "lockscreen": {"fingerprintEnabled": False},
+                                       "general": {"keep": "updated while active"}})
+            self.assertEqual(self.stores.widget_path("DP-1").read_bytes(), original_widgets)
+            self.assertEqual(motion_path.read_bytes(), classic)
+            for screen in caps["wallpaperScreens"]:
+                self.assertEqual(self.stores.wallpaper_paths(screen)[0].read_bytes(), b"/previous.png")
+            self.assertEqual(self.restore()["active"]["name"], "Violet Abyss")
+            self.assertEqual(motion.read_profile(motion_path)[0]["preset"], "violet-abyss")
+            self.apply(scan(self.folder)["token"])
+            self.apply(scan(violet)["token"], violet)
+            self.assertEqual(reload_profile.call_count, 5)
+
     def test_bundled_error_girl_themes_scan_clean_and_share_one_free_codec_video(self):
         # Mochi Night and ERROR//OVERDRIVE name their media as @shared/...; both must scan
         # without errors with every widget variant they use, and the shared clips must not be

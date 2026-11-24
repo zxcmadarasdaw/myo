@@ -1177,6 +1177,18 @@ def _apply(ctx, enabled_override, mode, force, only, color_scheme=False):
         save_state(ctx, state)
         return {"ok": False, "error": "no_palette" if palette_bytes is None else "bad_palette", "apps": results}
     palette_hash = sha(palette_bytes + mode.encode())
+    settings = read_json(ctx.settings, {})
+    terminal_style = settings.get("terminalStyle", {}) if isinstance(settings, dict) else {}
+    opacity = terminal_style.get("backgroundOpacity") if isinstance(terminal_style, dict) else None
+    kitty_options = b""
+    if type(opacity) in (int, float) and 0.75 <= opacity <= 1:
+        colors = palette["colors"]
+        try:
+            background = colors["background"]["default"]["hex"]
+        except (KeyError, TypeError):
+            background = ""
+        if isinstance(background, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", background):
+            kitty_options = f"\nbackground {background}\nbackground_opacity {opacity:g}\n".encode()
     targets = []
     for app_id in sorted(enabled):
         app = apps.get(app_id)
@@ -1201,13 +1213,16 @@ def _apply(ctx, enabled_override, mode, force, only, color_scheme=False):
             results[app.id] = {"ok": False, "error": "invalid", "detail": str(exc)}
             continue
         fingerprint = sha((palette_hash + app.raw_bytes() + json.dumps([str(o[2]) for o in outputs])).encode())
+        options = kitty_options if app.id == "kitty" and app.builtin and not app.custom else b""
+        if options:
+            fingerprint = sha(fingerprint.encode() + options)
         previous = state["applied"].get(app.id, {})
         fresh = (
             not force
             and previous.get("fingerprint") == fingerprint
             and all(file_hash(dest) == previous.get("hashes", {}).get(str(dest)) for _, _, dest in outputs)
         )
-        plans[app.id] = {"fingerprint": fingerprint, "fresh": fresh, "jobs": []}
+        plans[app.id] = {"fingerprint": fingerprint, "jobs": [], "options": options}
         if fresh:
             continue
         for index, src, dest in outputs:
@@ -1238,6 +1253,7 @@ def _apply(ctx, enabled_override, mode, force, only, color_scheme=False):
         write_error = None
         for job in plan["jobs"]:
             data = Path(job["stage"]).read_bytes()
+            data += plan["options"]
             dest = job["dest"]
             try:
                 if dest.is_symlink() or file_hash(dest) != sha(data):

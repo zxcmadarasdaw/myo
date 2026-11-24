@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import "../../../"
 import "../../../reusables"
@@ -36,7 +37,8 @@ Item {
     readonly property real duration: player && player.lengthSupported ? Math.max(0, player.length) : 0
     readonly property real position: Math.max(0, MprisController.livePosition || 0)
     readonly property bool compact: look === "compact" || height < Scaler.s(100)
-    readonly property bool showTimes: (look === "technical" || look === "retro" || look === "premium") && duration > 0
+    readonly property bool showTimes: ["technical", "retro", "premium", "abyss"].includes(look) && duration > 0
+    readonly property bool showVolume: look === "abyss" && !compact && controllable && player.volumeSupported
 
     function clock(seconds) {
         const s = Math.max(0, Math.floor(seconds));
@@ -90,6 +92,7 @@ Item {
             spacing: Scaler.s(2)
 
             Text {
+                id: trackLabel
                 Layout.fillWidth: true
                 text: root.player ? (MprisController.trackTitle || I18n.t("widgets.music.unknownTrack", "Unknown track"))
                                   : I18n.t("widgets.music.noPlayer", "Nothing playing")
@@ -100,6 +103,16 @@ Item {
                 font.weight: root.look === "editorial" ? Font.DemiBold : Font.Medium
                 font.pixelSize: Math.max(Scaler.s(12), Math.min(Scaler.s(root.look === "premium" || root.look === "editorial" ? 22 : 16), root.height * 0.14))
                 color: kit.ink
+                onTextChanged: if (root.look === "abyss" && kit.transitions && root.controllable) trackFade.restart()
+                NumberAnimation {
+                    id: trackFade
+                    target: trackLabel
+                    property: "opacity"
+                    from: 0.48
+                    to: 1
+                    duration: 210
+                    easing.type: Easing.OutCubic
+                }
             }
             Text {
                 Layout.fillWidth: true
@@ -158,6 +171,50 @@ Item {
                 kind: kit.t.meter === "bar" ? "line" : kit.t.meter
                 value: root.duration > 0 ? root.position / root.duration : 0
                 color: kit.accent
+            }
+
+            RowLayout {
+                visible: root.showVolume
+                Layout.fillWidth: true
+                spacing: Scaler.s(6)
+                Text {
+                    text: "󰕾"
+                    font.family: ThemeBackend.iconFont
+                    font.pixelSize: Scaler.s(14)
+                    color: kit.muted
+                }
+                Slider {
+                    id: volumeSlider
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Scaler.s(16)
+                    from: 0
+                    to: 1
+                    value: root.player?.volume ?? 0
+                    Accessible.name: qsTr("Player volume")
+                    onMoved: if (root.showVolume) root.player.volume = value
+                    background: Rectangle {
+                        x: volumeSlider.leftPadding
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: volumeSlider.availableWidth
+                        height: Scaler.s(3)
+                        radius: height / 2
+                        color: ThemeBackend.surface2
+                        Rectangle {
+                            width: parent.width * volumeSlider.visualPosition
+                            height: parent.height
+                            radius: parent.radius
+                            color: kit.accent
+                        }
+                    }
+                    handle: Rectangle {
+                        x: volumeSlider.leftPadding + volumeSlider.visualPosition * (volumeSlider.availableWidth - width)
+                        anchors.verticalCenter: parent.verticalCenter
+                        implicitWidth: Scaler.s(9)
+                        implicitHeight: width
+                        radius: width / 2
+                        color: volumeSlider.pressed ? kit.ink : kit.accent
+                    }
+                }
             }
         }
     }

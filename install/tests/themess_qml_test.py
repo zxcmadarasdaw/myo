@@ -50,6 +50,8 @@ with tempfile.TemporaryDirectory(prefix="themess-qml-") as directory:
 
     app_src = root / "app/src"
     shutil.copytree(ROOT / "src/scripts/themess", app_src / "scripts/themess", ignore=shutil.ignore_patterns("__pycache__"))
+    (app_src / "scripts/system").mkdir()
+    shutil.copyfile(ROOT / "src/scripts/system/hypr_animations.py", app_src / "scripts/system/hypr_animations.py")
     package = app_src.parent / "themess/Bundled"
     package.mkdir(parents=True)
     (package / "dock.json").write_text('{"enabled": false}', encoding="utf-8")
@@ -97,7 +99,7 @@ with tempfile.TemporaryDirectory(prefix="themess-qml-") as directory:
     singleton(root, Path("widgets"), "WidgetRegistry", 'property var types: ({time: {name: "Clock"}}); function typeList() { return [{id: "time"}]; } function variantList(id) { return [{id: "lockscreen"}]; } function parseAnchors(widget) { return widget.anchor ? {h:"left",v:"top"} : null; }')
     singleton(root, Path("bar"), "BarModuleRegistry", 'function moduleIds() { return ["left"]; } property var menuItemIds: ["settings"]; function variantList(id) { return []; }')
     write(root, "Quickshell/qmldir", "module Quickshell\n")
-    singleton(root, Path("Quickshell"), "Quickshell", 'property var screens: [{name: "DP-1"}]')
+    singleton(root, Path("Quickshell"), "Quickshell", 'property var screens: [{name: "DP-1"}]; function env(name) { return ""; }')
     write(root, "Quickshell/Io/qmldir", "module Quickshell.Io\nProcess 1.0 Process.qml\nStdioCollector 1.0 StdioCollector.qml\n")
     write(root, "Quickshell/Io/StdioCollector.qml", 'import QtQuick\nQtObject { property string text: "" }')
     write(root, "Quickshell/Io/Process.qml", '''import QtQuick

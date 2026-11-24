@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "position": "bottom",
+  "autohide": false,
+  "smartAutohide": true,
+  "exclusive": false,
+  "elementSize": 46,
+  "floating": true,
+  "background": true,
+  "hoverScale": 120,
+  "useDefaultApps": true,
+  "showRunningApps": true,
+  "showRunningIndicators": true
+}

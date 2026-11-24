@@ -1,6 +1,7 @@
 """Scan and apply data-only desktop packages through Serpantinum's native stores."""
 import argparse
 import base64
+import contextlib
 import copy
 from dataclasses import dataclass, field
 import hashlib
@@ -13,7 +14,10 @@ import subprocess
 import sys
 import tempfile
 
-from schema import SETTINGS, configuration, export_fusion, plain, widget_layout
+from schema import BOOL, SETTINGS, configuration, export_fusion, plain, widget_layout
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "system"))
+import hypr_animations as motion
 
 JSON_LIMIT = 2 * 1024 * 1024
 MEDIA_LIMIT = 24 * 1024 * 1024
@@ -36,7 +40,7 @@ VIDEO_MAX_SECONDS = 600
 WALLPAPER_SUFFIXES = (*FORMATS, *VIDEO_FORMATS)
 FALLBACK = {kind: f"{kind}.json" for kind in (*SETTINGS, "widgets")}
 MEDIA_KINDS = ("wallpaper", "fastfetchMedia")
-KINDS = set(FALLBACK) | set(MEDIA_KINDS)
+KINDS = set(FALLBACK) | set(MEDIA_KINDS) | {"windowMotion"}
 # Packages that sit directly in a library root may name media as "@shared/<path>": the file
 # is read from the root's ".shared" folder with the same checks as package files, so several
 # bundled themes can use one copy of a video instead of each carrying its own.
@@ -239,6 +243,9 @@ class Plan:
     image: tuple | None = None
     media: tuple | None = None
     reference_size: dict | None = None
+    posters: dict = field(default_factory=dict)
+    window_motion: dict | None = None
+    restore_on_switch: bool = False
     fingerprints: dict = field(default_factory=dict)
 
 
@@ -250,12 +257,22 @@ def manifest(plan):
         plan.source = "theme.json"
         data = read_json(raw)
         required = {"version", "name", "components"}
-        optional = {"author", "description", "referenceSize"}
+        optional = {"author", "description", "referenceSize", "restoreOnSwitch", "wallpaperPoster", "fastfetchPoster"}
         if (not isinstance(data, dict) or not required <= data.keys() <= required | optional
                 or type(data["version"]) is not int or data["version"] != 1
                 or not plain(data["name"]) or not isinstance(data["components"], dict)):
             raise ValueError("theme.json: expected version 1, name and components")
         plan.name = data["name"]
+        plan.restore_on_switch = data.get("restoreOnSwitch", False)
+        if not BOOL(plan.restore_on_switch):
+            raise ValueError("theme.json: restoreOnSwitch expects a boolean")
+        for field, component in (("wallpaperPoster", "wallpaper"), ("fastfetchPoster", "fastfetchMedia")):
+            if field in data:
+                name = data[field]
+                relative_parts(name)
+                if component not in data["components"] or PurePosixPath(name).suffix.lower() != ".png":
+                    raise ValueError(f"{field} requires a {component} component and a local PNG")
+                plan.posters[component] = name
         if "referenceSize" in data:
             size = data["referenceSize"]
             if (not isinstance(size, dict) or set(size) != {"w", "h"}
@@ -303,6 +320,16 @@ def scan(folder, caps, thumbnail=False):
         if kind not in caps.get("modules", []):
             plan.warnings.append(f"{kind}: module unavailable in this session")
             continue
+        poster = None
+        poster_path = plan.posters.get(kind)
+        size = (480, 640) if kind == "fastfetchMedia" else (480, 270) if thumbnail else (1920, 1080)
+        if poster_path:
+            try:
+                data = read_package_file(root, poster_path, MEDIA_LIMIT)
+                poster = image_snapshot(data, ".png", size)
+                plan.fingerprints[poster_path] = digest(data)
+            except (OSError, ValueError) as error:
+                plan.warnings.append(f"{poster_path}: {error}")
         try:
             source, relative = component_source(root, name)
             parts = relative_parts(relative)
@@ -311,13 +338,12 @@ def scan(folder, caps, thumbnail=False):
                 if suffix not in WALLPAPER_SUFFIXES:
                     raise ValueError("expected a GIF, PNG, JPEG, WebP, MP4 or WebM file")
                 data = read_package_file(source, relative, MEDIA_LIMIT)
-                size = (480, 640) if kind == "fastfetchMedia" else (480, 270) if thumbnail else (1920, 1080)
                 snapshot_of = video_snapshot if suffix in VIDEO_FORMATS else image_snapshot
                 frame = snapshot_of(data, suffix, size)
                 if kind == "wallpaper":
-                    plan.image = (PurePosixPath(parts[-1]).name, suffix, data, frame)
+                    plan.image = (PurePosixPath(parts[-1]).name, suffix, data, poster or frame)
                 else:
-                    plan.media = (suffix, data, frame if suffix in VIDEO_FORMATS else None)
+                    plan.media = (suffix, data, poster or (frame if suffix in VIDEO_FORMATS else None))
             else:
                 if name.startswith(SHARED_PREFIX):
                     raise ValueError("only media files can be shared")
@@ -327,13 +353,26 @@ def scan(folder, caps, thumbnail=False):
                 value = read_json(data)
                 if kind == "widgets":
                     plan.widgets = widget_layout(value, caps)
+                elif kind == "windowMotion":
+                    if (not isinstance(value, dict) or set(value) != {"preset"}
+                            or not plain(value["preset"]) or value["preset"] not in motion.PRESETS):
+                        raise ValueError("expected a built-in Hyprland animation preset")
+                    plan.window_motion = motion.preset(value["preset"])
                 else:
                     section, patch = configuration(kind, value, caps, plan.name)
                     merge(plan.settings, {section: patch})
             plan.fingerprints[name] = digest(data)
             plan.components.append({"kind": kind, "file": name})
         except (OSError, ValueError, RecursionError) as error:
-            plan.errors.append(f"{kind}: {error}")
+            if poster:
+                if kind == "wallpaper":
+                    plan.image = (PurePosixPath(poster_path).name, ".png", poster, poster)
+                else:
+                    plan.media = (".png", poster, poster)
+                plan.components.append({"kind": kind, "file": poster_path})
+                plan.warnings.append(f"{kind}: {error}. Using the static poster.")
+            else:
+                plan.errors.append(f"{kind}: {error}")
     if not plan.components and not plan.errors:
         plan.errors.append("No applicable components found.")
     return plan
@@ -342,7 +381,8 @@ def scan(folder, caps, thumbnail=False):
 class Stores:
     def __init__(self, caps):
         self.home = Path.home().resolve()
-        self.settings = Path(os.getenv("QS_SETTINGS") or self.home / ".config/serpantinum/settings.json")
+        config = Path(os.getenv("XDG_CONFIG_HOME") or self.home / ".config")
+        self.settings = Path(os.getenv("QS_SETTINGS") or config / "serpantinum/settings.json")
         self.state = Path(os.getenv("QS_STATE_DIR") or self.home / ".local/state/serpantinum")
         self.cache = Path(os.getenv("QS_CACHE_WALLPAPER") or
                           Path(os.getenv("QS_CACHE_DIR") or self.home / ".cache/serpantinum") / "wallpaper")
@@ -367,6 +407,10 @@ class Stores:
             raise ValueError("Invalid wallpaper output name.")
         return tuple(self.safe(self.cache / name) for name in (
             f"current_{screen}", f"current_{screen}_name", f"current_wallpaper_{screen}.png"))
+
+    def motion_path(self):
+        config = Path(os.environ.get("XDG_CONFIG_HOME") or self.home / ".config")
+        return config / "hypr" / "serpantinum-animations.lua"
 
 
 def snapshot(path):
@@ -401,9 +445,16 @@ def write_atomic(path, data):
         Path(temp).unlink(missing_ok=True)
 
 
-def native_changes(plan, stores):
+def native_changes(plan, stores, state):
     targets = {}
     detail = {"settings": [], "widgetCount": None, "widgetScreen": "", "wallpaperScreens": [], "widgetsBefore": 0}
+    scope = state.get("scope")
+    departing = scope if state["active"] != str(plan.root) else None
+    scoped = departing["files"] if departing else {}
+
+    def baseline(path, current):
+        return decode_backup(scoped[str(path)]) if str(path) in scoped else current
+
     settings = plan.settings
     if plan.media:
         # The clip is copied next to the wallpaper assets; settings only ever point there.
@@ -411,17 +462,37 @@ def native_changes(plan, stores):
         suffix, data, poster = plan.media
         merge(settings, {"fastfetchMedia": {"enabled": True, "path": str(media_asset(stores, suffix, data)),
                                            "posterPath": str(media_asset(stores, ".png", poster)) if poster else ""}})
-    if settings:
-        path = stores.safe(stores.settings)
-        original = snapshot(path)
+    settings_path = stores.safe(stores.settings) if settings or departing else None
+    settings_before = None
+    if settings_path is not None:
+        original = snapshot(settings_path)
         current = read_json(original) if original else {}
         if not isinstance(current, dict):
             raise ValueError("Current settings.json must contain an object.")
         updated = copy.deepcopy(current)
+        if departing:
+            saved = decode_backup(departing["settingsBefore"])
+            restore_settings(updated, read_json(saved) if saved else {}, departing["patch"])
+            settings_before = encode(updated) if updated or saved is not None else None
+        else:
+            settings_before = original
         merge(updated, settings)
-        detail["settings"] = differences(current, settings)
+        detail["settings"] = differences(current, updated)
         if updated != current:
-            targets[path] = (original, encode(updated))
+            targets[settings_path] = (original, encode(updated) if updated or settings_before is not None else None)
+    if plan.window_motion is not None:
+        try:
+            path = stores.safe(stores.motion_path())
+            current = snapshot(path)
+            _, revision = motion.read_profile(path)
+            if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+                motion.check_integration(revision)
+                errors = motion.hyprctl("configerrors")
+                if errors:
+                    raise RuntimeError(errors)
+            targets[path] = (current, motion.generate(plan.window_motion)[0].encode("utf-8"))
+        except (ValueError, OSError, RuntimeError, subprocess.SubprocessError) as error:
+            detail["motionWarning"] = str(error)
     if plan.widgets is not None:
         screen = stores.caps.get("widgetScreen")
         if not screen:
@@ -429,7 +500,8 @@ def native_changes(plan, stores):
         path = stores.widget_path(screen)
         before = snapshot(path)
         try:
-            existing = read_json(before) if before else []
+            base = baseline(path, before)
+            existing = read_json(base) if base else []
         except (ValueError, UnicodeDecodeError):
             existing = []
         layout = plan.widgets
@@ -443,16 +515,17 @@ def native_changes(plan, stores):
                 camera = stores.safe(path.with_name("canvas.json"))
                 saved = snapshot(camera)
                 try:
-                    state = read_json(saved) if saved else {}
+                    base = baseline(camera, saved)
+                    camera_state = read_json(base) if base else {}
                 except ValueError:
-                    state = {}
-                version = state.get("schema_version") if isinstance(state, dict) else None
+                    camera_state = {}
+                version = camera_state.get("schema_version") if isinstance(camera_state, dict) else None
                 if isinstance(version, (int, float)) and version > 1:
                     raise ValueError("Canvas state uses a newer schema. Update Serpantinum before applying.")
                 targets[camera] = (saved, encode({"schema_version": 1, "camera": {"x": 0, "y": 0, "zoom": 1},
                                                    "screen": {"w": size["w"], "h": size["h"]}}))
         targets[path] = (before, encode(layout))
-        # Shown before Apply: these widgets are replaced (and kept in the Restore Previous backup).
+        # Shown before Apply: the active widgets are kept in the Restore Previous backup.
         detail.update(widgetCount=len(plan.widgets), widgetScreen=screen,
                       widgetsBefore=len(existing) if isinstance(existing, list) else 0)
     if plan.image:
@@ -469,7 +542,34 @@ def native_changes(plan, stores):
             targets[preview] = (snapshot(preview), frame)
             targets[current] = (snapshot(current), str(asset).encode("utf-8"))
         detail["wallpaperScreens"] = screens
-    return {path: pair for path, pair in targets.items() if pair[0] != pair[1]}, detail
+    next_scope = None
+    if plan.restore_on_switch:
+        files = journal_entry({path: (baseline(path, before), None) for path, (before, _) in targets.items()
+                               if path != settings_path})
+        patch = copy.deepcopy(settings)
+        if scope and not departing:
+            files.update(scope["files"])
+            patch = copy.deepcopy(scope["patch"])
+            merge(patch, settings)
+            settings_before = decode_backup(scope["settingsBefore"])
+        next_scope = {"files": files, "settingsBefore": encode_backup(settings_before), "patch": patch}
+    for name, data in scoped.items():
+        path = stores.safe(Path(name))
+        if path not in targets:
+            targets[path] = (snapshot(path), decode_backup(data))
+    return {path: pair for path, pair in targets.items() if pair[0] != pair[1]}, detail, next_scope
+
+
+def restore_settings(current, before, patch):
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(current.get(key), dict) and isinstance(before.get(key, {}), dict):
+            restore_settings(current[key], before.get(key, {}), value)
+            if key not in before and not current[key]:
+                del current[key]
+        elif key in before:
+            current[key] = before[key]
+        else:
+            current.pop(key, None)
 
 
 def media_asset(stores, suffix, data):
@@ -485,6 +585,7 @@ def package_view(plan, show_image=False):
             "author": plan.author, "description": plan.description, "source": plan.source,
             "components": plan.components, "errors": plan.errors, "warnings": plan.warnings,
             "referenceSize": plan.reference_size,
+            "windowMotion": plan.window_motion["preset"] if plan.window_motion else None,
             "appearance": plan.settings, "widgets": plan.widgets,
             "packageToken": digest(encode([plan.fingerprints, plan.components, plan.warnings]))}
     if show_image and plan.image:
@@ -494,30 +595,46 @@ def package_view(plan, show_image=False):
     return info
 
 
-def report(plan, stores, preview=False):
-    info = package_view(plan, preview)
-    changes = {}
-    if not plan.errors:
-        changes, detail = native_changes(plan, stores)
-        info.update(detail)
-        info["token"] = digest(encode([str(plan.root), plan.fingerprints, detail,
-                                       [[str(path), digest(before) if before is not None else None, digest(after)]
-                                        for path, (before, after) in changes.items()]]))
-        info["changed"] = bool(changes)
-    info["preview"] = preview
+def report(plan, stores, preview=False, state=None):
+    info, changes, _ = prepare_report(plan, stores, preview, state)
     return info, changes
 
 
+def prepare_report(plan, stores, preview, state):
+    info = package_view(plan, preview)
+    changes = {}
+    scope = None
+    if not plan.errors:
+        changes, detail, scope = native_changes(plan, stores, metadata(stores) if state is None else state)
+        if "motionWarning" in detail:
+            info["warnings"] = [*info["warnings"], "windowMotion: " + detail.pop("motionWarning")]
+        info.update(detail)
+        info["token"] = digest(encode([str(plan.root), plan.fingerprints, detail,
+                                       [[str(path), digest(before) if before is not None else None,
+                                         digest(after) if after is not None else None]
+                                        for path, (before, after) in changes.items()]]))
+        info["changed"] = bool(changes)
+    info["preview"] = preview
+    return info, changes, scope
+
+
 def journal_entry(changes):
-    return {str(path): base64.b64encode(before).decode("ascii") if before is not None else None
-            for path, (before, _) in changes.items()}
+    return {str(path): encode_backup(before) for path, (before, _) in changes.items()}
+
+
+def encode_backup(data):
+    return base64.b64encode(data).decode("ascii") if data is not None else None
+
+
+def decode_backup(data):
+    return base64.b64decode(data, validate=True) if data is not None else None
 
 
 def restore_files(entries, stores):
     errors = []
     for name, data in entries.items():
         try:
-            write_atomic(stores.safe(Path(name)), base64.b64decode(data, validate=True) if data is not None else None)
+            write_atomic(stores.safe(Path(name)), decode_backup(data))
         except (ValueError, OSError) as error:
             errors.append(f"{name}: {error}")
     if errors:
@@ -537,6 +654,21 @@ def metadata(stores):
 
 
 def update_stores(stores, state, changes, finished):
+    # Only consult the compositor for a transaction touching its managed profile.
+    expected = stores.motion_path()
+    if expected.resolve() not in changes or not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        return write_transaction(stores, state, changes, finished)
+    path = stores.safe(expected)
+    with motion.profile_lock(path):
+        _, revision = motion.read_profile(path)
+        motion.check_integration(revision)
+        errors = motion.hyprctl("configerrors")
+        if errors:
+            raise RuntimeError(errors)
+        write_transaction(stores, state, changes, finished, path)
+
+
+def write_transaction(stores, state, changes, finished, motion_path=None):
     path = stores.safe(stores.directory / "state.json")
     before_images = journal_entry(changes)
     pending = dict(state, pending={
@@ -551,9 +683,14 @@ def update_stores(stores, state, changes, finished):
                 raise ValueError(f"Settings changed during the operation: {target}")
             write_atomic(target, after)
             written[str(target)] = before_images[str(target)]
+        if motion_path is not None:
+            motion.reload_profile(motion.read_profile(motion_path)[1])
         write_atomic(path, encode(finished))
-    except (ValueError, OSError):
+    except (ValueError, OSError, RuntimeError, subprocess.SubprocessError):
         restore_files(written, stores)
+        if motion_path is not None and str(motion_path) in written:
+            with contextlib.suppress(OSError, RuntimeError, subprocess.SubprocessError):
+                motion.hyprctl("reload")
         write_atomic(path, encode(state))
         raise
 
@@ -615,11 +752,22 @@ def edit_library(args, stores, state):
 
 
 def recover_pending(stores, pending):
+    profile = stores.motion_path().resolve()
+    if str(profile) in pending and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        profile = stores.safe(stores.motion_path())
+        with motion.profile_lock(profile):
+            recover_files(stores, pending)
+            motion.reload_profile(motion.read_profile(profile)[1])
+        return
+    recover_files(stores, pending)
+
+
+def recover_files(stores, pending):
     restore = {}
     for name, record in pending.items():
         path = stores.safe(Path(name))
         current = snapshot(path)
-        before = base64.b64decode(record["before"], validate=True) if record["before"] is not None else None
+        before = decode_backup(record["before"])
         if current == before:
             continue
         current_digest = digest(current) if current is not None else None
@@ -666,17 +814,18 @@ def mutate(args, stores):
             changes = {}
             for name, data in backup.items():
                 path = stores.safe(Path(name))
-                changes[path] = (snapshot(path), base64.b64decode(data, validate=True) if data is not None else None)
+                changes[path] = (snapshot(path), decode_backup(data))
             active = None if original else state["previousActive"]
             finished = dict(state, previous=None, previousActive=None, previousName=None,
                             active=active, activeName=state.get("previousName") if active else None,
+                            scope=state.get("previousScope") if active else None, previousScope=None,
                             original=state["original"] if active else None)
             update_stores(stores, state, changes, finished)
             return dict(status(finished), canvasFiles=canvas_files(changes), message=("Original desktop settings restored." if original
                                                    else "Previous desktop settings restored."))
 
         plan = scan(args.folder, stores.caps)
-        info, changes = report(plan, stores)
+        info, changes, scope = prepare_report(plan, stores, False, state)
         if plan.errors:
             return dict(status(state), **info)
         if not args.token or args.token != info["token"]:
@@ -696,19 +845,19 @@ def mutate(args, stores):
         folder = str(plan.root)
         history = [folder] + [item for item in state["history"] if item != folder]
         backup = journal_entry(changes)
-        finished = dict(state, history=history[:12], active=folder, activeName=plan.name)
+        finished = dict(state, history=history[:12], active=folder, activeName=plan.name, scope=scope)
         if changes or folder != state["active"]:
             # Keep the first backup of each native file across successive packages.
             original = dict(backup)
             original.update(state["original"] or {})
             finished.update(previous=backup, previousActive=state["active"], previousName=state.get("activeName"),
-                            original=original)
+                            previousScope=state.get("scope"), original=original)
         if changes:
             update_stores(stores, state, changes, finished)
         else:
             write_atomic(stores.directory / "state.json", encode(finished))
         message = "Package applied." if changes else "The selected settings are already active."
-        return dict(status(finished), canvasFiles=canvas_files(changes), message=message)
+        return dict(status(finished), canvasFiles=canvas_files(changes), message=message, warnings=info["warnings"])
 
 
 def main():
@@ -736,7 +885,7 @@ def main():
             result = {"widgetPackage": export_fusion(read_json(saved) if saved else [], stores.caps)}
         else:
             result = mutate(args, stores)
-    except (OSError, ValueError, RecursionError) as error:
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         result = {"errors": [str(error)]}
         if stores is not None and args.action in ("apply", "restore", "restore-original"):
             try:

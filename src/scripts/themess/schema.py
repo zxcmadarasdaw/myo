@@ -53,7 +53,7 @@ VPN_STYLE = {
 
 
 FASTFETCH_THEMES = ("obsidian", "glass_noir", "minimal", "liquid_shadow", "terminal_classic", "floating_media",
-                    "mochi", "overdrive", "velvet", "neuro")
+                    "mochi", "overdrive", "velvet", "neuro", "abyss")
 
 
 def validate(value, schema, label, allow_empty=False):
@@ -79,11 +79,17 @@ SETTINGS = {
         "borderRadius": integer(0, 64), "elementOpacity": PERCENT, "fontFamily": plain,
         "blurBackground": BOOL, "blurStyle": choice(("blur", "liquid")),
     }),
+    "wallpaperPlayback": ("wallpaper", {"pauseOnFullscreen": BOOL}),
+    "lockscreen": ("lockscreen", {
+        "backgroundMode": choice(("follow",)), "promptBackdropMode": choice(("desktop", "wallpaper")),
+        "staticWallpaper": BOOL,
+    }),
+    "terminalStyle": ("terminalStyle", {"backgroundOpacity": number(0.75, 1)}),
     "panels": ("bar", {
         "position": choice(POSITIONS), "style": choice(("modular", "solid", "fill")),
         "width": integer(10, 100), "height": integer(16, 128),
         "autohide": BOOL, "distinctPills": BOOL, "centerByEdges": BOOL, "timeShowDate": BOOL,
-        "wifiShowName": BOOL,
+        "wifiShowName": BOOL, "brandLabel": pattern(r"[A-Za-z0-9 -]{1,16}"),
         "sysmonStats": items(choice(("cpu", "ram", "temp"))),
     }),
     "animations": ("wallpaperTransition", {
@@ -117,6 +123,7 @@ SETTINGS = {
         "floating": BOOL, "exclusive": BOOL, "elementSize": integer(16, 128),
         "autohide": BOOL, "smartAutohide": BOOL, "autohideTimeout": integer(0, 10000),
         "hoverScale": integer(100, 200), "showRunningApps": BOOL, "showRunningIndicators": BOOL,
+        "useDefaultApps": BOOL,
     }),
     "launcher": ("launcher", {
         "position": choice(POSITIONS + ["center"]), "width": integer(250, 1600),
@@ -159,7 +166,7 @@ SETTINGS = {
 # no command, no host to ping, no path. Terminal modes that would run a configured
 # command ("monitor") are not accepted.
 ATELIER_STYLES = ("matte", "premium", "minimal", "retro", "elegant", "editorial", "technical", "borderless", "compact",
-                 "velvet", "retro_tech", "cyber", "asymmetric")
+                 "velvet", "retro_tech", "cyber", "asymmetric", "abyss")
 WIDGET_FIELDS = {
     "faceStyle": choice(ATELIER_STYLES),
     "onlyWhilePlaying": BOOL,
@@ -223,6 +230,10 @@ def widget_fields(kind, types):
         schema.update(WIDGET_FIELDS, variant=choice(types[kind]))
         if kind == "terminal":
             schema.update(TERMINAL_FIELDS)
+        if kind == "weather":
+            schema.update(showForecast=BOOL)
+        if kind == "time":
+            schema.update(showSeconds=BOOL)
         if kind == "music":
             schema.update(musicDrawer=BOOL, musicAnimations=BOOL, musicVisualizer=BOOL,
                           musicMaterial=choice(("liquid", "mica", "neon", "minimal")))

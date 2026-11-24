@@ -8,6 +8,7 @@ Item {
     id: root
 
     readonly property bool isRunning: matugenProcess.running
+    readonly property bool generatingWallpaper: isRunning && _currentReqType === "image"
     property string lastWallpaper: ""
     property string matugenBaseDir: {
         let dir = "";
@@ -183,7 +184,7 @@ Item {
     }
 
     function generate(imagePath, mode, schemeType) {
-        if (!imagePath || imagePath.trim() === "") {
+        if (typeof imagePath !== "string" || imagePath.trim() === "") {
             return false;
         }
         if (!root.isMatugenTheme()) {

@@ -1,0 +1,19 @@
+{
+  "appearance": {
+    "theme": "abyss",
+    "layout": "classic",
+    "position": "center",
+    "width": 34,
+    "height": 92,
+    "zoom": 1,
+    "opacity": 1,
+    "radius": 12,
+    "fit": "crop",
+    "background": "matte"
+  },
+  "loop": true,
+  "autoplay": true,
+  "pauseWhenHidden": true,
+  "speed": 1,
+  "animationFps": 15
+}

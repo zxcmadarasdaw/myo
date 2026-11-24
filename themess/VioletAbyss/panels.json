@@ -1,0 +1,22 @@
+{
+  "position": "top",
+  "style": "modular",
+  "width": 96,
+  "height": 40,
+  "autohide": false,
+  "brandLabel": "MYO",
+  "distinctPills": true,
+  "centerByEdges": true,
+  "menuItems": ["launcher", "settings"],
+  "workspacesStyle": "pills",
+  "timeStyle": "classic",
+  "timeShowDate": true,
+  "wifiShowName": false,
+  "sysmonStyle": "bars",
+  "sysmonStats": ["cpu", "ram"],
+  "modules": {
+    "left": [["left", "workspaces"], "focus"],
+    "center": ["media"],
+    "right": ["sysmon", ["wifi", "bt", "vol", "bat"], "tray", "timedate"]
+  }
+}

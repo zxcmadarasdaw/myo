@@ -89,6 +89,7 @@ Item {
     }
 
     readonly property string headerTitle: {
+        if (atelier && faceStyle === "abyss") return "Abyss Terminal";
         if (core.title !== "" && mode === "interactive") return core.title;
         switch (mode) {
         case "fastfetch": return "fastfetch";
@@ -250,6 +251,7 @@ Item {
         live: root.isLive && !root.paused
         mode: root.mode
         fetchLayout: root.hasFetchMedia ? FastfetchMedia.layout : ""
+        abyssFetch: root.atelier && root.faceStyle === "abyss"
         shell: root.shell
         command: root.command
         monitorInterval: root.monitorInterval

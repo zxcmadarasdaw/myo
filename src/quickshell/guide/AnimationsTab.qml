@@ -31,7 +31,8 @@ GuideTab {
     function label(value) {
         const labels = {
             classic: "Classic", smooth: "Smooth", dynamic: "Dynamic", minimal: "Minimal",
-            cinematic: "Cinematic", custom: "Custom", fade: "Fade", scale: "Scale",
+            cinematic: "Cinematic", "violet-abyss": "Violet Abyss Motion", abyss: "Abyss",
+            custom: "Custom", fade: "Fade", scale: "Scale",
             zoom: "Zoom", slide: "Slide", slidevert: "Vertical slide", slidefade: "Slide + fade",
             slidefadevert: "Vertical slide + fade", pop: "Pop", linear: "Linear", off: "Off",
             auto: "Automatic", left: "Left", right: "Right", top: "Top", bottom: "Bottom",
@@ -137,7 +138,7 @@ GuideTab {
                 wrapText: true
                 Choice {
                     enabled: root.catalog !== null
-                    values: ["default", "classic", "smooth", "dynamic", "minimal", "cinematic", "custom"]
+                    values: ["default"].concat(Object.keys(root.catalog?.presets || {}), ["custom"])
                     selected: root.draft ? root.draft.preset : "default"
                     onActivated: function(index) {
                         const value = values[index];
