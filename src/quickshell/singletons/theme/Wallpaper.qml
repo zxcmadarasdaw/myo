@@ -209,6 +209,19 @@ Item {
         let map = Object.assign({}, root.engines);
         map[screenName] = engine;
         root.engines = map;
+        publishEngineState(screenName, engine);
+    }
+
+    function publishEngineState(screenName: string, engine: var): void {
+        if (!screenName || root.engines[screenName] !== engine) return;
+        const paths = Object.assign({}, root.screenWallpaperPaths);
+        const titles = Object.assign({}, root.screenWallpapers);
+        if (engine.currentWallpaperPath) paths[screenName] = engine.currentWallpaperPath;
+        else delete paths[screenName];
+        if (engine.originalFileName) titles[screenName] = engine.originalFileName;
+        else delete titles[screenName];
+        root.screenWallpaperPaths = paths;
+        root.screenWallpapers = titles;
     }
 
     function unregisterEngine(screenName: string, engine: var): void {
@@ -216,6 +229,12 @@ Item {
         let map = Object.assign({}, root.engines);
         delete map[screenName];
         root.engines = map;
+        const paths = Object.assign({}, root.screenWallpaperPaths);
+        const titles = Object.assign({}, root.screenWallpapers);
+        delete paths[screenName];
+        delete titles[screenName];
+        root.screenWallpaperPaths = paths;
+        root.screenWallpapers = titles;
     }
 
     function setWallpaper(screenName: string, path: string, transition: string): void {

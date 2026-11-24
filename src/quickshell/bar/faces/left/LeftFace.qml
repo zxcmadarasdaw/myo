@@ -20,6 +20,7 @@ Item {
     readonly property bool isPreview: activeTarget ? Boolean(activeTarget.isPreview) : false
     readonly property bool showLayout: (barWindow && !isPreview) ? Boolean(barWindow.isStartupReady) : true
     readonly property real barOpacity: ThemeBackend.elementOpacity
+    readonly property string brandLabel: isVertical ? "" : Config.getSetting("bar.brandLabel", "")
 
     function s(val) {
         if (barWindow && typeof barWindow.cs === "function") return barWindow.cs(val);
@@ -142,7 +143,8 @@ Item {
     readonly property real buttonsLength: menuCount > 0
         ? menuCount * (isVertical ? s(isCompact ? 28 : 30) : s(isCompact ? 30 : 32)) + (menuCount - 1) * s(isCompact ? 2 : 4)
         : 0
-    property real targetLength: (!module || module.moduleActive) ? (buttonsLength + s(isCompact ? 6 : 8)) : 0
+    property real targetLength: (!module || module.moduleActive)
+        ? buttonsLength + s(isCompact ? 6 : 8) + (brand.visible ? brand.implicitWidth + s(9) : 0) : 0
 
     implicitWidth: isVertical ? (parent ? parent.width : 0) : targetLength
     implicitHeight: isVertical ? targetLength : s(isCompact ? 28 : 30)
@@ -211,6 +213,19 @@ Item {
         anchors.verticalCenter: root.isVertical ? undefined : parent.verticalCenter
         anchors.left: root.isVertical ? undefined : parent.left
         anchors.leftMargin: root.isVertical ? 0 : root.s(root.isCompact ? 3 : 4)
+
+        Text {
+            id: brand
+            visible: root.brandLabel !== ""
+            text: root.brandLabel
+            leftPadding: root.s(6)
+            rightPadding: root.s(3)
+            color: ThemeBackend.mauve
+            font.family: ThemeBackend.fontFamily
+            font.weight: Font.Bold
+            font.pixelSize: root.s(12)
+            font.letterSpacing: root.s(1.5)
+        }
 
         Repeater {
             id: menuRepeater

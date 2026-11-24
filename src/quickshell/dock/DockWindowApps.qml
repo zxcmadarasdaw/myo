@@ -274,6 +274,8 @@ DockWindowState {
 
     function loadApps() {
         let customApps = rawDockSettings.apps;
+        if (customApps === undefined && rawDockSettings.useDefaultApps === true)
+            customApps = defaultDockSettings.apps.filter(app => !!AppMatcher.entry(app.desktop_id));
         if (!customApps || !Array.isArray(customApps)) customApps = [];
         if (dockAppsModel.count === customApps.length) {
             let matches = true;

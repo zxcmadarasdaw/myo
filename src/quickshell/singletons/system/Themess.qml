@@ -18,6 +18,7 @@ Item {
     property bool canRestore: false
     property string message: ""
     property var errors: []
+    property var notices: []
     property bool busy: false
     property bool widgetEditorOpen: false
     readonly property bool writingStores: busy && changesDesktop(task.action)
@@ -49,7 +50,8 @@ Item {
 
     function capabilities(screen) {
         const modules = ["palette", "materials", "panels", "dock", "launcher", "notifications", "vpn",
-                         "fastfetch", "fastfetchMedia", "studio"];
+                         "fastfetch", "fastfetchMedia", "studio", "lockscreen", "terminalStyle"];
+        if (Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE")) modules.push("windowMotion");
         const outputs = Array.from(Quickshell.screens, item => item.name);
         const wallpaperOutputs = outputs.filter(name => !!Wallpaper.engines[name]);
         const widgetScreen = outputs.includes(screen) ? screen : (outputs[0] || "");
@@ -62,7 +64,7 @@ Item {
                 widgets[widget.id] = WidgetRegistry.variantList(widget.id).map(variant => variant.id);
             }
         }
-        if (wallpaperOutputs.length) modules.push("wallpaper", "animations");
+        if (wallpaperOutputs.length) modules.push("wallpaper", "animations", "wallpaperPlayback");
         const styles = id => BarModuleRegistry.variantList(id).map(variant => variant.id);
         return {
             modules: modules,
@@ -81,6 +83,7 @@ Item {
         if (busy) return false;
         errors = [];
         if (!keepMessage) message = "";
+        if (!keepMessage) notices = [];
         if ((changesDesktop(action) || expectedPackage || action === "export-fusion") &&
                 (!Config.dataReady || Config.isWriting || widgetEditorOpen)) {
             errors = [I18n.t("guide.themess.pending", "Close the widget editor and wait for settings to finish saving.")];
@@ -147,6 +150,7 @@ Item {
         if (changesDesktop(action) && Array.isArray(response.canvasFiles) && response.canvasFiles.length)
             root.canvasStoresChanged(response.canvasFiles);
         if (response.message) message = response.message;
+        if (changesDesktop(action)) notices = response.warnings || [];
         errors = response.errors || [];
         busy = false;
         if (errors.length) return;

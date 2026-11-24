@@ -44,7 +44,7 @@ FocusScope {
         return Wallpaper.getWallpaperPath(safeScreenName);
     }
     readonly property string backgroundPath: customBackgroundActive ? customBackgroundPath : desktopWallpaperPath
-    readonly property bool backgroundIsVideo: isVideoPath(backgroundPath)
+    readonly property bool backgroundIsVideo: !lockSettings.staticWallpaper && isVideoPath(backgroundPath)
 
     function isVideoPath(path) {
         let lp = String(path || "").toLowerCase();

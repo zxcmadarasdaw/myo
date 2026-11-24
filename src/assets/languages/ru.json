@@ -259,6 +259,12 @@
         "notifications": "Уведомления",
         "widgets": "Виджеты",
         "wallpaper": "Обои",
+        "wallpaperPlayback": "Воспроизведение обоев",
+        "windowMotion": "Анимации окон Hyprland",
+        "lockscreen": "Оформление экрана блокировки",
+        "terminalStyle": "Оформление терминала",
+        "fastfetch": "Оформление Fastfetch",
+        "fastfetchMedia": "Медиа для Fastfetch",
         "vpn": "Оформление VPN"
       },
       "import": "Импорт папки",

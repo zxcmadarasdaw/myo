@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "name": "Violet Abyss",
+  "author": "MYO",
+  "description": "A black-violet desktop with a restored video loop, glass panels, live system cards, Abyss Terminal and a coordinated Hyprland motion profile.",
+  "referenceSize": {"w": 2560, "h": 1440},
+  "restoreOnSwitch": true,
+  "wallpaperPoster": "wallpapers/violet-abyss-still.png",
+  "fastfetchPoster": "media/abyss-fetch.png",
+  "components": {
+    "palette": "palette.json",
+    "materials": "materials.json",
+    "panels": "panels.json",
+    "dock": "dock.json",
+    "launcher": "launcher.json",
+    "notifications": "notifications.json",
+    "canvas": "canvas.json",
+    "studio": "studio.json",
+    "widgets": "widgets.json",
+    "animations": "animations.json",
+    "windowMotion": "window-motion.json",
+    "wallpaper": "wallpapers/violet-abyss.webm",
+    "wallpaperPlayback": "wallpaper-playback.json",
+    "lockscreen": "lockscreen.json",
+    "terminalStyle": "terminal-style.json",
+    "fastfetch": "fastfetch.json",
+    "fastfetchMedia": "media/abyss-fetch.webm"
+  }
+}

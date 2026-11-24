@@ -10,7 +10,7 @@
 //   meter:   line | hair | pill | blocks | ticks | bar
 //   radius, pad: scaled by AtelierKit; fill: opacity of the surface (0 = none)
 var IDS = ["matte", "premium", "minimal", "retro", "elegant", "editorial", "technical", "borderless", "compact",
-           "velvet", "retro_tech", "cyber", "asymmetric"];
+           "velvet", "retro_tech", "cyber", "asymmetric", "abyss"];
 
 var STYLES = {
     matte: {
@@ -22,6 +22,11 @@ var STYLES = {
         frame: "sheen", header: "dot", display: "sans", label: "sans",
         radius: 16, fill: 0.93, fillTone: "gradient", border: 0.2, accentBorder: true,
         displayWeight: 200, caps: false, tracking: 0.3, pad: 1.15, meter: "pill", spark: true
+    },
+    abyss: {
+        frame: "sheen", header: "kicker", display: "sans", label: "mono",
+        radius: 18, fill: 0.91, fillTone: "gradient", border: 0.28, accentBorder: true,
+        displayWeight: 400, caps: true, tracking: 1.3, pad: 1.25, meter: "pill", spark: true
     },
     minimal: {
         frame: "plain", header: "label", display: "sans", label: "sans",
@@ -83,7 +88,7 @@ var STYLES = {
 var LABELS = {
     matte: "Matte", premium: "Premium Dark", minimal: "Minimal", retro: "Retro", elegant: "Elegant",
     editorial: "Editorial", technical: "Technical", borderless: "Borderless", compact: "Compact",
-    velvet: "Velvet", retro_tech: "Retro Tech", cyber: "Cyber", asymmetric: "Asymmetric"
+    velvet: "Velvet", retro_tech: "Retro Tech", cyber: "Cyber", asymmetric: "Asymmetric", abyss: "Violet Abyss"
 };
 
 function get(id) {

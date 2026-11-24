@@ -44,13 +44,18 @@ GuideTab {
                 return effect + (duration !== undefined ? " (" + duration + " ms)" : "");
             }).join(", ") || animation.mode || "";
         }
-        const section = {palette: "theme", materials: "theme", panels: "bar"}[kind] || kind;
+        if (kind === "windowMotion") return item.windowMotion === "violet-abyss"
+            ? I18n.t("guide.animations.violet-abyss", "Violet Abyss Motion") : item.windowMotion || "";
+        const section = {palette: "theme", materials: "theme", panels: "bar",
+                         wallpaperPlayback: "wallpaper", fastfetch: "fastfetchMedia"}[kind] || kind;
         const values = appearance[section] || {};
         const keys = {
             palette: ["mode"], materials: ["blurStyle", "blurBackground", "borderRadius", "elementOpacity", "fontFamily"],
             panels: ["position", "style", "width", "height"], canvas: ["enabled", "wheelAction", "minimap"],
             dock: ["enabled", "position", "floating", "autohide"],
-            launcher: ["position", "width", "itemCount"], notifications: ["position", "sound", "dnd"]
+            launcher: ["position", "width", "itemCount"], notifications: ["position", "sound", "dnd"],
+            lockscreen: ["backgroundMode", "staticWallpaper"], terminalStyle: ["backgroundOpacity"],
+            wallpaperPlayback: ["pauseOnFullscreen"], fastfetch: ["loop", "autoplay", "pauseWhenHidden"]
         }[kind] || [];
         return keys.filter(key => values[key] !== undefined).map(key => key + " = " + values[key]).join(" · ");
     }
@@ -226,6 +231,16 @@ GuideTab {
                 required property string modelData
                 Layout.fillWidth: true
                 color: ThemeBackend.red
+                text: modelData
+            }
+        }
+
+        Repeater {
+            model: Themess.notices
+            delegate: Copy {
+                required property string modelData
+                Layout.fillWidth: true
+                color: ThemeBackend.yellow
                 text: modelData
             }
         }

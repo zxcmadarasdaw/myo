@@ -14,6 +14,7 @@ Item {
 
     property bool previewMode: false
     property string faceStyle: "matte"
+    property bool showForecast: false
     property real minWidth: 130
     property real minHeight: 56
     property real maxWidth: 900
@@ -27,13 +28,16 @@ Item {
 
     readonly property string look: kit.styleId
     readonly property bool compact: look === "compact" || height < Scaler.s(90)
-    readonly property bool isLoading: Weather.isLoading || !Weather.isReady
+    readonly property bool isLoading: Weather.isLoading || (!Weather.isReady && look !== "abyss")
     readonly property string tempText: Weather.currentTemp !== "" ? Math.round(parseFloat(Weather.currentTemp)) + "°" : "--°"
     readonly property string descText: (Weather.data && Weather.data.forecast && Weather.data.forecast[0] && Weather.data.forecast[0].desc)
-        ? Weather.data.forecast[0].desc : (Weather.data && Weather.data.desc ? Weather.data.desc : "")
-    readonly property string cityText: Location.city && Location.city !== "" ? Location.city : (Weather.data && Weather.data.city ? Weather.data.city : "")
+        ? Weather.data.forecast[0].desc : (Weather.data?.desc || (look === "abyss" && !Weather.currentTemp
+            ? I18n.t("widgets.weather.unavailable", "Weather unavailable") : ""))
+    readonly property string cityText: Location.locationData?.city || Weather.data?.city || ""
     readonly property string sceneKind: Weather.currentCode >= 0 ? "wmo_" + Weather.currentCode + (Weather.currentIsDay === 0 ? "_n" : "") : ""
     readonly property bool framedScene: look === "retro" || look === "technical"
+    readonly property var dailyForecast: showForecast && !compact && height >= Scaler.s(145)
+        ? Weather.forecast.slice(1, 4) : []
 
     AtelierCard {
         id: card
@@ -56,7 +60,7 @@ Item {
         x: card.contentX
         y: card.contentY
         width: card.contentWidth
-        height: card.contentHeight
+        height: Math.max(0, card.contentHeight - (forecastRow.visible ? forecastRow.height + Scaler.s(8) : 0))
         spacing: Scaler.s(root.compact ? 8 : 14)
 
         // the scene: framed like a small screen in Retro / Technical, free elsewhere
@@ -75,7 +79,7 @@ Item {
                 visible: root.sceneKind !== ""
                 kind: root.sceneKind
                 animate: kit.loops && root.visible && !root.previewMode
-                backdrop: root.look === "premium" || root.framedScene
+                backdrop: ["premium", "abyss"].includes(root.look) || root.framedScene
                 radius: parent.radius
             }
             Text {
@@ -123,6 +127,39 @@ Item {
                 font.pixelSize: Scaler.s(9)
                 font.letterSpacing: kit.tracking
                 color: kit.faint
+            }
+        }
+    }
+
+    RowLayout {
+        id: forecastRow
+        x: card.contentX
+        y: card.contentY + card.contentHeight - height
+        width: card.contentWidth
+        height: Scaler.s(49)
+        visible: !root.isLoading && root.dailyForecast.length > 0
+
+        Repeater {
+            model: forecastRow.visible ? root.dailyForecast : []
+            delegate: ColumnLayout {
+                required property var modelData
+                Layout.fillWidth: true
+                spacing: 2
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: modelData.icon || ""
+                    font.family: ThemeBackend.iconFont
+                    font.pixelSize: Scaler.s(17)
+                    color: kit.accent
+                }
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: [modelData.day, modelData.max, modelData.min].filter(value => value != null).join(" · ")
+                    font.family: kit.labelFamily
+                    font.pixelSize: Scaler.s(10)
+                    color: kit.muted
+                }
             }
         }
     }

@@ -17,7 +17,10 @@ QtObject {
         mochi: {name: "Mochi", layout: "classic", width: 40, height: 86, radius: 14, gap: 12, bg: "#141219", fg: "#ece6f0", accent: "#e7a4c6", alpha: 0.94, border: 0.3, font: "JetBrains Mono", material: "solid"},
         overdrive: {name: "Overdrive", layout: "classic", width: 42, height: 94, radius: 2, gap: 10, bg: "#0b0c12", fg: "#dfe6f2", accent: "#ff5fa2", alpha: 0.95, border: 0.55, font: "JetBrains Mono", material: "solid"},
         velvet: {name: "Velvet", layout: "classic", width: 37, height: 92, radius: 10, gap: 18, bg: "#151218", fg: "#efe7ee", accent: "#d5a0b6", alpha: 0.98, border: 0.40, font: "IBM Plex Mono", material: "solid"},
-        neuro: {name: "Neuro", layout: "classic", width: 38, height: 96, radius: 2, gap: 12, bg: "#0e1220", fg: "#edf0ff", accent: "#85ddff", alpha: 0.99, border: 0.68, font: "JetBrains Mono", material: "solid"}
+        neuro: {name: "Neuro", layout: "classic", width: 38, height: 96, radius: 2, gap: 12, bg: "#0e1220", fg: "#edf0ff", accent: "#85ddff", alpha: 0.99, border: 0.68, font: "JetBrains Mono", material: "solid"},
+        abyss: {name: "Violet Abyss", layout: "classic", width: 34, height: 92, radius: 12, gap: 14,
+                bg: ThemeBackend.crust, fg: ThemeBackend.text, accent: ThemeBackend.mauve,
+                alpha: 0.93, border: 0.38, font: "JetBrains Mono", material: "solid"}
     })
     readonly property var layouts: ["classic", "wide", "vertical", "floating", "minimal"]
     readonly property var layoutSize: ({

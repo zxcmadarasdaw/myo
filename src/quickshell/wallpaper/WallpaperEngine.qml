@@ -3,6 +3,7 @@ import QtQuick.Effects
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
+import Quickshell.Hyprland
 import QtMultimedia
 import "../"
 import "../reusables"
@@ -22,6 +23,7 @@ ShellRoot {
 
                 required property var modelData
                 screen: modelData
+                readonly property string outputName: modelData?.name ?? ""
 
                 WlrLayershell.namespace: "wallpaper-bg"
                 WlrLayershell.layer: WlrLayer.Background
@@ -33,10 +35,10 @@ ShellRoot {
                 anchors { top: true; bottom: true; left: true; right: true }
 
                 readonly property string wpCacheDir: Caching.getCacheDir("wallpaper")
-                readonly property string wpStatePath: wpCacheDir + "/current_" + barWindow.screen.name
-                readonly property string wpCopyDir: wpCacheDir + "/copy_" + barWindow.screen.name
+                readonly property string wpStatePath: wpCacheDir + "/current_" + outputName
+                readonly property string wpCopyDir: wpCacheDir + "/copy_" + outputName
                 readonly property string wpSnapshotPath: wpCacheDir + "/current_wallpaper.png"
-                readonly property string wpMonitorSnapshotPath: wpCacheDir + "/current_wallpaper_" + barWindow.screen.name + ".png"
+                readonly property string wpMonitorSnapshotPath: wpCacheDir + "/current_wallpaper_" + outputName + ".png"
 
                 property string currentWallpaperPath: ""
                 property string originalFileName: ""
@@ -45,7 +47,17 @@ ShellRoot {
                 property bool isVideoA: false
                 property string pathB: ""
                 property bool isVideoB: false
-                property bool playbackPaused: false
+                property bool manuallyPaused: false
+                readonly property var hyprMonitor: Config.getSetting("wallpaper.pauseOnFullscreen", false)
+                    && WindowActionsController.onHyprland
+                    ? Hyprland.monitors.values.find(monitor => monitor.name === outputName) : null
+                readonly property var specialWorkspace: {
+                    const name = hyprMonitor?.lastIpcObject?.specialWorkspace?.name;
+                    return name ? Hyprland.workspaces.values.find(workspace => workspace.name === name) : null;
+                }
+                readonly property bool fullscreenPaused: WindowActionsController.hasExclusiveFullscreen(specialWorkspace)
+                    || WindowActionsController.hasExclusiveFullscreen(hyprMonitor?.activeWorkspace)
+                readonly property bool playbackPaused: manuallyPaused || fullscreenPaused
                 readonly property var activeVideo: (activeLayer === 0 ? videoLoaderA : videoLoaderB).item
                 readonly property string audioTrackState: activeVideo?.audioTrackState ?? "unknown"
                 readonly property bool audioPlaying: audioSelected && activeVideo?.audioPlaying === true
@@ -56,8 +68,8 @@ ShellRoot {
                 property bool snapReadyB: false
                 property int snapRevA: 0
                 property int snapRevB: 0
-                readonly property string layerSnapshotPathA: wpCacheDir + "/layer_" + barWindow.screen.name + "_a.png"
-                readonly property string layerSnapshotPathB: wpCacheDir + "/layer_" + barWindow.screen.name + "_b.png"
+                readonly property string layerSnapshotPathA: wpCacheDir + "/layer_" + outputName + "_a.png"
+                readonly property string layerSnapshotPathB: wpCacheDir + "/layer_" + outputName + "_b.png"
 
                 property int activeDuration: 1000
                 property var pendingChange: null
@@ -97,6 +109,16 @@ ShellRoot {
                 }
                 onPathAChanged: { if (!isVideo(pathA)) GpuCompatibility.forgetMedia((screen ? screen.name : "") + ":A"); }
                 onPathBChanged: { if (!isVideo(pathB)) GpuCompatibility.forgetMedia((screen ? screen.name : "") + ":B"); }
+                onPlaybackPausedChanged: {
+                    if (playbackPaused) {
+                        videoLoaderA.item?.pause();
+                        videoLoaderB.item?.pause();
+                    } else if (activeLayer === 0) {
+                        playA();
+                    } else {
+                        playB();
+                    }
+                }
                 onStaticVideoAChanged: {
                     if (staticVideoA && isVideoA && pathA !== "" && failedVideoA !== pathA)
                         GpuCompatibility.observeMedia((screen ? screen.name : "") + ":A", pathA, "static-fallback", "Safe graphics uses a snapshot.");
@@ -129,11 +151,11 @@ ShellRoot {
                 }
 
                 Component.onCompleted: {
-                    Wallpaper.registerEngine(barWindow.screen ? barWindow.screen.name : "", barWindow);
+                    Wallpaper.registerEngine(barWindow.outputName, barWindow);
                 }
 
                 Component.onDestruction: {
-                    const name = barWindow.screen ? barWindow.screen.name : "";
+                    const name = barWindow.outputName;
                     Wallpaper.unregisterEngine(name, barWindow);
                     GpuCompatibility.forgetMedia(name + ":A");
                     GpuCompatibility.forgetMedia(name + ":B");
@@ -141,45 +163,33 @@ ShellRoot {
 
                 onCurrentWallpaperPathChanged: {
                     loadError = "";
-                    if (barWindow.screen && barWindow.screen.name) {
-                        let map = Object.assign({}, Wallpaper.screenWallpaperPaths);
-                        map[barWindow.screen.name] = currentWallpaperPath;
-                        Wallpaper.screenWallpaperPaths = map;
-                    }
+                    Wallpaper.publishEngineState(barWindow.outputName, barWindow);
                 }
 
-                onOriginalFileNameChanged: {
-                    if (barWindow.screen && barWindow.screen.name) {
-                        let map = Object.assign({}, Wallpaper.screenWallpapers);
-                        map[barWindow.screen.name] = originalFileName;
-                        Wallpaper.screenWallpapers = map;
-                    }
-                }
+                onOriginalFileNameChanged: Wallpaper.publishEngineState(barWindow.outputName, barWindow)
 
                 Connections {
                     target: Wallpaper
 
                     function onWallpaperChanged(screenName, path, transition) {
-                        if (screenName === "all" || screenName === barWindow.screen.name)
+                        if (screenName === "all" || screenName === barWindow.outputName)
                             barWindow.changeWallpaper(path, transition);
                     }
 
                     function onPlaybackChanged(screenName, state) {
-                        if (screenName === "all" || screenName === barWindow.screen.name) {
+                        if (screenName === "all" || screenName === barWindow.outputName) {
                             if (state === "pause") {
-                                barWindow.playbackPaused = true;
+                                barWindow.manuallyPaused = true;
                                 barWindow.stopA();
                                 barWindow.stopB();
                             } else if (state === "play") {
-                                barWindow.playbackPaused = false;
-                                if (barWindow.activeLayer === 0 && barWindow.isVideoA) barWindow.playA();
-                                if (barWindow.activeLayer === 1 && barWindow.isVideoB) barWindow.playB();
+                                barWindow.manuallyPaused = false;
                             }
                         }
                     }
 
                     function onWallpaperCleared(screenName) {
-                        if (screenName === "all" || screenName === barWindow.screen.name) {
+                        if (screenName === "all" || screenName === barWindow.outputName) {
                             barWindow.clearLayers();
                             Quickshell.execDetached(["rm", "-f", "--", barWindow.wpStatePath, barWindow.wpStatePath + "_name"]);
                         }
@@ -195,7 +205,7 @@ ShellRoot {
                     interval: 1500
                     onTriggered: {
                         if (barWindow.currentWallpaperPath !== "") return;
-                        const own = barWindow.screen ? barWindow.screen.name : "";
+                        const own = barWindow.outputName;
                         const paths = Wallpaper.screenWallpaperPaths || {};
                         for (const name in paths) {
                             if (name !== own && paths[name] && barWindow.isSupportedMedia(paths[name])) {
@@ -251,7 +261,7 @@ ShellRoot {
                         captureWait.stop();
                         barWindow.capturingFrame = false;
                         barWindow.frozenActive = false;
-                        const fx = Wallpaper.resolveTransition(-1, barWindow.screen.name);
+                        const fx = Wallpaper.resolveTransition(-1, barWindow.outputName);
                         barWindow.configureTransition(fx, -1, -1);
                         barWindow._loadNew(savedPath, false);
                         savedTitle.reload();
@@ -401,7 +411,7 @@ ShellRoot {
                 }
 
                 function playA() {
-                    if (videoLoaderA.item && typeof videoLoaderA.item.play === "function") {
+                    if (!playbackPaused && videoLoaderA.item) {
                         videoLoaderA.item.play();
                     }
                 }
@@ -413,7 +423,7 @@ ShellRoot {
                 }
 
                 function playB() {
-                    if (videoLoaderB.item && typeof videoLoaderB.item.play === "function") {
+                    if (!playbackPaused && videoLoaderB.item) {
                         videoLoaderB.item.play();
                     }
                 }
@@ -608,7 +618,7 @@ ShellRoot {
                         }
                     }
 
-                    let fx = Wallpaper.resolveTransition(chosenType, barWindow.screen.name);
+                    let fx = Wallpaper.resolveTransition(chosenType, barWindow.outputName);
                     barWindow.configureTransition(fx, fromMenu ? customOriginX : -1, fromMenu ? customOriginY : -1);
 
                     if (typeof DesktopMenuController !== "undefined") {
@@ -701,6 +711,7 @@ ShellRoot {
                         readonly property bool audioPlaying: playerA.playing && playerA.hasAudio
                         function play() { if (!barWindow.staticVideoA) playerA.play(); }
                         function stop() { playerA.stop(); }
+                        function pause() { if (playerA.playing) playerA.pause(); }
 
                         MediaPlayer {
                             id: playerA
@@ -750,6 +761,7 @@ ShellRoot {
                         readonly property bool audioPlaying: playerB.playing && playerB.hasAudio
                         function play() { if (!barWindow.staticVideoB) playerB.play(); }
                         function stop() { playerB.stop(); }
+                        function pause() { if (playerB.playing) playerB.pause(); }
 
                         MediaPlayer {
                             id: playerB

@@ -21,7 +21,9 @@ Item {
     readonly property string installHint: typeof SystemInfo !== "undefined" && typeof SystemInfo.packageInstallHint === "function"
         ? SystemInfo.packageInstallHint(statusDetail) : statusDetail
     property string fetchLayout: ""
-    readonly property string fetchVariant: fetchLayout === "" ? "" : fetchLayout === "minimal" ? "minimal" : "full"
+    property bool abyssFetch: false
+    readonly property string fetchVariant: abyssFetch ? "abyss" :
+        (fetchLayout === "" ? "" : fetchLayout === "minimal" ? "minimal" : "full")
     property string shell: "auto"             // auto | bash | zsh
     property string command: ""               // interactive: start command; monitor: the command
     property real monitorInterval: 5           // seconds
@@ -79,7 +81,12 @@ Item {
                 minimal: "OS:CPU:GPU:Memory"
             };
             const modules = layouts[core.fetchVariant];
-            const command = modules ? "TERM_PROGRAM=Serpantinum fastfetch --config none --logo none --structure " + modules : "fastfetch";
+            let command = modules ? "TERM_PROGRAM=Serpantinum fastfetch --config none --logo none --structure " + modules : "fastfetch";
+            if (core.fetchVariant === "abyss") {
+                const config = Caching.serpantinumDir + "/../themess/VioletAbyss/abyss-fetch.jsonc";
+                const quoted = "'" + config.replace(/'/g, "'\\''") + "'";
+                command = "TERM_PROGRAM=Serpantinum fastfetch --logo none --config " + quoted;
+            }
             argv.push("--require", "fastfetch", "--cmd", command);
             // fetchShell: Fastfetch once, then the user's shell on the same PTY (a fixed,
             // built-in command, so no approval is involved; nothing repeats on a timer).

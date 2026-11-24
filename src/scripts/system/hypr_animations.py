@@ -28,6 +28,7 @@ CURVES = {
     "smooth": ((0.25, 0.1), (0.25, 1.0)),
     "linear": ((0, 0), (1, 1)),
     "pop": ((0.2, 0.75), (0.25, 1.35)),
+    "abyss": ((0.16, 0.78), (0.27, 1.04)),
 }
 SIDES = ("auto", "left", "right", "top", "bottom")
 MOVE_OPTIONS = ("animate_manual_resizes", "animate_mouse_windowdragging")
@@ -38,6 +39,7 @@ PRESETS = {
     "dynamic": (230, "pop", ("pop", "slide", "smooth", "fade", "slide", "slidevert"), 37),
     "minimal": (150, "linear", ("fade", "fade", "off", "off", "fade", "fade"), 12),
     "cinematic": (520, "smooth", ("zoom", "fade", "smooth", "fade", "slidefadevert", "slidefade"), 45),
+    "violet-abyss": (310, "abyss", ("scale", "scale", "smooth", "fade", "slidefade", "slidefadevert"), 24),
 }
 MATCHES = ("class", "initial_class")
 RULE_STYLES = ("fade", "scale", "slide", "off")
@@ -53,7 +55,18 @@ def preset(name):
     if name == "classic":
         effects["workspace"]["strength"] = 100
         effects["focus"]["strength"] = 0
-    return dict(preset=name, effects=effects, rules=[])
+    rules = []
+    if name == "violet-abyss":
+        effects["open"].update(strength=14)
+        effects["close"].update(duration=195, strength=9, curve="smooth")
+        effects["move"].update(duration=220, animate_manual_resizes=True, animate_mouse_windowdragging=False)
+        effects["focus"].update(duration=180, strength=0)
+        effects["workspace"].update(duration=330, strength=30)
+        rules = [
+            dict(match="initial_class", value="kitty", style="scale"),
+            dict(match="initial_class", value="org.freedesktop.impl.portal.desktop.hyprland", style="fade"),
+        ]
+    return dict(preset=name, effects=effects, rules=rules)
 
 
 def integer(value, low, high):
@@ -120,6 +133,8 @@ def generate(profile):
     lines = [HEADER + metadata]
     if profile is not None and profile["effects"]:
         for name, ((x1, y1), (x2, y2)) in CURVES.items():
+            if name == "abyss" and not any(e["curve"] == name for e in profile["effects"].values()):
+                continue
             lines.append(f'hl.curve("myo_{name}", {{ type = "bezier", points = {{ {{{x1}, {y1}}}, {{{x2}, {y2}}} }} }})')
 
         def animation(leaf, effect, style=None, enabled=True):
@@ -159,6 +174,13 @@ def generate(profile):
                 style += f' {special["strength"]}%'
             animation("specialWorkspace" + direction, special, style)
     if profile is not None:
+        if profile["preset"] == "violet-abyss":
+            for direction in ("In", "Out"):
+                effect = effects["open" if direction == "In" else "close"]
+                animation("layers" + direction, effect, "fade")
+                animation("fadeLayers" + direction, effect)
+            lines.append('hl.layer_rule({ match = { namespace = "^qs-applauncher$" }, animation = "popin 94%" })')
+            lines.append('hl.window_rule({ match = { float = true }, animation = "popin 90%" })')
         for rule in profile["rules"]:
             pattern = "^" + re.sub(r'([\\.^$|?*+()\[\]{}])', r'\\\1', rule["value"]) + "$"
             style = {"scale": "popin 80%", "fade": "popin 100%", "slide": "slide"}.get(rule["style"])
@@ -218,7 +240,8 @@ def atomic_write(path, text):
             temporary.unlink(missing_ok=True)
 
 
-def apply(path, profile):
+@contextlib.contextmanager
+def profile_lock(path):
     import fcntl
 
     if not path.parent.is_dir():
@@ -227,6 +250,27 @@ def apply(path, profile):
     fd = os.open(lock_path, os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+
+
+def reload_profile(revision):
+    if hyprctl("reload") != "ok":
+        raise RuntimeError("Hyprland did not acknowledge reload")
+    for attempt in range(10):
+        try:
+            require_revision(revision)
+            break
+        except RuntimeError:
+            if attempt == 9:
+                raise
+            time.sleep(0.1)
+    errors = hyprctl("configerrors")
+    if errors:
+        raise RuntimeError(errors)
+
+
+def apply(path, profile):
+    with profile_lock(path):
         _, previous_revision = read_profile(path)
         check_integration(previous_revision)
         errors = hyprctl("configerrors")
