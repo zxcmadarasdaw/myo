@@ -30,9 +30,9 @@
 > [!IMPORTANT]
 > **Migrating from v1:** All previous configuration will be backed up and unused. Configuration of compositor settings such as monitors, keybinds, and autostart is now up to you, as the project migrated from being dotfiles to being a shell.
 
-### Arch Linux, Fedora, Void Linux and their derivatives
+### Arch Linux, Fedora, Void Linux, Gentoo and derivatives
 
-For Arch-based distributions (including systemd, OpenRC, and other init systems), for Fedora-based distributions such as Nobara and Ultramarine, and for Void Linux (glibc and musl), run the automated installation script. It detects your distribution and uses `pacman`, `dnf` or `xbps`.
+For Arch-based distributions (including systemd, OpenRC, and other init systems), for Fedora-based distributions such as Nobara and Ultramarine, and for Void Linux (glibc and musl), run the automated installation script. It detects your distribution and uses `pacman`, `dnf`, `xbps` or Gentoo Portage. The Arch family includes CachyOS and EndeavourOS. The terminal installer uses the configured package repositories. Arch AUR or source builds require an explicit choice in the separate installer manager.
 
 Use this installer:
 
@@ -47,7 +47,24 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/ilyamiro/serpantinum/mas
 ```
 
 > [!NOTE]
-> To update Serpantinum Desktop, run the script again and choose **Update**.
+> To update Serpantinum Desktop, run the script again and choose **Start installation / update**.
+
+From a checkout:
+
+```bash
+bash install.sh            # interactive terminal installer
+bash install.sh --dry-run  # inspect detected targets and missing packages
+bash install.sh --profile light
+bash install.sh --profile full
+```
+
+Use ↑ and ↓ to navigate, Enter to select, and Esc to go back or exit. The installer asks before starting package and service changes. Ctrl+C interrupts the current stage. Completed package transactions are retained, and the installer log identifies where to resume. Logs are written under `${XDG_STATE_HOME:-$HOME/.local/state}/serpantinum` when installing. The dry run uses the local package database and saved options. When no compositor is selected, it previews Hyprland. It does not run an installation or refresh repository metadata.
+
+The performance screen recommends a profile from RAM, CPU threads and available renderer information. **Light** uses static wallpaper fallbacks, reduces effects and GPU polling, and suspends optional desktop widgets and floating controls. **Full** restores the normal shell behavior and honors the user's existing visual preferences. Changing profiles edits only `general.performance` and creates a settings backup when the value changes.
+
+On Gentoo, use amd64 with an active Wayland-capable graphics driver. Synchronize Portage and configure the repositories before running the installer. Quickshell 0.3 or newer and several desktop utilities are available in GURU. Hyprland requires a separately configured repository with a compatible Lua-enabled version. Portage previews the transaction and reports unresolved package masks, keywords and USE settings before asking for approval. Review its suggestions and apply any required package-specific changes yourself. The installer does not enable overlays or write Portage configuration. OpenRC and graphics-session integration need verification on a running Gentoo desktop. [Quickshell installation guide](https://quickshell.org/docs/v0.2.1/guide/install-setup/)
+
+The existing installer manager can be opened with `bash install.sh --gui` or `bash install.sh --manager-tui` on the Arch and Fedora families. The original Bash interface is available as `bash install.sh --legacy-tui`. Run `bash install/tests/terminal_installer_test.sh` on Linux for the isolated provider and profile tests.
 
 The graphical installer's **System updates** section checks the distribution's repositories, previews the full system transaction, and records its progress and result. Open it from a checkout with `bash install.sh --system-updates`, including on Void Linux. Live sessions can run the checks. AUR and Flatpak updates have separate actions when the corresponding tools are available.
 

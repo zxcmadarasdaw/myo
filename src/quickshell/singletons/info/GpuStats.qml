@@ -21,7 +21,7 @@ Item {
     property bool received: false
 
     property int subscribers: 0
-    property int interval: SysData.onBattery ? 4 : 2
+    property int interval: Config.getSetting("general.performance", false) ? 8 : (SysData.onBattery ? 4 : 2)
 
     function subscribe() {
         subscribers++;

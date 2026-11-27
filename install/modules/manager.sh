@@ -256,7 +256,7 @@ manager_components() {
 manager_dependency_plan() {
     local pkg tool result
     local targets=()
-    collect_dependency_targets targets
+    collect_dependency_targets targets "${SELECTED_COMPOSITORS[@]}"
     if [ "${OPT_EXTRAS:-false}" != true ]; then
         local required=()
         for pkg in "${targets[@]}"; do

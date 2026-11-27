@@ -18,6 +18,7 @@ detect_install_platform() {
             PM_NAME=pacman ;;
         fedora) PM_NAME=dnf ;;
         void) PM_NAME=void ;;
+        gentoo) PM_NAME=emerge ;;
         rhel|centos|rocky|almalinux|ol|scientific|amzn)
             echo "Unsupported distribution: $ID." >&2
             return 1 ;;
@@ -45,8 +46,13 @@ detect_install_platform() {
         echo "The Arch installer and bundled Linux programs require x86_64 (detected $machine)." >&2
         return 1
     fi
+    if [[ "$PM_NAME" == emerge && "$machine" != x86_64 ]]; then
+        echo "The bundled Serpantinum components require Gentoo amd64 (detected $machine)." >&2
+        return 1
+    fi
     case "$PM_NAME" in
         void) PM_COMMAND=xbps-install ;;
+        emerge) PM_COMMAND=emerge ;;
         *) PM_COMMAND="$PM_NAME" ;;
     esac
     if ! command -v "$PM_COMMAND" >/dev/null; then
@@ -101,12 +107,18 @@ bootstrap_tool() {
             rm -f -- "$config"
             return "$result" ;;
         dnf) sudo dnf --disablerepo='terra*' --setopt=assumeyes=False --setopt=max_parallel_downloads=1 install "$package" </dev/tty ;;
+        emerge) sudo emerge --ask --noreplace --autounmask=n "dev-vcs/$package" </dev/tty ;;
         void) sudo xbps-install -Suy xbps && sudo xbps-install -Sy "$package" </dev/tty ;;
     esac
 }
 
 installer_phase() {
-    printf '\n[%s] %s\n' "$(date '+%F %T')" "$*"
+    local step="$1" title="$2" i
+    printf '\n[%s] [' "$(date '+%F %T')"
+    for ((i=1; i<=6; i++)); do
+        if (( i <= step )); then printf '#'; else printf '.'; fi
+    done
+    printf '] %s/6 %s\n' "$step" "$title"
 }
 
 [[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
@@ -114,11 +126,11 @@ set -e
 
 case "${1:-}" in
     -h|--help)
-        echo 'Usage: bash install.sh [--tui | --check | --system-updates | --vpn-check | --vpn-only | --legacy-tui | --session-check | --return-session ID]'
+        echo 'Usage: bash install.sh [--tui | --dry-run | --profile full|light | --gui | --manager-tui | --check | --system-updates | --vpn-check | --vpn-only | --legacy-tui | --session-check | --return-session ID]'
         exit 0 ;;
 esac
 
-if [ "$EUID" -eq 0 ]; then
+if [[ "$EUID" -eq 0 && "${1:-}" != --dry-run ]]; then
     echo "Run the installer as your desktop user. It calls sudo when required." >&2
     exit 1
 fi
@@ -148,6 +160,10 @@ else
 fi
 
 if [[ -z "$PROJECT_ROOT" || ! -f "$PROJECT_ROOT/install/modules/deps.sh" || ! -d "$PROJECT_ROOT/src" ]]; then
+    if [[ "${1:-}" == --dry-run || "${1:-}" == --profile ]]; then
+        echo "Run $1 from a Serpantinum checkout." >&2
+        exit 1
+    fi
     check_install_space "$CACHE_BASE" 524288
     if ! command -v git >/dev/null; then
         bootstrap_tool git 'Git is needed to fetch Serpantinum.'
@@ -165,10 +181,13 @@ if [[ -z "$PROJECT_ROOT" || ! -f "$PROJECT_ROOT/install/modules/deps.sh" || ! -d
     exit
 fi
 
-if [[ "$PM_NAME" != void || "${1:-}" == --system-updates ]]; then
-    case "${1:-}" in
-        --manager-probe|--manager-run|--legacy-tui|--vpn-check|--vpn-only) ;;
-        ''|--tui|--check|--system-updates)
+case "${1:-}" in
+    --gui|--manager-tui|--check|--system-updates)
+        if [[ "$PM_NAME" == emerge ]]; then
+            echo "Use --dry-run or the terminal installer on Gentoo." >&2
+            exit 2
+        fi
+        case "$1" in --gui) shift ;; --manager-tui) shift; set -- --tui "$@" ;; esac
             if ! command -v python3 >/dev/null; then
                 if [[ "${1:-}" == --check ]]; then
                     exec bash "${BASH_SOURCE[0]}" --manager-probe inspect auto
@@ -187,16 +206,23 @@ if [[ "$PM_NAME" != void || "${1:-}" == --system-updates ]]; then
                 exec python3 "$INSTALL_DIR/manager.py" "$@" </dev/tty
             fi
             exec python3 "$INSTALL_DIR/manager.py" "$@" ;;
-        *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
-    esac
-fi
+    ''|--tui|--dry-run|--profile|--manager-probe|--manager-run|--legacy-tui|--vpn-check|--vpn-only) ;;
+    *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
+esac
 
 export SERPANTINUM_DIR="$PROJECT_ROOT/src"
 export I18N_DIR="$PROJECT_ROOT/src/assets/languages"
 
 MODULES_DIR="$INSTALL_DIR/modules"
 
-case "${1:-}" in --manager-probe|--manager-run) export SERPANTINUM_INSTALLER_READ_ONLY=1 ;; esac
+export SERPANTINUM_INSTALLER_READ_ONLY=1
+source "$PROJECT_ROOT/src/scripts/xdg_paths.sh"
+source "$MODULES_DIR/profile.sh"
+if [[ "${1:-}" == --profile ]]; then
+    [[ $# == 2 ]] || { echo "Usage: bash install.sh --profile full|light" >&2; exit 2; }
+    apply_install_profile "$2" "${QS_SETTINGS:-$(serpantinum_settings_path)}"
+    exit
+fi
 source "$PROJECT_ROOT/src/scripts/i18n.sh"
 source "$MODULES_DIR/pm.sh"
 source "$MODULES_DIR/deps.sh"
@@ -212,6 +238,19 @@ source "$MODULES_DIR/service.sh"
 source "$MODULES_DIR/vpn.sh"
 source "$MODULES_DIR/ui.sh"
 source "$MODULES_DIR/verify.sh"
+source "$MODULES_DIR/terminal.sh"
+
+if [[ "${1:-}" == --dry-run ]]; then
+    source "$MODULES_DIR/version.sh"
+    OPT_SDDM=$(get_saved_preference OPT_SDDM "$OPT_SDDM")
+    SDDM_WAYLAND=$(get_saved_preference SDDM_WAYLAND "$SDDM_WAYLAND")
+    INSTALL_FULL_WALLPAPERS=$(get_saved_preference INSTALL_FULL_WALLPAPERS "$INSTALL_FULL_WALLPAPERS")
+    ENABLE_TELEMETRY=$(get_telemetry_enabled)
+    init_compositor_detection
+    if (( ${#SELECTED_COMPOSITORS[@]} == 0 )); then SELECTED_COMPOSITORS=(hyprland); fi
+    terminal_dependencies plan
+    exit
+fi
 
 if [[ "${1:-}" == --manager-probe || "${1:-}" == --manager-run ]]; then
     source "$MODULES_DIR/manager.sh"
@@ -246,7 +285,11 @@ check_install_space "$HOME/.local/share" "$source_size"
 check_install_space /usr 65536
 check_install_space /var 65536
 
-source "$PROJECT_ROOT/src/scripts/xdg_paths.sh"
+if [[ ! -t 0 ]] && ( : </dev/tty ) 2>/dev/null; then exec </dev/tty; fi
+if [[ ! -t 0 ]]; then
+    echo 'Open an interactive terminal to install, or use --dry-run.' >&2
+    exit 1
+fi
 install_log_dir="$(serpantinum_state_dir)"
 mkdir -p "$install_log_dir"
 exec 9>"${install_log_dir%/*}/.serpantinum-install.lock"
@@ -258,14 +301,17 @@ INSTALL_LOG="$(mktemp "$install_log_dir/install.XXXXXX.log")"
 trap 'status=$?; flock -u 9; cleanup_terminal; if (( status != 0 )); then printf "\nInstallation stopped during %s. Resolve the error and run the installer again. Log: %s\n" "$INSTALL_PHASE" "$INSTALL_LOG" >&2; fi' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-INSTALL_PHASE=bootstrap
+INSTALL_PHASE=options
+INSTALL_PROFILE=
 printf 'Installation log: %s\n' "$INSTALL_LOG"
 printf 'Platform: %s %s (%s), provider: %s\n' "$DISTRO_ID" "${DISTRO_VERSION:-rolling}" "$(uname -m)" "$PM_NAME" | tee -a "$INSTALL_LOG"
 exec 8>&1 7>&2
-exec > >(tee -a "$INSTALL_LOG") 2>&1
-bootstrap_installer_deps
-exec 1>&8 2>&7
 source "$MODULES_DIR/version.sh"
+if [[ "${1:-}" == --legacy-tui ]]; then
+    exec > >(tee -a "$INSTALL_LOG") 2>&1
+    bootstrap_installer_deps
+    exec 1>&8 2>&7
+fi
 source "$MODULES_DIR/config.sh"
 
 TELEMETRY_ID=""
@@ -277,13 +323,27 @@ INSTALL_FULL_WALLPAPERS=$(get_saved_preference INSTALL_FULL_WALLPAPERS "$INSTALL
 INSTALL_STATE=$(detect_install_state)
 OLD_VERSION=$(get_installed_version)
 TARGET_VERSION=$(get_target_version "$PROJECT_ROOT" "$REPO_SLUG")
-TARGET_COMMIT=$(get_target_commit "$PROJECT_ROOT" "$REPO_SLUG")
+TARGET_COMMIT=$(get_target_commit "$PROJECT_ROOT")
 OLD_COMMIT=$(get_installed_commit)
 
 init_compositor_detection
-INSTALL_PHASE=options
-run_installer_ui
+if [[ "${1:-}" == --legacy-tui ]]; then
+    unset SERPANTINUM_INSTALLER_READ_ONLY
+    run_installer_ui
+else
+    terminal_installer || exit 0
+    if ! command -v sudo >/dev/null; then
+        echo "Installation needs sudo. Install it and authorize your desktop user before retrying." >&2
+        exit 1
+    fi
+fi
+unset SERPANTINUM_INSTALLER_READ_ONLY
 exec > >(tee -a "$INSTALL_LOG") 2>&1
+if [[ "${1:-}" != --legacy-tui ]]; then
+    INSTALL_PHASE=bootstrap
+    installer_phase 1 "Preparing installer tools and repositories"
+    bootstrap_installer_deps
+fi
 
 TARGET_VERSION=$(get_target_version "$PROJECT_ROOT" "$REPO_SLUG")
 TARGET_COMMIT=$(get_target_commit "$PROJECT_ROOT" "$REPO_SLUG")
@@ -294,21 +354,21 @@ if [ "$ENABLE_TELEMETRY" = true ] && [ -f "$MODULES_DIR/telemetry.sh" ]; then
 fi
 
 INSTALL_PHASE=dependencies
-installer_phase "Checking dependencies for ${SELECTED_COMPOSITORS[*]}"
+installer_phase 2 "Checking dependencies for ${SELECTED_COMPOSITORS[*]}"
 install_dependencies "$INSTALL_STATE" "$IS_REINSTALL" "${SELECTED_COMPOSITORS[@]}"
 if [[ " ${SELECTED_COMPOSITORS[*]} " == *" hyprland "* ]]; then
     ensure_hyprland_lua_support
     check_hyprland_config "$PROJECT_ROOT/compositors/hyprland/hyprland.lua"
 fi
 INSTALL_PHASE=components
-installer_phase "Installing Serpantinum components"
+installer_phase 3 "Installing Serpantinum components"
 install_ski
 install_audio_daemon
 install_gamma_daemon
 install_core_daemon
 
 INSTALL_PHASE=deployment
-installer_phase "Deploying shell and configuration"
+installer_phase 4 "Deploying shell and configuration"
 deploy_package "$PROJECT_ROOT" "$OLD_COMMIT" "$TARGET_COMMIT" "$IS_REINSTALL" "$INSTALL_STATE" "${SELECTED_COMPOSITORS[@]}"
 setup_sddm "$PROJECT_ROOT"
 install_wallpapers "$INSTALL_FULL_WALLPAPERS"
@@ -316,9 +376,10 @@ install_wallpapers "$INSTALL_FULL_WALLPAPERS"
 WALLPAPER_DIR=$(get_wallpaper_dir)
 init_serpantinum_config "$PROJECT_ROOT" "$WALLPAPER_DIR"
 configure_ski_defaults "$SERP_NEW_SETTINGS"
+if [[ -n "$INSTALL_PROFILE" ]]; then apply_install_profile "$INSTALL_PROFILE" "$CONFIG_FILE"; fi
 
 INSTALL_PHASE=services
-installer_phase "Checking desktop and VPN services"
+installer_phase 5 "Checking desktop and VPN services"
 setup_services
 VPN_INSTALL_FAILED=false
 if ! install_vpn_components; then
@@ -328,7 +389,7 @@ fi
 hand_over_from_easyeffects
 
 INSTALL_PHASE=verification
-installer_phase "Verifying installation"
+installer_phase 6 "Verifying installation"
 verify_installation || true
 if [ "$INSTALL_INCOMPLETE" = false ]; then
     if [ "$INSTALL_STATE" = legacy ]; then
@@ -345,7 +406,6 @@ if [ "$ENABLE_TELEMETRY" = true ] && [ -f "$MODULES_DIR/telemetry.sh" ]; then
 fi
 
 exec 1>&8 2>&7
-printf 'Installation log: %s\n' "$INSTALL_LOG"
-draw_completion_screen "$TARGET_VERSION" "$TARGET_COMMIT"
+draw_completion_screen "$TARGET_VERSION" "$TARGET_COMMIT" "$INSTALL_LOG"
 [ "$INSTALL_INCOMPLETE" = true ] && exit 1
 exit 0

@@ -135,6 +135,12 @@ Item {
             check(!GpuCompatibility.hardwareChanged, "hardware acknowledgement");
             let preserved = JSON.parse(JSON.stringify(Config.rawSettings)); delete preserved.graphics;
             check(JSON.stringify(preserved) === initial, "theme/widgets/wallpaper/layout/animations modified");
+            Config.setSetting("general.performance", true);
+            check(GpuCompatibility.effective.profile === "Performance", "lightweight graphics policy");
+            check(!GpuCompatibility.blurAllowed && GpuCompatibility.effective.spectrumFps === 20, "lightweight blur and frame rate");
+            check(GpuCompatibility.selectedProfile === "Ultra", "lightweight mode must preserve the selected graphics profile");
+            Config.setSetting("general.performance", false);
+            check(GpuCompatibility.effective.profile === "Ultra" && GpuCompatibility.blurAllowed, "full profile restores the selected graphics policy");
             GpuCompatibility.observeShader("test", ShaderEffect.Error, "test failure");
             Qt.callLater(function() {
                 try {

@@ -138,23 +138,28 @@ ensure_quickshell_version() {
     fi
 }
 
+collect_dependency_targets() {
+    local -n result_array="$1"
+    shift
+    local comp
+    result_array=("${REQUIRED_PKGS[@]}")
+    for comp in "$@"; do
+        result_array+=("$(compositor_package_name "$comp")")
+    done
+    if [ "$OPT_SDDM" = true ]; then
+        local sddm_pkgs=()
+        mapfile -t sddm_pkgs < <(sddm_packages)
+        result_array+=("${sddm_pkgs[@]}")
+    fi
+    result_array+=("${PM_EXTRA_PKGS[@]}")
+}
+
 install_dependencies() {
     local install_state="${1:-$INSTALL_STATE}"
     local is_reinstall="${2:-$IS_REINSTALL}"
     shift 2 2>/dev/null || true
-    local compositors=("$@")
-
-    local target_list=("${REQUIRED_PKGS[@]}")
-    for comp in "${compositors[@]}"; do
-        target_list+=("$(compositor_package_name "$comp")")
-    done
-
-    if [ "$OPT_SDDM" = true ]; then
-        local sddm_pkgs=()
-        mapfile -t sddm_pkgs < <(sddm_packages)
-        target_list+=("${sddm_pkgs[@]}")
-    fi
-    target_list+=("${PM_EXTRA_PKGS[@]}")
+    local target_list=()
+    collect_dependency_targets target_list "$@"
 
     if [[ ("$install_state" == "fresh" || "$install_state" == "legacy") && "$is_reinstall" != "true" ]] &&
         declare -f pm_full_upgrade >/dev/null; then

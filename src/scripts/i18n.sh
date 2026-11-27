@@ -23,7 +23,7 @@ detect_system_language() {
 
 get_current_language() {
     local lang=""
-    if command -v get_setting &>/dev/null; then
+    if [[ "${SERPANTINUM_INSTALLER_READ_ONLY:-0}" != 1 ]] && command -v jq >/dev/null && command -v get_setting &>/dev/null; then
         lang="$(get_setting "general" '{}' | jq -r '.language // empty' 2>/dev/null)"
     fi
 

@@ -11,7 +11,7 @@ slug: /installation
 **Migrating from v1:** Back up your settings first. When the installer replaces shipped compositor files, it saves a copy of the existing config tree. Review the resulting monitor, keybind, and autostart settings before entering the new session.
 :::
 
-Serpantinum installs through an automated script on Arch Linux, Fedora, Void Linux, and their derivatives. The script detects your distribution and uses the matching package manager (`pacman`, `dnf`, or `xbps`). On NixOS, use the [flake and modules](/installation/nixos) instead.
+The terminal installer detects Arch Linux, Fedora, Void Linux, Gentoo, and supported derivatives. It uses the matching package manager (`pacman`, `dnf`, `xbps`, or `emerge`). On NixOS, use the [flake and modules](/installation/nixos).
 
 Use this installer:
 
@@ -26,7 +26,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/ilyamiro/serpantinum/mas
 ```
 
 :::info[NOTE]
-To update, run the installer script again and choose **Update**.
+To update, run the installer again and choose **Start installation / update**, then **Update**.
 :::
 
 ## CachyOS, Arch Linux and Fedora 45
@@ -39,15 +39,15 @@ bash install/maintenance.sh backup
 bash install.sh
 ```
 
-The installer opens a native Qt window when Qt 6 Python bindings are available. Fedora provides `python3-pyside6`, and Arch and CachyOS provide `pyside6` or `python-pyqt6`. The same installer runs in a terminal when the bindings are unavailable. Use `bash install.sh --tui` to open it directly or `bash install.sh --check` for the system inventory.
+`bash install.sh` and `bash install.sh --tui` open the Bash terminal interface. Use `bash install.sh --dry-run` to see the package and component plan with local metadata. The optional native Qt installer manager is available with `bash install.sh --gui`. Fedora provides `python3-pyside6`, and Arch and CachyOS provide `pyside6` or `python-pyqt6`. Use `--manager-tui` for the same manager in a terminal or `--check` for its inventory.
 
-**Prepare system** reviews the package and storage plan. **Install Serpantinum**, **Verify**, and **Repair** run the selected operation. The window and terminal menus support English and Russian. In **Advanced**, review package targets, open the technical journal, or adjust the installation options. Read and answer DNF or pacman questions in the response field or the terminal. Review the transaction sizes and repository key fingerprints before approving.
+In the optional installer manager, **Prepare system** reviews the package and storage plan. **Install Serpantinum**, **Verify**, and **Repair** run the selected operation. The window and terminal menus support English and Russian. In **Advanced**, review package targets, open the technical journal, or adjust the installation options. Read and answer DNF or pacman questions in the response field or the terminal. Review the transaction sizes and repository key fingerprints before approving.
 
 CachyOS and Arch use pacman and the configured binary repositories. On an installed system, explicitly select a full system upgrade if the package databases need to be refreshed. A Live image with pending upgrades needs a matching package snapshot or an installed system. Plan space for the extracted packages and package cache on the temporary overlay. Fedora 45 uses DNF, its native package cache, and COPR when a compatible version is unavailable in the Fedora repositories. The supported Hyprland Lua baseline is 0.55.0 and the Quickshell baseline is 0.3.0. [Installer validation](../installer/NATIVE_INSTALLER.md)
 
 If you already log into KDE through SDDM or another display manager, keep the optional SDDM step off. Select the Hyprland session in your existing login screen after the installer reports success. Switch back to KDE from the same session picker. Close your session before switching compositor. Existing custom SDDM files in `/etc/sddm.conf` continue to take precedence over drop-ins.
 
-To update, update your checkout, rerun `bash install.sh`, and choose **Update** in **Advanced**. **Install missing** is also available there. After a failure, check the journal and use **Retry step** after resolving the cause. Logs and reports are stored under `${XDG_STATE_HOME:-$HOME/.local/state}/serpantinum`. For VPN components alone, use `bash install.sh --vpn-only` in an active local session. The original terminal installer is available with `--legacy-tui`. Void uses that flow. The separate `--system-updates` command opens its existing browser interface over loopback.
+To update from a checkout, update the checkout, rerun `bash install.sh`, and choose **Start installation / update**, then **Update**. In the optional manager, **Advanced** includes **Update** and **Install missing**. After a failure, check the journal, resolve the cause, and rerun the installer or choose **Retry step** in the manager. Logs and reports are stored under `${XDG_STATE_HOME:-$HOME/.local/state}/serpantinum`. For VPN components alone, use `bash install.sh --vpn-only` in an active local session. The original terminal installer is available with `--legacy-tui`. The separate `--system-updates` command opens its existing browser interface over loopback.
 
 ### Back up, restore or remove the shell installation
 
@@ -60,6 +60,16 @@ bash install/maintenance.sh uninstall
 ```
 
 Restore saves a snapshot of the current settings before replacing the paths present in the selected snapshot. Uninstall moves the user-installed program directories into the printed archive directory and removes matching launch links in `~/.local/bin`. User settings, themes, wallpaper files, dependencies, system services and login managers remain in place. Restore the compositor snapshot if you want your previous login setup. For the separately packaged Arch build, keep using pacman to update or remove that package.
+
+## Gentoo
+
+Use an amd64 system with a Wayland-capable graphics stack. Synchronize Portage and configure the repositories that supply the desktop packages before installing. Quickshell 0.3 or newer is available in GURU. For Hyprland, enable a repository that supplies a compatible Lua-enabled build of at least 0.55.0. [Quickshell setup guide](https://quickshell.org/docs/v0.2.1/guide/install-setup/)
+
+Portage previews transactions with the actual configured repositories, USE flags, masks and keywords. If it reports unresolved requirements, review the suggestions and configure them per package before retrying. The installer leaves repository and Portage configuration changes to the user. Gentoo's Wayland and init integration still needs end-to-end testing.
+
+## Performance profiles
+
+Select **Performance profile** before starting installation. **Light** reduces wallpaper playback, animations, blur, and GPU polling while retaining the shell's main controls. Switch profiles later with `bash install.sh --profile light` or `bash install.sh --profile full`. The setting is saved in `general.performance`. A changed setting gets a backup alongside the existing settings file.
 
 ## Void Linux
 

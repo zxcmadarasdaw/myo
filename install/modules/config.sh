@@ -1,4 +1,8 @@
-CONFIG_FILE="${QS_SETTINGS:-$HOME/.config/serpantinum/settings.json}"
+if declare -F serpantinum_settings_path >/dev/null; then
+    CONFIG_FILE="${QS_SETTINGS:-$(serpantinum_settings_path)}"
+else
+    CONFIG_FILE="${QS_SETTINGS:-$HOME/.config/serpantinum/settings.json}"
+fi
 CONFIG_DIR="$(dirname "$CONFIG_FILE")"
 
 init_serpantinum_config() {

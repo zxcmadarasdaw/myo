@@ -3,7 +3,7 @@
 PM_MODULES_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/pm"
 
 case "$PM_NAME" in
-    pacman|dnf|void) ;;
+    pacman|dnf|void|emerge) ;;
     *) echo "Package provider was not selected by the installer." >&2; return 1 ;;
 esac
 

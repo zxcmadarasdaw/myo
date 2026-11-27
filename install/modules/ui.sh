@@ -19,7 +19,7 @@ UNSUPPORTED_COMPOSITOR_DETECTED=false
 IS_REINSTALL=false
 
 OPT_SDDM=true
-if [ "$PM_NAME" = pacman ]; then OPT_SDDM=false; fi
+if [[ "$PM_NAME" == pacman || "$PM_NAME" == emerge ]]; then OPT_SDDM=false; fi
 REPLACE_DM=false
 SDDM_WAYLAND="$PM_SDDM_WAYLAND_DEFAULT"
 
@@ -41,7 +41,7 @@ cleanup_terminal() {
 read_key() {
     local key=""
     local rest=""
-    IFS= read -rsn1 key 2>/dev/null
+    IFS= read -rsn1 key 2>/dev/null || return 1
     if [[ "$key" == $'\x1b' ]]; then
         read -rsn2 -t 0.05 rest 2>/dev/null
         if [[ "$rest" == "[A" || "$rest" == "OA" ]]; then
@@ -164,23 +164,9 @@ EOF
     printf "\033[K%s================================================================================%s\n\n" "$C_BLUE" "$RESET"
 }
 
-collect_dependency_targets() {
-    local -n result_array="$1"
-    result_array=("${REQUIRED_PKGS[@]}")
-    for comp in "${SELECTED_COMPOSITORS[@]}"; do
-        result_array+=("$(compositor_package_name "$comp")")
-    done
-    if [ "$OPT_SDDM" = true ]; then
-        local sddm_pkgs=()
-        mapfile -t sddm_pkgs < <(sddm_packages)
-        result_array+=("${sddm_pkgs[@]}")
-    fi
-    result_array+=("${PM_EXTRA_PKGS[@]}")
-}
-
 show_package_overview() {
     local target_list=()
-    collect_dependency_targets target_list
+    collect_dependency_targets target_list "${SELECTED_COMPOSITORS[@]}"
 
     local missing_raw
     if ! missing_raw=$(pm_missing_pkgs "${target_list[@]}"); then
@@ -688,7 +674,7 @@ run_installer_ui() {
 
 draw_completion_screen() {
     local target_ver="$1"
-    local target_commit="$2"
+    local target_commit="$2" log_path="${3:-}"
     cleanup_terminal
     clear 2>/dev/null || true
     printf "%s%s" "$BOLD" "$C_GREEN"
@@ -720,6 +706,7 @@ EOF
             printf "  - %s%s%s\n" "$C_YELLOW" "$fp" "$RESET"
         done
     fi
+    if [[ -n "$log_path" ]]; then printf '\nInstallation log: %s\n' "$log_path"; fi
     printf "\n%s\n\n" "$(t "installer.ui.restart_prompt")"
 
     local restart_choice=""

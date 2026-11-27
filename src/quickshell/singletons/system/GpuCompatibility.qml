@@ -20,7 +20,9 @@ Item {
     property bool started: false
     property bool notifiedChange: false
     readonly property bool busy: scanner.running
-    readonly property var effective: Policy.policy(selectedProfile, manualSafeMode || environmentSafeMode, backends, shaderErrors)
+    readonly property bool lightweight: Config.getSetting("general.performance", false) === true
+    readonly property var effective: Policy.policy(lightweight ? "Performance" : selectedProfile,
+        manualSafeMode || environmentSafeMode, backends, shaderErrors)
     readonly property bool shadersAllowed: effective.shaders
     readonly property bool blurAllowed: effective.blur
     readonly property var recommended: Policy.recommendation(report, effective, backends, shaderStates)
